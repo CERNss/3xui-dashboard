@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/cern/3xui-dashboard/internal/config"
+	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -45,6 +47,26 @@ func run() error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 45*time.Second)
+	db, err := repository.Open(bootCtx, cfg, logger)
+	bootCancel()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := repository.Close(db); err != nil {
+			logger.Warn("database close failed", slog.String("error", err.Error()))
+		}
+	}()
+
+	if cfg.DB.MigrateOnBoot {
+		if err := repository.MigrateUp(db, logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("DB_MIGRATE_ON_BOOT=false; skipping schema migration")
+	}
+
 	engine := gin.New()
 	engine.Use(gin.Recovery(), requestLogger(logger))
 
@@ -53,9 +75,12 @@ func run() error {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// Readiness probe — verifies the DB is reachable.
+	engine.GET("/readyz", func(c *gin.Context) { readyz(c, db) })
+
 	// Real API routes will be registered here in later groups (admin
-	// auth, nodes, inbounds, …). For now only the SPA is mounted so
-	// the server is runnable end-to-end after task group 1.
+	// auth, nodes, inbounds, …). For now only the SPA + probes are
+	// mounted so the server is runnable end-to-end after groups 1 + 2.
 
 	web.Register(engine)
 
@@ -122,6 +147,21 @@ func buildLogger(cfg *config.Config) *slog.Logger {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 	return slog.New(handler)
+}
+
+func readyz(c *gin.Context, db *gorm.DB) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "db_unavailable", "error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if err := sqlDB.PingContext(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "db_unreachable", "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // requestLogger is a slim Gin middleware that emits one structured log

@@ -10,10 +10,10 @@
 
 ## 2. Database & Migrations
 
-- [ ] 2.1 Define GORM models: `User`, `Node`, `ClientOwnership`, `TrafficSample`, `Plan`, `Order`, `BalanceLog`, `Webhook`, `WebhookDelivery`, `Setting`
-- [ ] 2.2 Write versioned SQL migrations for all tables incl. unique constraints (`users.email`, `users.oidc_subject`, `client_ownerships(node_id,inbound_tag,client_email)`, `orders.idempotency_key`) and indexes for traffic queries
-- [ ] 2.3 Implement startup migration runner
-- [ ] 2.4 Implement `settings` key/value repository for runtime-mutable toggles
+- [x] 2.1 Define GORM models: `User`, `Node`, `ClientOwnership`, `TrafficSample`, `Plan`, `Order`, `BalanceLog`, `Webhook`, `WebhookDelivery`, `Setting`
+- [x] 2.2 Write versioned SQL migrations for all tables incl. unique constraints (partial `users(LOWER(email))`, partial `users(oidc_subject)`, `users(sub_id)`, `client_ownerships(node_id,inbound_tag,client_email)`, `orders.idempotency_key`) and traffic-query indexes (node_id+taken_at, partial client_email+taken_at, partial inbound+taken_at)
+- [x] 2.3 Implement startup migration runner (golang-migrate iofs over `migrations.FS`); DB connection has retry+backoff for docker-compose race; gated by DB_MIGRATE_ON_BOOT
+- [x] 2.4 Implement `settings` key/value repository for runtime-mutable toggles (Get/Set/Delete/GetAll + typed bool/int/string helpers)
 
 ## 3. Node Runtime & Transport
 
