@@ -29,6 +29,7 @@ import (
 	publichandler "github.com/cern/3xui-dashboard/internal/handler/public"
 	userhandler "github.com/cern/3xui-dashboard/internal/handler/user"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
+	"github.com/cern/3xui-dashboard/internal/service/billing"
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
@@ -147,6 +148,13 @@ func run() error {
 	userhandler.NewAuthHandler(userService, authSvc).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
+
+	// Billing: plan admin + Purchase orchestration + order history.
+	orderRepo := repository.NewOrderRepo(db)
+	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, logger)
+	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
+	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
+	_ = settingRepo
 
 	// Periodic jobs: probe (~30s) + traffic collection (~60s).
 	scheduler := job.NewScheduler(logger)

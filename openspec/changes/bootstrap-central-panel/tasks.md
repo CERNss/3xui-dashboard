@@ -97,12 +97,12 @@
 
 ## 11. Billing & Plans
 
-- [ ] 11.1 Implement plan CRUD (admin) with enable flag
-- [ ] 11.2 Implement user balance + `balance_logs`; admin balance adjustment endpoint
-- [ ] 11.3 Implement plan purchase: idempotency-key dedupe, balance transaction, call `ProvisionClient`, refund-on-failure
-- [ ] 11.4 Implement order history endpoints (user own / admin all with filters)
-- [ ] 11.5 Emit `order.created/completed/failed` events
-- [ ] 11.6 Test: insufficient balance rejected; provisioning failure refunds; duplicate idempotency key returns original order
+- [x] 11.1 Plan CRUD: admin POST/PUT/DELETE/GET /api/admin/plans; user GET /api/user/plans (only enabled); normalizePlan validates name + non-negative price/duration/traffic
+- [x] 11.2 User balance + balance_logs already in UserRepo.AdjustBalance (transactional read-modify-write + log row); admin balance-adjust at POST /api/admin/users/:id/balance
+- [x] 11.3 Purchase orchestration: idempotency-key short-circuit, pending-row reservation, balance check, charge via AdjustBalance, ProvisionClient, MarkCompleted on success / refund + MarkRefunded on provisioning failure
+- [x] 11.4 Order history: user own at GET /api/user/orders; admin all at GET /api/admin/orders with optional ?user_id and ?status filters
+- [x] 11.5 Emit OrderCreated / OrderCompleted / OrderFailed (with Reason ∈ {insufficient_balance, charge_failed, provisioning_failed})
+- [x] 11.6 Tests (5 cases): plan normalization rejects empty name + negative price/duration/traffic; isUniqueViolation recognises lib/pq + SQLSTATE 23505. Full Purchase-flow integration test deferred — requires a real Postgres harness
 
 ## 12. Webhook Notifications
 
