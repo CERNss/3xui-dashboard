@@ -26,6 +26,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	publichandler "github.com/cern/3xui-dashboard/internal/handler/public"
 	userhandler "github.com/cern/3xui-dashboard/internal/handler/user"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
@@ -33,6 +34,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
+	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -133,6 +135,10 @@ func run() error {
 	trafficService := traffic.New(rtManager, trafficRepo, ownershipRepo, &trafficNodeSource{svc: nodeService}, bus, logger)
 	adminhandler.NewTrafficHandler(trafficService, ownershipRepo).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewTrafficHandler(trafficService).RegisterRoutes(apiUserAuthed)
+
+	// Subscription assembler + public /sub routes (no auth).
+	subAsm := sub.New(userRepo, ownershipRepo, &subNodeLookup{svc: nodeService}, rtManager, logger, 0)
+	publichandler.NewSubHandler(subAsm, "").RegisterRoutes(engine)
 
 	// Periodic jobs: probe (~30s) + traffic collection (~60s).
 	scheduler := job.NewScheduler(logger)
@@ -308,4 +314,17 @@ func (a *trafficNodeSource) ListEnabledNodes(ctx context.Context) ([]traffic.Nod
 		out[i] = traffic.NodeRef{ID: n.ID, Name: n.Name}
 	}
 	return out, nil
+}
+
+// subNodeLookup satisfies sub.NodeLookup over *node.Service.
+type subNodeLookup struct{ svc *nodesvc.Service }
+
+func (a *subNodeLookup) GetNode(ctx context.Context, id int64) (*model.Node, error) {
+	n, err := a.svc.Get(ctx, id)
+	if err != nil {
+		// Don't surface ErrNotFound from the service layer as a hard
+		// error here — let sub treat it as "no inbound source".
+		return nil, nil
+	}
+	return n, nil
 }

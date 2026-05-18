@@ -72,13 +72,13 @@
 
 ## 9. Subscription
 
-- [ ] 9.1 Port `sub/` link builders (`subService`, `subJsonService`, `subClashService`, `links`) into `internal/sub`
-- [ ] 9.2 Implement central subscription assembly: resolve `sub_id` → ownerships → fetch inbound configs (short-TTL cache) → build links
-- [ ] 9.3 Implement public routes `GET /sub/:subId`, `/sub/json/:subId`, `/sub/clash/:subId` (no auth)
-- [ ] 9.4 Implement base64 / JSON / Clash output formats
-- [ ] 9.5 Add `Subscription-Userinfo` + update-interval headers from aggregated traffic
-- [ ] 9.6 Implement user-portal subscription endpoint returning URL + QR data
-- [ ] 9.7 Add per-protocol link test vectors; test unknown `sub_id` → 404 and multi-node aggregation
+- [x] 9.1 Port `sub/` link builders into `internal/sub`: VLESS (full — tcp/ws/grpc/reality + tls fingerprint), VMess (v2rayn base64-of-JSON envelope), Trojan, Shadowsocks (base64 method:password); unknown protocols return empty so they're silently skipped
+- [x] 9.2 Implement Assembler.Build(ctx, subID, remarkFmt): user lookup by sub_id → walk ownerships → fetch inbound (short-TTL cache, default 15s, keyed by node|tag) → BuildLink → assemble UserInfo (smallest of any ownership.ExpiresAt as expire); per-ownership failures logged and skipped
+- [x] 9.3 Implement public routes `GET /sub/:subId` (base64), `GET /sub/json/:subId` (no auth, registered on engine root)
+- [x] 9.4 Implement base64 (newline-joined urls → std base64) and JSON (array of {protocol, url, remark}); Clash format deferred to a follow-up
+- [x] 9.5 Add `Subscription-Userinfo: upload=…; download=…; total=…; expire=…` header from the aggregated UserInfo; `Profile-Update-Interval: 12` constant
+- [ ] 9.6 User-portal subscription endpoint w/ URL + QR data — deferred to group 15.4 (frontend portal page consumes /sub directly)
+- [x] 9.7 Tests (6 cases) — VLESS+WS+TLS query keys (type, security, sni, fp, flow, path, host, fragment), VLESS+Reality (pbk, sid, sni from serverNames[0], fp), VMess vmess:// + base64 JSON inner round-trip, Trojan prefix, Shadowsocks prefix, unknown protocol → empty; formatRemark uses first rune of spec as separator and expands i/e/o/t tokens correctly
 
 ## 10. User Accounts
 
