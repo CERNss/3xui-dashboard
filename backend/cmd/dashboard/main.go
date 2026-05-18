@@ -20,7 +20,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/cern/3xui-dashboard/internal/config"
+	adminhandler "github.com/cern/3xui-dashboard/internal/handler/admin"
+	"github.com/cern/3xui-dashboard/internal/middleware"
 	"github.com/cern/3xui-dashboard/internal/repository"
+	"github.com/cern/3xui-dashboard/internal/service/auth"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -78,9 +81,23 @@ func run() error {
 	// Readiness probe — verifies the DB is reachable.
 	engine.GET("/readyz", func(c *gin.Context) { readyz(c, db) })
 
-	// Real API routes will be registered here in later groups (admin
-	// auth, nodes, inbounds, …). For now only the SPA + probes are
-	// mounted so the server is runnable end-to-end after groups 1 + 2.
+	// Auth service + handlers + middleware.
+	authSvc := auth.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL, cfg.Admin.Username, cfg.Admin.Password)
+	adminAuth := adminhandler.NewAuthHandler(authSvc)
+
+	// Route groups. /api/admin/auth/login is public (the only admin
+	// endpoint that is); every other admin route requires a valid
+	// admin token. /api/user/* is the user portal; group 10 fills in
+	// the auth + feature endpoints.
+	apiAdmin := engine.Group("/api/admin")
+	adminAuth.RegisterRoutes(apiAdmin)
+	apiAdminAuthed := engine.Group("/api/admin", middleware.RequireAdmin(authSvc))
+	_ = apiAdminAuthed // feature groups (nodes, inbounds, …) mount here
+
+	apiUser := engine.Group("/api/user")
+	_ = apiUser // user-portal login/register handlers land here in group 10
+	apiUserAuthed := engine.Group("/api/user", middleware.RequireUser(authSvc))
+	_ = apiUserAuthed
 
 	web.Register(engine)
 

@@ -27,11 +27,11 @@
 
 ## 4. Admin Auth
 
-- [ ] 4.1 Implement admin credential check against env values with constant-time comparison
-- [ ] 4.2 Implement `POST /api/admin/auth/login` issuing a JWT with `aud: "admin"`
-- [ ] 4.3 Implement `requireAdmin` middleware (rejects non-`admin` audience with 403, invalid/expired with 401)
-- [ ] 4.4 Implement `requireUser` middleware and wire route groups `/api/admin/*` vs `/api/user/*`
-- [ ] 4.5 Test: user token rejected on admin routes and vice versa; missing admin env aborts startup
+- [x] 4.1 Implement admin credential check against env values with constant-time comparison (`auth.Service.CheckAdminCredentials`, subtle.ConstantTimeCompare on both username and password)
+- [x] 4.2 Implement `POST /api/admin/auth/login` issuing a JWT with `aud: "admin"`; HS256-only signing; returns {token, expires_at, username}
+- [x] 4.3 Implement `requireAdmin` middleware (rejects non-`admin` audience with 403, invalid/expired/missing with 401); verified claims attached to gin.Context under ContextKey
+- [x] 4.4 Implement `requireUser` middleware and wire route groups `/api/admin/*` vs `/api/user/*`; admin /auth/login is the only public admin endpoint
+- [x] 4.5 Test: user token rejected on admin routes and admin on user routes (both → 403); expired/missing/malformed token → 401; bad signature surfaced as ErrInvalidToken; non-HS256 alg rejected; missing admin env aborts startup via config_test
 
 ## 5. Node Management
 
