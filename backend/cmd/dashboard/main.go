@@ -26,11 +26,13 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	userhandler "github.com/cern/3xui-dashboard/internal/handler/user"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
+	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -126,11 +128,21 @@ func run() error {
 	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
 	adminhandler.NewClientHandler(clientService).RegisterRoutes(apiAdminAuthed)
 
-	// Periodic probe job — every 30 s once Start() is called below.
+	// Traffic statistics: repo + service + handlers.
+	trafficRepo := repository.NewTrafficSampleRepo(db)
+	trafficService := traffic.New(rtManager, trafficRepo, ownershipRepo, &trafficNodeSource{svc: nodeService}, bus, logger)
+	adminhandler.NewTrafficHandler(trafficService, ownershipRepo).RegisterRoutes(apiAdminAuthed)
+	userhandler.NewTrafficHandler(trafficService).RegisterRoutes(apiUserAuthed)
+
+	// Periodic jobs: probe (~30s) + traffic collection (~60s).
 	scheduler := job.NewScheduler(logger)
 	probeJob := job.NewProbeJob(nodeService, bus, logger, 0, 0)
 	if err := scheduler.Add("probe", "@every 30s", probeJob.RunOnce); err != nil {
 		return fmt.Errorf("schedule probe job: %w", err)
+	}
+	trafficJob := job.NewTrafficJob(trafficService, logger)
+	if err := scheduler.Add("traffic", "@every 60s", trafficJob.RunOnce); err != nil {
+		return fmt.Errorf("schedule traffic job: %w", err)
 	}
 	scheduler.Start()
 	defer func() {
@@ -281,4 +293,19 @@ type planLookupAdapter struct{ repo *repository.PlanRepo }
 
 func (a *planLookupAdapter) GetPlan(ctx context.Context, id int64) (*model.Plan, error) {
 	return a.repo.Get(ctx, id)
+}
+
+// trafficNodeSource satisfies traffic.NodeListSource over *node.Service.
+type trafficNodeSource struct{ svc *nodesvc.Service }
+
+func (a *trafficNodeSource) ListEnabledNodes(ctx context.Context) ([]traffic.NodeRef, error) {
+	rows, err := a.svc.ListEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]traffic.NodeRef, len(rows))
+	for i, n := range rows {
+		out[i] = traffic.NodeRef{ID: n.ID, Name: n.Name}
+	}
+	return out, nil
 }

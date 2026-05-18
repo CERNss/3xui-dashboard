@@ -61,14 +61,14 @@
 
 ## 8. Traffic Statistics
 
-- [ ] 8.1 Implement the periodic traffic collection job (~60 s): concurrent `FetchTrafficSnapshot` per node, persist `traffic_samples`
-- [ ] 8.2 Implement cumulative→delta computation with counter-reset detection (decreasing sample = new absolute)
-- [ ] 8.3 Implement aggregated usage queries: per-node, per-inbound, per-client totals + online flag + last-online
-- [ ] 8.4 Implement bucketed traffic-history query for charts
-- [ ] 8.5 Implement traffic reset endpoints (client / inbound / node)
-- [ ] 8.6 Implement threshold/expiry rule evaluation emitting de-duplicated `client.*` events
-- [ ] 8.7 Implement user-facing own-traffic endpoint scoped to owned clients
-- [ ] 8.8 Test: counter reset produces no negative delta; user cannot see others' traffic
+- [x] 8.1 Implement periodic traffic-collection job (@every 60s): errgroup with concurrency cap calls FetchTrafficSnapshot per node, persists inbound-level + client-level rows in one InsertBatch per node
+- [x] 8.2 Implement cumulative→delta computation (SumDeltas, BucketDeltas): cur<prev treated as counter reset → delta = cur (not cur-prev); never produces negative deltas
+- [x] 8.3 Implement UsageForOwnership / UsageForUser aggregated queries: per-ownership totals (up, down, total, limit, expires_at, last_sample_at) over [from, to]
+- [x] 8.4 Implement HistoryForOwnership / HistoryForInbound returning BucketPoint{bucket_start_unix, up, down} sorted ascending
+- [x] 8.5 Implement traffic reset endpoints: client (POST .../inbound/:tag/client/:email), inbound (resetTraffic + resetAllClientTraffics), node (resetAllTraffics) — all 204 on success, 502 on upstream
+- [x] 8.6 Implement threshold/expiry evaluation in collectOne: client.over_limit (up+down ≥ Total>0), client.expired (ExpiryTime in past); in-memory dedup keyed by event|node|inbound|email with 6h re-emit window
+- [x] 8.7 Implement user-facing own-traffic endpoint at /api/user/traffic — user_id taken from JWT subject, not the URL, so users cannot query others; default window = last 7 days
+- [x] 8.8 Tests (4 cases): monotonic series sums correctly; counter reset produces no negative delta and the post-reset value becomes the new baseline; empty/single-sample inputs produce zero; BucketDeltas groups + sums correctly across two buckets
 
 ## 9. Subscription
 
