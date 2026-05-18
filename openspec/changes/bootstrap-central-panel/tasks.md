@@ -35,12 +35,13 @@
 
 ## 5. Node Management
 
-- [ ] 5.1 Implement node CRUD service: create/update/delete/enable with normalization + validation; invalidate runtime cache on change
-- [ ] 5.2 Implement node probe (`GET /panel/api/server/status`) parsing cpu/mem/xray/uptime into a heartbeat patch
-- [ ] 5.3 Implement in-memory per-node cpu/mem metric ring buffer + bucketed aggregation query
-- [ ] 5.4 Implement admin node endpoints: list, create, update, delete, enable/disable, on-demand probe, metric history
-- [ ] 5.5 Implement the periodic probe job (~30 s), updating heartbeat status and appending metrics
-- [ ] 5.6 Emit `node.online/offline/probe_failed` events on status transitions
+- [x] 5.0 (extra) Implement `internal/service/event.Bus` — typed pub/sub with exact / wildcard-suffix / star subscribers; webhooks attach in group 12
+- [x] 5.1 Implement node CRUD service: Create/Update/Delete/SetEnabled with normalize+validate (trim, lowercase scheme, basePath leading+trailing slash, port 1-65535); InvalidateNode on runtime.Manager on every mutation; MetricsStore.Drop on delete
+- [x] 5.2 Implement node probe — wraps runtime.Probe, returns ProbeResult{NodeID, PriorStatus, Status, Err}; applies heartbeat patch (last_seen_at, cpu_pct, mem_pct, xray_version, uptime_s, status) on success and sets offline on failure
+- [x] 5.3 Implement MetricsStore — per-node ring buffer (default cap 720 = 6h at 30s), Append/Drop/Raw window query/Bucketed (uniform time buckets with bucket-averaged CPU+Mem, sorted)
+- [x] 5.4 Implement admin node endpoints under /api/admin/nodes: GET list, POST create (201), GET :id, PUT :id, DELETE :id (204), POST :id/enable, POST :id/disable, POST :id/probe (502 on transport failure), GET :id/metrics?from=&to=&bucket= (raw if bucket missing)
+- [x] 5.5 Implement periodic probe job — scheduler.Add("probe", "@every 30s", probeJob.RunOnce); errgroup with concurrency cap (default 8) + per-call timeout (default 12 s); walks ListEnabled() so disabled nodes are skipped
+- [x] 5.6 Emit `node.online` (offline→online), `node.offline` (online→offline), `node.probe_failed` (every failure regardless of prior state) via event.Bus with typed payloads
 
 ## 6. Inbound Management
 

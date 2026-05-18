@@ -21,9 +21,13 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/config"
 	adminhandler "github.com/cern/3xui-dashboard/internal/handler/admin"
+	"github.com/cern/3xui-dashboard/internal/job"
 	"github.com/cern/3xui-dashboard/internal/middleware"
 	"github.com/cern/3xui-dashboard/internal/repository"
+	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
+	"github.com/cern/3xui-dashboard/internal/service/event"
+	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -92,12 +96,35 @@ func run() error {
 	apiAdmin := engine.Group("/api/admin")
 	adminAuth.RegisterRoutes(apiAdmin)
 	apiAdminAuthed := engine.Group("/api/admin", middleware.RequireAdmin(authSvc))
-	_ = apiAdminAuthed // feature groups (nodes, inbounds, …) mount here
 
 	apiUser := engine.Group("/api/user")
 	_ = apiUser // user-portal login/register handlers land here in group 10
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireUser(authSvc))
 	_ = apiUserAuthed
+
+	// Event bus shared by node/order/user services; webhooks subscribe in group 12.
+	bus := event.New()
+
+	// Node management: runtime manager → metrics store → service → handler.
+	rtManager := runtime.NewManager(&runtime.GormNodeLoader{DB: db}, logger)
+	metricsStore := nodesvc.NewMetricsStore(0)
+	nodeService := nodesvc.New(db, rtManager, metricsStore, logger)
+	adminhandler.NewNodeHandler(nodeService).RegisterRoutes(apiAdminAuthed)
+
+	// Periodic probe job — every 30 s once Start() is called below.
+	scheduler := job.NewScheduler(logger)
+	probeJob := job.NewProbeJob(nodeService, bus, logger, 0, 0)
+	if err := scheduler.Add("probe", "@every 30s", probeJob.RunOnce); err != nil {
+		return fmt.Errorf("schedule probe job: %w", err)
+	}
+	scheduler.Start()
+	defer func() {
+		select {
+		case <-scheduler.Stop().Done():
+		case <-time.After(cfg.Server.ShutdownTimeout):
+			logger.Warn("scheduler stop deadline exceeded")
+		}
+	}()
 
 	web.Register(engine)
 
