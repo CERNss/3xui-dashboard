@@ -1,0 +1,52 @@
+# 3xui-dashboard — local-or-VPS deployment.
+#
+# Defaults to a self-contained stack: Postgres 16 + the dashboard, both
+# on an internal network. Override secrets via `.env` next to this file
+# (docker compose picks it up automatically).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dashboard}
+      POSTGRES_DB: ${POSTGRES_DB:-dashboard}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-dashboard} -d $${POSTGRES_DB:-dashboard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [dashboard]
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: 3xui-dashboard:dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENV: prod
+      LISTEN_ADDR: ":8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard}@db:5432/${POSTGRES_DB:-dashboard}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env or the shell env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?ADMIN_USERNAME must be set}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
+      PUBLIC_REGISTRATION: ${PUBLIC_REGISTRATION:-false}
+      EMAIL_DOMAIN_ALLOWLIST: ${EMAIL_DOMAIN_ALLOWLIST:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${PORT:-8080}:8080"
+    networks: [dashboard]
+
+networks:
+  dashboard:
+    driver: bridge
+
+volumes:
+  db_data:

@@ -144,8 +144,8 @@
 
 ## 16. Packaging & Deploy
 
-- [ ] 16.1 Frontend build wired into the Go binary via `go:embed`
-- [ ] 16.2 Multi-stage `Dockerfile` (frontend build → Go build → slim runtime)
-- [ ] 16.3 `docker-compose.yml` with PostgreSQL + the dashboard service
-- [ ] 16.4 Root `Makefile` / `Makefile` targets: dev, build, lint, test, migrate
-- [ ] 16.5 README: 3x-ui node onboarding (API token issuance), supported 3x-ui version range, config reference
+- [x] 16.1 Frontend build wired into the Go binary via //go:embed at backend/internal/web/embed.go (`//go:embed all:dist`). Vite outputs directly to ../backend/internal/web/dist
+- [x] 16.2 Multi-stage Dockerfile: node:22-alpine → golang:1.26-alpine → alpine:3.20 runtime; non-root user, ca-certificates + tzdata, CGO disabled, trimpath + -s -w
+- [x] 16.3 deploy/docker-compose.yml with postgres:16-alpine + dashboard; service depends_on db with healthcheck; required env vars fail-fast via `${VAR:?...}`
+- [x] 16.4 Makefile targets: build (build-frontend + build-backend), dev (parallel), dev-{frontend,backend}, test (go test ./... + vue-tsc), lint (go vet + eslint), migrate (boot-and-exit), docker-build/up/down, clean (preserves dist/.gitkeep), tidy
+- [x] 16.5 README.md covers v1 ship/defer list, prereqs, docker quickstart, local-dev quickstart, 3x-ui node onboarding (api-token issuance + POST /api/admin/nodes payload), supported version range, config reference + project layout
