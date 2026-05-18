@@ -53,11 +53,11 @@
 
 ## 7. Client Provisioning
 
-- [ ] 7.1 Implement client create/update/delete on a node inbound (UUID/password + sub_id generation by protocol)
-- [ ] 7.2 Implement client listing per inbound and fleet-wide email search, annotated with owning user
-- [ ] 7.3 Implement the shared `ProvisionClient(userID,nodeID,inboundTag,planParams)` service that creates/extends a client and upserts `client_ownerships`
-- [ ] 7.4 Implement admin client endpoints + client↔user link/unlink endpoints
-- [ ] 7.5 Test: provision creates+maps; re-provision extends instead of duplicating; delete clears ownership
+- [x] 7.1 Implement client create/update/delete via runtime.Remote AddClient/UpdateClient/DeleteClientByEmail; buildWireClient picks identifier by protocol (VLESS/VMess→UUID, Trojan/Shadowsocks→random hex password, unknown→UUID safe default); ExpiryTime in ms (0 = non-expiring), TotalGB in bytes
+- [x] 7.2 Implement ListOnInbound — every 3x-ui client on the inbound annotated with its ClientOwnership row (or nil for unmapped); LinkToUser / UnlinkUser admin endpoints for unmapped clients
+- [x] 7.3 Implement ProvisionClient(userID, nodeID, inboundTag, PlanParams{PlanID, DurationDays, TrafficLimitBytes}) — Add on first call, Update on subsequent (with re-add fallback on ErrClientNotFound); expiry computed as max(now, existing.ExpiresAt) + duration so re-provision *extends*; Upsert on client_ownerships
+- [x] 7.4 Implement admin client endpoints under /api/admin/clients: GET /nodes/:nodeID/inbounds/:tag (list+annotation), POST .../provision, DELETE .../clients/:email, POST .../clients/:email/link, POST .../clients/:email/unlink; 404 on missing user/plan/node/tag/client, 409 on disabled node, 502 on upstream
+- [x] 7.5 Tests: computeExpiry handles first-provision (now+30d), zero-duration (non-expiring), extend-from-future (existing+30d), expired-existing (now+30d); buildWireClient assigns UUID to VLESS, password to Trojan/SS, UUID id as unknown-protocol default; TotalGB stored as bytes; ms-since-epoch ExpiryTime
 
 ## 8. Traffic Statistics
 

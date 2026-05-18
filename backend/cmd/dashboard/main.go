@@ -23,9 +23,11 @@ import (
 	adminhandler "github.com/cern/3xui-dashboard/internal/handler/admin"
 	"github.com/cern/3xui-dashboard/internal/job"
 	"github.com/cern/3xui-dashboard/internal/middleware"
+	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
+	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
@@ -116,6 +118,13 @@ func run() error {
 	// enumerator so fleet-wide list stays consistent.
 	inboundService := inbound.New(rtManager, &nodeListAdapter{svc: nodeService}, logger)
 	adminhandler.NewInboundHandler(inboundService).RegisterRoutes(apiAdminAuthed)
+
+	// User + Plan repositories + Client provisioning service.
+	userRepo := repository.NewUserRepo(db)
+	planRepo := repository.NewPlanRepo(db)
+	ownershipRepo := repository.NewClientOwnershipRepo(db)
+	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
+	adminhandler.NewClientHandler(clientService).RegisterRoutes(apiAdminAuthed)
 
 	// Periodic probe job — every 30 s once Start() is called below.
 	scheduler := job.NewScheduler(logger)
@@ -258,4 +267,18 @@ func (a *nodeListAdapter) ListEnabledNodes(ctx context.Context) ([]inbound.NodeR
 		out[i] = inbound.NodeRef{ID: n.ID, Name: n.Name}
 	}
 	return out, nil
+}
+
+// userLookupAdapter satisfies clientsvc.UserLookup over *UserRepo.
+type userLookupAdapter struct{ repo *repository.UserRepo }
+
+func (a *userLookupAdapter) GetUser(ctx context.Context, id int64) (*model.User, error) {
+	return a.repo.Get(ctx, id)
+}
+
+// planLookupAdapter satisfies clientsvc.PlanLookup over *PlanRepo.
+type planLookupAdapter struct{ repo *repository.PlanRepo }
+
+func (a *planLookupAdapter) GetPlan(ctx context.Context, id int64) (*model.Plan, error) {
+	return a.repo.Get(ctx, id)
 }
