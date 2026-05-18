@@ -1,0 +1,41 @@
+schema: spec-driven
+
+context: |
+  Project: 3xui-dashboard — a central control panel for managing a fleet of
+  3x-ui (Xray) proxy nodes.
+
+  Architecture:
+  - The dashboard is a PURE CENTRAL CONTROLLER. It does NOT run Xray itself.
+  - Remote nodes run vanilla 3x-ui. The dashboard controls them through each
+    node's panel API (`/panel/api/...`) using a per-node Bearer API token.
+  - Core logic (node management, traffic aggregation, inbound/client/link
+    creation, subscription generation) is EXTRACTED and re-implemented from the
+    upstream 3x-ui codebase rather than building a thin proxy. Reference source:
+    /Users/cern/LocalDisk/D/Repo/infra/cern-3x-ui (notably web/runtime/remote.go,
+    web/service/node.go, sub/subService.go, sub/links.go).
+  - AUTHORITATIVE node-side reference: docs/3xui-node-reference.md — full node
+    API surface, request/response shapes, data structures, and the
+    feature-extraction map (extract / adapt / drop / net-new). Consult it
+    before implementing any node-facing code.
+
+  Tech stack:
+  - Backend: Go 1.26, Gin, GORM, PostgreSQL, JWT (golang-jwt/v5).
+  - Frontend: Vue 3 + TypeScript + Vite + Tailwind CSS + Pinia + vue-router.
+  - Frontend is embedded into the Go binary via go:embed and served as an SPA.
+
+  Roles:
+  - admin: manages nodes, inbounds, clients, traffic, plans, dashboard users.
+  - user: views own subscription link/QR, traffic usage, profile; buys plans.
+
+  Reference sibling project for code style/patterns:
+  /Users/cern/LocalDisk/D/Repo/infra/cern-sub2api (frontend + backend layout).
+
+rules:
+  proposal:
+    - State which upstream 3x-ui code is being extracted/adapted and what is dropped.
+  specs:
+    - Use Given/When/Then scenarios with RFC 2119 keywords.
+    - Distinguish admin-facing and user-facing requirements explicitly.
+  design:
+    - Document the node API contract assumptions (endpoints, auth, payloads).
+    - Note PostgreSQL schema decisions and migration approach.
