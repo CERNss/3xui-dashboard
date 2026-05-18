@@ -1,0 +1,216 @@
+// Package inbound is the service layer wrapping runtime.Manager for
+// inbound-level operations: per-node CRUD + fleet-wide list with
+// per-node error collection.
+package inbound
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/cern/3xui-dashboard/internal/runtime"
+)
+
+// NodeListSource is the subset of repository / service.node access
+// the inbound service needs: a way to enumerate enabled nodes for
+// fleet walks. Kept tiny so tests can inject fakes.
+type NodeListSource interface {
+	ListEnabledNodes(ctx context.Context) ([]NodeRef, error)
+}
+
+// NodeRef is the minimal node identification fleet-wide ops need.
+// Defined here (instead of importing model.Node) so the inbound
+// package doesn't grow heavy dependencies.
+type NodeRef struct {
+	ID   int64
+	Name string
+}
+
+// Service composes the runtime manager and a node enumerator. Most
+// methods are thin wrappers around runtime.Remote; the value-add is
+// ListAll which fans out across the fleet.
+type Service struct {
+	rt    *runtime.Manager
+	nodes NodeListSource
+	log   *slog.Logger
+
+	// FleetConcurrency caps parallel node calls during ListAll. Zero
+	// uses a sensible default (8).
+	FleetConcurrency int
+}
+
+// New constructs the service.
+func New(rt *runtime.Manager, nodes NodeListSource, lg *slog.Logger) *Service {
+	return &Service{
+		rt:    rt,
+		nodes: nodes,
+		log:   lg.With(slog.String("component", "service.inbound")),
+	}
+}
+
+// ---- Per-node ops ---------------------------------------------------------
+
+// List returns every inbound on one node.
+func (s *Service) List(ctx context.Context, nodeID int64) ([]runtime.Inbound, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return r.ListInbounds(ctx)
+}
+
+// Get returns one inbound by tag.
+func (s *Service) Get(ctx context.Context, nodeID int64, tag string) (*runtime.Inbound, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetInbound(ctx, tag)
+}
+
+// Add creates an inbound on a node. The returned inbound carries the
+// panel-assigned id.
+func (s *Service) Add(ctx context.Context, nodeID int64, in *runtime.Inbound) (*runtime.Inbound, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return r.AddInbound(ctx, in)
+}
+
+// Update mutates an existing inbound. If the tag doesn't exist on
+// the node yet, the call falls through to Add — handlers that want
+// strict update semantics should use UpdateStrict.
+func (s *Service) Update(ctx context.Context, nodeID int64, tag string, in *runtime.Inbound) (*runtime.Inbound, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := r.UpdateInbound(ctx, tag, in)
+	if err == nil {
+		return updated, nil
+	}
+	if errors.Is(err, runtime.ErrTagNotFound) {
+		s.log.Info("update→create fallback",
+			slog.Int64("node_id", nodeID),
+			slog.String("tag", tag),
+		)
+		return r.AddInbound(ctx, in)
+	}
+	return nil, err
+}
+
+// UpdateStrict refuses to fall back to Add on missing tag.
+func (s *Service) UpdateStrict(ctx context.Context, nodeID int64, tag string, in *runtime.Inbound) (*runtime.Inbound, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return r.UpdateInbound(ctx, tag, in)
+}
+
+// Delete removes an inbound. Idempotent — missing tag is success.
+func (s *Service) Delete(ctx context.Context, nodeID int64, tag string) error {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	return r.DeleteInbound(ctx, tag)
+}
+
+// SetEnable flips just the enable bit.
+func (s *Service) SetEnable(ctx context.Context, nodeID int64, tag string, enable bool) error {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	return r.SetInboundEnable(ctx, tag, enable)
+}
+
+// ---- Fleet-wide aggregation -----------------------------------------------
+
+// FleetInbound annotates each inbound with the node it lives on so
+// admins can tell which node a row came from.
+type FleetInbound struct {
+	NodeID   int64           `json:"node_id"`
+	NodeName string          `json:"node_name"`
+	Inbound  runtime.Inbound `json:"inbound"`
+}
+
+// FleetResult is the typed shape of a fleet-wide list. NodeErrors
+// keys an offline-or-misconfigured node id to a short string so the
+// admin UI can render a per-node toast without losing healthy rows.
+type FleetResult struct {
+	Inbounds   []FleetInbound    `json:"inbounds"`
+	NodeErrors map[int64]string  `json:"node_errors,omitempty"`
+}
+
+// ListAll walks every enabled node concurrently (capped) and returns
+// every inbound + a per-node error map. A single node failure never
+// aborts the walk.
+func (s *Service) ListAll(ctx context.Context) (*FleetResult, error) {
+	nodes, err := s.nodes.ListEnabledNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("inbound.ListAll: %w", err)
+	}
+	if len(nodes) == 0 {
+		return &FleetResult{}, nil
+	}
+
+	conc := s.FleetConcurrency
+	if conc <= 0 {
+		conc = 8
+	}
+
+	var (
+		mu       sync.Mutex
+		results  []FleetInbound
+		errsByID = map[int64]string{}
+	)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(conc)
+
+	for i := range nodes {
+		n := nodes[i]
+		g.Go(func() error {
+			r, err := s.rt.Get(gctx, n.ID)
+			if err != nil {
+				mu.Lock()
+				errsByID[n.ID] = err.Error()
+				mu.Unlock()
+				return nil
+			}
+			inbounds, err := r.ListInbounds(gctx)
+			if err != nil {
+				mu.Lock()
+				errsByID[n.ID] = err.Error()
+				mu.Unlock()
+				return nil
+			}
+			collected := make([]FleetInbound, 0, len(inbounds))
+			for _, in := range inbounds {
+				collected = append(collected, FleetInbound{
+					NodeID:   n.ID,
+					NodeName: n.Name,
+					Inbound:  in,
+				})
+			}
+			mu.Lock()
+			results = append(results, collected...)
+			mu.Unlock()
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	out := &FleetResult{Inbounds: results}
+	if len(errsByID) > 0 {
+		out.NodeErrors = errsByID
+	}
+	return out, nil
+}

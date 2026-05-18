@@ -45,11 +45,11 @@
 
 ## 6. Inbound Management
 
-- [ ] 6.1 Implement per-node inbound list/get via `/panel/api/inbounds/list`
-- [ ] 6.2 Implement fleet-wide concurrent inbound aggregation with per-node error collection (errgroup + semaphore)
-- [ ] 6.3 Implement inbound create/update/delete with tag resolution and update→create fallback
-- [ ] 6.4 Implement admin inbound endpoints under `/api/admin/inbounds`
-- [ ] 6.5 Test: partial fleet failure surfaces healthy results + per-node errors
+- [x] 6.1 Implement per-node inbound List / Get via runtime.Remote.ListInbounds + GetInbound
+- [x] 6.2 Implement fleet-wide concurrent aggregation (ListAll) — errgroup w/ configurable concurrency cap (default 8), per-node error collected into FleetResult.NodeErrors[nodeID]→msg, healthy rows preserved
+- [x] 6.3 Implement Add / Update (with ErrTagNotFound → Add fallback) / UpdateStrict / Delete (idempotent on missing tag) / SetEnable via runtime.Remote
+- [x] 6.4 Implement admin endpoints under /api/admin/inbounds: GET (fleet), GET /nodes/:nodeID, POST /nodes/:nodeID, GET/PUT/DELETE /nodes/:nodeID/:tag, POST :tag/enable, :tag/disable; 502 on upstream error, 404 on missing tag/node, 409 on disabled node
+- [x] 6.5 Test partial-fleet failure surfaces healthy results + per-node errors (one panel 500s, the other lists; result has 1 inbound + NodeErrors[brokenID]); fleet happy path returns both nodes' inbounds
 
 ## 7. Client Provisioning
 

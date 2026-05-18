@@ -27,6 +27,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
@@ -110,6 +111,11 @@ func run() error {
 	metricsStore := nodesvc.NewMetricsStore(0)
 	nodeService := nodesvc.New(db, rtManager, metricsStore, logger)
 	adminhandler.NewNodeHandler(nodeService).RegisterRoutes(apiAdminAuthed)
+
+	// Inbound service walks across nodes — wire it to the same node
+	// enumerator so fleet-wide list stays consistent.
+	inboundService := inbound.New(rtManager, &nodeListAdapter{svc: nodeService}, logger)
+	adminhandler.NewInboundHandler(inboundService).RegisterRoutes(apiAdminAuthed)
 
 	// Periodic probe job — every 30 s once Start() is called below.
 	scheduler := job.NewScheduler(logger)
@@ -236,4 +242,20 @@ func requestLogger(logger *slog.Logger) gin.HandlerFunc {
 			logger.Info("http request", attrs...)
 		}
 	}
+}
+
+// nodeListAdapter adapts *node.Service to inbound.NodeListSource.
+// Keeps the inbound package free of model.Node imports.
+type nodeListAdapter struct{ svc *nodesvc.Service }
+
+func (a *nodeListAdapter) ListEnabledNodes(ctx context.Context) ([]inbound.NodeRef, error) {
+	rows, err := a.svc.ListEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]inbound.NodeRef, len(rows))
+	for i, n := range rows {
+		out[i] = inbound.NodeRef{ID: n.ID, Name: n.Name}
+	}
+	return out, nil
 }

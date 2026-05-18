@@ -93,6 +93,19 @@ func (m *Manager) Get(ctx context.Context, id int64) (*Remote, error) {
 	return r, nil
 }
 
+// SetHTTPClient swaps the shared HTTP client. Intended for tests
+// against httptest.NewServer where 127.0.0.1 listeners would be
+// refused by the SSRF guard. Not for production use.
+func (m *Manager) SetHTTPClient(client *http.Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.http = client
+	// Evict every cached Remote so they pick up the new client on
+	// next Get.
+	m.cache = make(map[int64]*Remote)
+	m.loaded = make(map[int64]model.Node)
+}
+
 // InvalidateNode evicts the cached Remote for node id. Callers should
 // invoke this after any persisted change to the node row (host /
 // port / api_token / base_path / scheme / enable). The next Get
