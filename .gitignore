@@ -10,7 +10,9 @@
 /backend/data/
 /backend/tmp/
 # Embedded frontend build output produced into backend/internal/web/dist
-/backend/internal/web/dist/
+# (keep the directory + .gitkeep so go:embed compiles even before a build)
+/backend/internal/web/dist/*
+!/backend/internal/web/dist/.gitkeep
 
 # --- Node / Vue ---
 node_modules/
@@ -18,6 +20,9 @@ node_modules/
 .pnpm-store/
 /frontend/dist/
 *.tsbuildinfo
+# vue-tsc -b emits these from vite.config.ts even with noEmit; keep them out.
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
 
 # --- Env / secrets ---
 .env
@@ -33,6 +38,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# --- Claude Code per-user settings (commands/ and skills/ are team-shared) ---
+.claude/settings.local.json
+.claude/memory/
 
 # --- Logs ---
 *.log

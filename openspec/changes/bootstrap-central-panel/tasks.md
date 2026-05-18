@@ -1,12 +1,12 @@
 ## 1. Project Scaffold & Infrastructure
 
-- [ ] 1.1 Create `backend/` Go module (Go 1.26) with `cmd/`, `internal/{config,handler,middleware,service,repository,runtime,sub,model,job}`, `migrations/`
-- [ ] 1.2 Add backend dependencies: Gin, GORM + Postgres driver, golang-jwt/v5, viper, robfig/cron, golang.org/x/sync, bcrypt
-- [ ] 1.3 Remove the old SQLite proxy scaffold (handlers/services/SQLite dependency)
-- [ ] 1.4 Implement Viper config loader reading `.env`: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_USERNAME/PASSWORD`, `OIDC_*`, `SMTP_*`, `PUBLIC_REGISTRATION`, `EMAIL_DOMAIN_ALLOWLIST`; fail-fast on missing required keys
-- [ ] 1.5 Write `deploy/.env.example` documenting every config key
-- [ ] 1.6 Set up Gin server bootstrap, structured logging, graceful shutdown, and `go:embed` SPA serving with history-mode fallback
-- [ ] 1.7 Scaffold `frontend/` Vue 3 + TS + Vite + Tailwind + Pinia + vue-router app mirroring `cern-sub2api` layout
+- [x] 1.1 Create `backend/` Go module (Go 1.26) with `cmd/`, `internal/{config,handler,middleware,service,repository,runtime,sub,model,job}`, `migrations/`
+- [x] 1.2 Add backend dependencies: Gin, GORM + Postgres driver, golang-jwt/v5, viper, robfig/cron, golang.org/x/sync, bcrypt, golang-migrate (anchored via `internal/depsanchor.go` until feature code imports each)
+- [x] 1.3 Remove the old SQLite proxy scaffold (handlers/services/SQLite dependency)
+- [x] 1.4 Implement Viper config loader reading `.env`: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_USERNAME/PASSWORD`, `OIDC_*`, `SMTP_*`, `PUBLIC_REGISTRATION`, `EMAIL_DOMAIN_ALLOWLIST`; fail-fast on missing required keys
+- [x] 1.5 Write `deploy/.env.example` documenting every config key
+- [x] 1.6 Set up Gin server bootstrap, structured logging, graceful shutdown, and `go:embed` SPA serving with history-mode fallback
+- [x] 1.7 Scaffold `frontend/` Vue 3 + TS + Vite + Tailwind + Pinia + vue-router app mirroring `cern-sub2api` layout (dual admin/portal route trees + two Pinia auth stores + two Axios instances per design.md)
 
 ## 2. Database & Migrations
 

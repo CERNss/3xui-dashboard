@@ -1,46 +1,42 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import type { Toast, ToastType } from '@/types'
 
-export const useAppStore = defineStore('app', () => {
-  const loading = ref(false)
-  const sidebarOpen = ref(false)
-  const toasts = ref<Toast[]>([])
-  let toastId = 0
+type Locale = 'en' | 'zh'
+type Theme = 'light' | 'dark'
 
-  const hasToasts = computed(() => toasts.value.length > 0)
+const LOCALE_KEY = 'dashboard.locale'
+const THEME_KEY = 'dashboard.theme'
 
-  function addToast(type: ToastType, message: string, duration = 4000) {
-    const id = ++toastId
-    toasts.value.push({ id, type, message })
-    setTimeout(() => removeToast(id), duration)
-  }
+interface State {
+  locale: Locale
+  theme: Theme
+}
 
-  function removeToast(id: number) {
-    const idx = toasts.value.findIndex((t) => t.id === id)
-    if (idx !== -1) toasts.value.splice(idx, 1)
-  }
+function detectLocale(): Locale {
+  const stored = localStorage.getItem(LOCALE_KEY)
+  if (stored === 'en' || stored === 'zh') return stored
+  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+}
 
-  function success(msg: string) { addToast('success', msg) }
-  function error(msg: string) { addToast('error', msg, 6000) }
-  function warn(msg: string) { addToast('warning', msg) }
-  function info(msg: string) { addToast('info', msg) }
+function detectTheme(): Theme {
+  const stored = localStorage.getItem(THEME_KEY)
+  if (stored === 'light' || stored === 'dark') return stored
+  return 'light'
+}
 
-  function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
-  function closeSidebar() { sidebarOpen.value = false }
-
-  return {
-    loading,
-    sidebarOpen,
-    toasts,
-    hasToasts,
-    addToast,
-    removeToast,
-    success,
-    error,
-    warn,
-    info,
-    toggleSidebar,
-    closeSidebar
-  }
+export const useAppStore = defineStore('app', {
+  state: (): State => ({
+    locale: detectLocale(),
+    theme: detectTheme(),
+  }),
+  actions: {
+    setLocale(loc: Locale) {
+      this.locale = loc
+      localStorage.setItem(LOCALE_KEY, loc)
+    },
+    setTheme(theme: Theme) {
+      this.theme = theme
+      localStorage.setItem(THEME_KEY, theme)
+      document.documentElement.classList.toggle('dark', theme === 'dark')
+    },
+  },
 })
