@@ -17,13 +17,13 @@
 
 ## 3. Node Runtime & Transport
 
-- [ ] 3.1 Port the SSRF-guarded HTTP transport and Bearer-auth envelope client from upstream `web/runtime/remote.go`
-- [ ] 3.2 Implement `NodeRuntime` interface + `Remote` impl: base URL build, base-path normalization, envelope decode
-- [ ] 3.3 Implement per-node `tag→remote-id` cache with refresh-on-miss from `/panel/api/inbounds/list`
-- [ ] 3.4 Implement `Manager` caching one `Remote` per node id with `InvalidateNode`
-- [ ] 3.5 Implement node API methods: inbound add/update/del, client add/update/del, traffic resets, `FetchTrafficSnapshot`, `Probe`
-- [ ] 3.6 Port `sanitizeStreamSettingsForRemote` TLS cert path stripping
-- [ ] 3.7 Unit-test transport: envelope decode, tag resolution, idempotent delete of missing tag
+- [x] 3.1 Port the SSRF-guarded HTTP transport (`internal/netsafe`) and Bearer-auth envelope client from upstream `web/runtime/remote.go`; allow-private context for admin-configured node destinations
+- [x] 3.2 Implement `NodeRuntime` interface + `Remote` impl: base URL build, base-path normalization, envelope decode (`Envelope`, `EnvelopeError`, `DecodeObj` w/ ErrEmptyObj)
+- [x] 3.3 Implement per-node `tag→remote-id` cache with refresh-on-miss from `/panel/api/inbounds/list` (concurrency-safe Replace/Set/Delete/Get/Snapshot)
+- [x] 3.4 Implement `Manager` caching one `Remote` per node id with `InvalidateNode`; `ForEach` walks every enabled node and joins per-node errors
+- [x] 3.5 Implement node API methods: inbound add/update/del/setEnable + form-encoded wireInbound, client add/update/delByEmail (Strategy A → re-push fallback on EnvelopeError), traffic resets (client/inbound/inbound-all/node-all), `FetchTrafficSnapshot` (list + onlines + lastOnline, best-effort), `Probe` over GET /server/status
+- [x] 3.6 Port `sanitizeStreamSettingsForRemote` TLS cert path stripping — strips `certificateFile`/`keyFile` when inline `certificate`/`key` arrays are non-empty; passes malformed JSON through unchanged
+- [x] 3.7 Unit-test transport: envelope decode (success + panel error + HTTP 401), tag resolution (populates from /list, refreshes on miss), idempotent DeleteInbound + DeleteClientByEmail on missing tag, basePath normalization (6 cases), sanitize (strip vs keep vs pass-through), netsafe IsPublic over 16 IPs incl. AWS metadata + CGNAT + ULA, allow-private context bypass
 
 ## 4. Admin Auth
 
