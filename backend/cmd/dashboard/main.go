@@ -36,6 +36,7 @@ import (
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
+	"github.com/cern/3xui-dashboard/internal/service/webhook"
 	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
@@ -154,6 +155,12 @@ func run() error {
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, logger)
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
+
+	// Webhook delivery: bus subscriber + admin endpoints.
+	webhookRepo := repository.NewWebhookRepo(db)
+	webhookDeliveryRepo := repository.NewWebhookDeliveryRepo(db)
+	webhookService := webhook.New(webhookRepo, webhookDeliveryRepo, bus, webhook.Options{}, logger)
+	adminhandler.NewWebhookHandler(webhookService).RegisterRoutes(apiAdminAuthed)
 	_ = settingRepo
 
 	// Periodic jobs: probe (~30s) + traffic collection (~60s).

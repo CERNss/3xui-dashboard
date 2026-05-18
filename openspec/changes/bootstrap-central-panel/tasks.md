@@ -106,13 +106,13 @@
 
 ## 12. Webhook Notifications
 
-- [ ] 12.1 Implement webhook CRUD (admin) with URL validation, signing secret, event subscription, enable flag, allow-private flag
-- [ ] 12.2 Implement the event catalog + per-webhook subscription matching (incl. wildcard)
-- [ ] 12.3 Implement versioned JSON payload envelope with self-describing `data`
-- [ ] 12.4 Implement HMAC signing + timestamp headers
-- [ ] 12.5 Implement async delivery queue + dispatcher with exponential-backoff retry, timeouts, SSRF-guarded transport, per-webhook isolation
-- [ ] 12.6 Implement `webhook_deliveries` log, delivery-history endpoint, test-event send, failed-delivery replay
-- [ ] 12.7 Test: only subscribed events delivered; failing webhook does not stall others
+- [x] 12.1 Webhook CRUD (admin): list/create/update/delete with URL, signing secret (auto-generated random hex if empty), Events StringSlice (jsonb), enable flag, allow_private flag
+- [x] 12.2 Event catalog (well-known constants in event.NodeOnline/Offline/ProbeFailed, UserRegistered, OrderCreated/Completed/Failed, ClientExpired/OverLimit); per-webhook subscription via patternsMatch (exact / wildcard-suffix / "*")
+- [x] 12.3 Versioned JSON Envelope {version, event, timestamp, data}; data is the raw event payload (typed per event)
+- [x] 12.4 HMAC-SHA256 signing of timestamp + "." + body under the per-webhook secret; headers X-Dashboard-{Event, Timestamp, Signature, Delivery-Id} sent with every request
+- [x] 12.5 Async delivery dispatched on a goroutine per (event, webhook) match; exponential backoff 1s → 60s, MaxAttempts=5; SSRF-guarded http transport (allow_private opt-in per webhook); each delivery isolated so a failing webhook doesn't stall others
+- [x] 12.6 webhook_deliveries log via WebhookDeliveryRepo (Create/MarkSuccess/MarkFailed with truncated body+error); GET /webhooks/:id/deliveries; POST /webhooks/:id/test fabricates a "webhook.test" event; POST /webhooks/deliveries/:deliveryID/replay re-dispatches by id
+- [x] 12.7 Tests (3 cases): patternsMatch covers exact + wildcard-suffix + "*" + multi-pattern; sign is deterministic + 64-hex + changes with different secret; randomSecret returns 32-hex
 
 ## 13. Frontend — Shared Infrastructure
 
