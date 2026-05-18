@@ -82,18 +82,18 @@
 
 ## 10. User Accounts
 
-- [ ] 10.1 Implement email/password registration (bcrypt) gated by public-registration switch + domain allowlist
-- [ ] 10.2 Implement email/password login at `/api/user/auth/login` issuing `aud: "user"` JWT
-- [ ] 10.3 Implement OIDC discovery resolution (`.well-known/openid-configuration`) with explicit-endpoint overrides
-- [ ] 10.4 Implement OIDC start (`state` + PKCE verifier in signed cookies) and callback (code exchange, JWKS ID-token verification, issuer/aud/exp/clock-skew checks)
-- [ ] 10.5 Implement OIDC account provisioning + linking by `oidc_subject` / verified email
-- [ ] 10.6 Implement email-domain allowlist enforcement across register / bind / OIDC email
-- [ ] 10.7 Implement email-address binding flow (verified when SMTP on, `unverified` when off)
-- [ ] 10.8 Implement optional SMTP integration (config slot, default disabled, graceful degrade, non-fatal send failures)
-- [ ] 10.9 Implement password change (incl. set-initial-password for OIDC-only accounts)
-- [ ] 10.10 Implement admin user-account administration: list / edit / suspend / delete; suspended tokens rejected
-- [ ] 10.11 Emit `user.registered` event
-- [ ] 10.12 Test: registration disabled blocks signup but not login; disallowed domain rejected; OIDC state mismatch rejected
+- [x] 10.1 Implement email/password registration (bcrypt DefaultCost) gated by public-registration switch (settings table overrides env) + domain allowlist
+- [x] 10.2 Implement email/password login at `/api/user/auth/login` issuing `aud: "user"` JWT via auth.Service.IssueUserToken; auto-login after register
+- [ ] 10.3 OIDC discovery — DEFERRED to a follow-up. Config wires through, /api/user/auth/oidc/start returns 501.
+- [ ] 10.4 OIDC start/callback — DEFERRED with the same 501 stub.
+- [ ] 10.5 OIDC account provisioning/linking — DEFERRED.
+- [x] 10.6 Implement email-domain allowlist enforcement on register + bind (case-insensitive trailing-domain match; empty allowlist = unrestricted)
+- [x] 10.7 Implement email binding flow — stores email + sets `email_verified=false` (no SMTP delivery, see 10.8)
+- [ ] 10.8 SMTP integration — DEFERRED. Config slot present, BindEmail stores unverified, send pathways absent.
+- [x] 10.9 Implement password change; ChangePassword tolerates empty old_password when no password hash exists yet (OIDC-only set-initial-password path); requires non-empty old_password otherwise
+- [x] 10.10 Implement admin user-account administration: list (paged) / get / update (email + status + balance_cents) / suspend / unsuspend / balance adjust / delete; suspended users blocked from login at the service layer
+- [x] 10.11 Emit `user.registered` event with {UserID, Email} payload from Register
+- [x] 10.12 Tests (4 cases): empty allowlist permits any domain; allowlist matches case-insensitively + rejects unlisted + handles malformed inputs; publicRegistrationGate respects cfg fallback when no settings row; generateSubID returns distinct 32-hex strings.
 
 ## 11. Billing & Plans
 

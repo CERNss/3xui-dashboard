@@ -34,6 +34,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
+	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
@@ -139,6 +140,13 @@ func run() error {
 	// Subscription assembler + public /sub routes (no auth).
 	subAsm := sub.New(userRepo, ownershipRepo, &subNodeLookup{svc: nodeService}, rtManager, logger, 0)
 	publichandler.NewSubHandler(subAsm, "").RegisterRoutes(engine)
+
+	// User accounts: service + handlers (admin + portal).
+	settingRepo := repository.NewSettingRepo(db)
+	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
+	userhandler.NewAuthHandler(userService, authSvc).RegisterRoutes(apiUser)
+	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
+	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 
 	// Periodic jobs: probe (~30s) + traffic collection (~60s).
 	scheduler := job.NewScheduler(logger)
