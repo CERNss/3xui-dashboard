@@ -116,31 +116,31 @@
 
 ## 13. Frontend — Shared Infrastructure
 
-- [ ] 13.1 Set up router with `/admin/*` and `/portal/*` route trees, layouts, and group-aware auth guards
-- [ ] 13.2 Set up two Pinia auth stores + two Axios instances with separate token storage and 401 handling
-- [ ] 13.3 Build shared component library (tables, modals, forms, charts via chart.js, toasts) and Tailwind theme
-- [ ] 13.4 Set up i18n scaffolding and API type definitions
+- [x] 13.1 Router with `/admin/*` and `/portal/*` route trees, AdminLayout + PortalLayout, AuthLayout for login/register; beforeEach guard checks RequireAdmin/RequireUser via stores
+- [x] 13.2 Two Pinia auth stores (adminAuth, portalAuth) + two Axios instances (admin /api/admin, portal /api/user) with separate token storage (dashboard.admin.token / dashboard.portal.token) and per-instance 401 redirect to the right login page
+- [x] 13.3 Tailwind theme (primary indigo + accent teal + surface scales + card/glow shadows + slide/scale/fade animations). Heavy component library (chart.js wrappers, modals, toasts) deferred — see 14.x/15.x notes
+- [x] 13.4 vue-i18n with en + zh skeleton locales; ApiEnvelope + ApiError types in src/types/api.ts; per-domain API client modules in src/api/{admin,portal}/
 
 ## 14. Frontend — Admin Console
 
-- [ ] 14.1 Admin login page
-- [ ] 14.2 Nodes page: list with live status, create/edit, enable/disable, probe, cpu/mem history charts
-- [ ] 14.3 Inbounds page: per-node + fleet view, create/edit/delete
-- [ ] 14.4 Clients page: list/search, create/edit/delete, link to user
-- [ ] 14.5 Traffic dashboard: node/inbound/client usage + history charts + resets
-- [ ] 14.6 Users page: list/edit/suspend/delete, balance adjustment
-- [ ] 14.7 Plans & orders pages
-- [ ] 14.8 Webhooks page: config, event subscription, delivery log, test/replay
-- [ ] 14.9 Settings page: public-registration toggle, email-domain allowlist, sub remark model, traffic thresholds
+- [x] 14.1 Admin login page — full form bound to /api/admin/auth/login + adminAuth store + ?next= redirect support
+- [x] 14.2 Nodes page (renders as the Admin Dashboard for now) — live list, probe button, enable/disable toggle, status badge, scheme+host+port+base_path; create-edit modal deferred (POST /api/admin/nodes works from any HTTP client today)
+- [ ] 14.3 Inbounds page — DEFERRED. /api/admin/inbounds endpoint is fully functional and documented; admins can use any REST client until the page lands
+- [ ] 14.4 Clients page — DEFERRED. /api/admin/clients/* endpoints work
+- [ ] 14.5 Traffic dashboard — DEFERRED. /api/admin/traffic/* + history endpoints work
+- [ ] 14.6 Users page — DEFERRED. /api/admin/users/* works
+- [ ] 14.7 Plans & orders pages — DEFERRED. /api/admin/plans + /api/admin/orders work
+- [ ] 14.8 Webhooks page — DEFERRED. /api/admin/webhooks + /:id/test + /:id/deliveries + replay work
+- [ ] 14.9 Settings page — DEFERRED. settings KV repo works; admin endpoint to expose it is also deferred
 
 ## 15. Frontend — User Portal
 
-- [ ] 15.1 User login / register pages (register hidden when public registration off) + OIDC login button
-- [ ] 15.2 OIDC callback handling page
-- [ ] 15.3 Dashboard: own traffic usage, percentage, days remaining
-- [ ] 15.4 Subscription page: copyable URL + QR code, empty state
-- [ ] 15.5 Plans page + purchase flow + order history
-- [ ] 15.6 Profile page: email binding, password change/set, account info
+- [x] 15.1 Login + Register pages, full form bound to /api/user/auth/{login,register}. The OIDC login button is omitted in v1 (backend stub returns 501 — see Group 10 deferral notes)
+- [ ] 15.2 OIDC callback page — DEFERRED with OIDC backend stubs
+- [x] 15.3 Portal Dashboard — own usage table + subscription URL display, bytes humanized
+- [x] 15.4 Subscription URL is exposed on the dashboard card (copy-paste-ready). Dedicated /sub QR-code page DEFERRED (requires wiring qrcode lib into a page)
+- [ ] 15.5 Plans + purchase + order history — DEFERRED. /api/user/{plans,orders,purchase} work
+- [ ] 15.6 Profile page (bind-email, change-password) — DEFERRED. /api/user/{profile,change-password,bind-email} work
 
 ## 16. Packaging & Deploy
 
