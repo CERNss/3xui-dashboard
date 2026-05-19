@@ -1,4 +1,4 @@
-.PHONY: build build-frontend build-backend dev dev-frontend dev-backend tidy clean test test-backend test-e2e test-frontend lint lint-backend lint-frontend migrate docker-build docker-up docker-down
+.PHONY: build build-frontend build-backend dev dev-frontend dev-backend tidy clean test test-backend test-e2e test-frontend test-ui test-ui-install lint lint-backend lint-frontend migrate docker-build docker-up docker-down
 
 # ---- Paths ----
 ROOT     := $(shell pwd)
@@ -55,7 +55,16 @@ test-backend:
 test-e2e:
 	cd $(BACKEND) && \
 	  INTEGRATION_DB_URL=$${INTEGRATION_DB_URL:-postgres://postgres:test@127.0.0.1:5499/dashboard_e2e?sslmode=disable} \
-	  go test -count=1 -v -run TestFullFlow ./internal/e2e/...
+	  go test -count=1 -v ./internal/e2e/...
+
+# Playwright UI smoke. Prep + binary lifecycle in
+# frontend/playwright.config.ts header comment. Run test-ui-install
+# once to fetch Chromium (~120MB).
+test-ui-install:
+	cd $(FRONTEND) && npm install --no-audit --no-fund && npm run e2e:install
+
+test-ui:
+	cd $(FRONTEND) && BASE_URL=$${BASE_URL:-http://127.0.0.1:8080} npm run e2e
 
 test-frontend:
 	cd $(FRONTEND) && npm run typecheck
