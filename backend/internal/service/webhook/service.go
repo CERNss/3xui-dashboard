@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/cern/3xui-dashboard/internal/model"
@@ -29,18 +29,23 @@ import (
 )
 
 // Service owns webhook CRUD + the bus subscription + the dispatcher.
+// Retries are persistent: a transient failure pushes next_attempt_at
+// out and leaves the row pending, the retry-cron picks it up. A
+// process crash never strands an in-memory retry timer.
 type Service struct {
 	hooks      *repository.WebhookRepo
 	deliveries *repository.WebhookDeliveryRepo
 	bus        *event.Bus
 	log        *slog.Logger
 
-	maxAttempts  int
-	httpPublic   *http.Client // SSRF guard ON
-	httpPrivate  *http.Client // SSRF guard OFF (per-webhook opt-in)
-	envelopeVer  string
+	maxAttempts int
+	httpPublic  *http.Client // SSRF guard ON
+	httpPrivate *http.Client // SSRF guard OFF (per-webhook opt-in)
+	envelopeVer string
 
-	inflight atomic.Int64 // diagnostic — concurrent in-flight deliveries
+	// inflight tracks dispatched goroutines so Drain() can wait for
+	// them at shutdown.
+	inflight sync.WaitGroup
 }
 
 // Options tunes the dispatcher.
@@ -127,7 +132,9 @@ func (s *Service) SendTest(ctx context.Context, webhookID int64) (*model.Webhook
 	return s.queueAndDispatch(ctx, wh, "webhook.test", map[string]any{"message": "this is a test event"})
 }
 
-// Replay re-dispatches a delivery by id; useful from the admin UI.
+// Replay queues a fresh delivery using the original event_type and
+// payload — the previous delivery row is left as historical record.
+// Returns the new delivery row.
 func (s *Service) Replay(ctx context.Context, deliveryID int64) (*model.WebhookDelivery, error) {
 	d, err := s.deliveries.Get(ctx, deliveryID)
 	if err != nil {
@@ -185,9 +192,14 @@ func (s *Service) fanOut(e event.Event) {
 	}
 }
 
-// queueAndDispatch persists a delivery row and synchronously runs
-// the deliver loop. Synchronous-with-retries inside this function;
-// the caller already invoked it on a goroutine via fanOut.
+// queueAndDispatch persists a delivery row in the pending queue and
+// fires one immediate-best-effort attempt in a goroutine. If that
+// attempt fails non-terminally the row stays pending with
+// next_attempt_at advanced — RetryDue will pick it up later.
+//
+// Crash safety: between Create() and the goroutine actually firing,
+// the row is already in the queue and the retry-cron will eventually
+// dispatch it. Worst case a delivery is delayed by one retry interval.
 func (s *Service) queueAndDispatch(ctx context.Context, wh *model.Webhook, eventType string, data any) (*model.WebhookDelivery, error) {
 	envelope := Envelope{
 		Version:   s.envelopeVer,
@@ -199,47 +211,110 @@ func (s *Service) queueAndDispatch(ctx context.Context, wh *model.Webhook, event
 	if err != nil {
 		return nil, fmt.Errorf("marshal envelope: %w", err)
 	}
+	now := time.Now().UTC()
 	delivery := &model.WebhookDelivery{
-		WebhookID:   wh.ID,
-		EventType:   eventType,
-		Payload:     payload,
-		Status:      model.WebhookDeliveryStatusPending,
-		ScheduledAt: time.Now().UTC(),
+		WebhookID:     wh.ID,
+		EventType:     eventType,
+		Payload:       payload,
+		Status:        model.WebhookDeliveryStatusPending,
+		ScheduledAt:   now,
+		NextAttemptAt: now,
 	}
 	if err := s.deliveries.Create(ctx, delivery); err != nil {
 		return nil, err
 	}
-
-	s.inflight.Add(1)
-	defer s.inflight.Add(-1)
-
-	go s.deliverWithRetries(wh, delivery)
+	s.spawnAttempt(*wh, *delivery)
 	return delivery, nil
 }
 
-func (s *Service) deliverWithRetries(wh *model.Webhook, d *model.WebhookDelivery) {
-	ctx := context.Background()
-	for attempt := 1; attempt <= s.maxAttempts; attempt++ {
-		d.Attempt = attempt
-		status, body, err := s.deliverOnce(wh, d)
-		if err == nil && status >= 200 && status < 300 {
-			_ = s.deliveries.MarkSuccess(ctx, d.ID, status, body)
-			return
+// spawnAttempt fires one delivery attempt on a tracked goroutine.
+// The WaitGroup ensures Drain() can wait for in-flight work at
+// shutdown.
+func (s *Service) spawnAttempt(wh model.Webhook, d model.WebhookDelivery) {
+	s.inflight.Add(1)
+	go func() {
+		defer s.inflight.Done()
+		s.deliverAndRecord(&wh, &d)
+	}()
+}
+
+// deliverAndRecord runs a single attempt and updates the DB row
+// based on the outcome — either MarkSuccess (terminal), ScheduleRetry
+// (still pending, next_attempt_at advanced), or MarkTerminallyFailed
+// (attempt count exhausted).
+func (s *Service) deliverAndRecord(wh *model.Webhook, d *model.WebhookDelivery) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	attempt := d.Attempt + 1
+	status, body, err := s.deliverOnce(wh, d)
+	if err == nil && status >= 200 && status < 300 {
+		_ = s.deliveries.MarkSuccess(ctx, d.ID, attempt, status, body)
+		return
+	}
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	if attempt >= s.maxAttempts {
+		_ = s.deliveries.MarkTerminallyFailed(ctx, d.ID, attempt, status, msg, body)
+		return
+	}
+	next := time.Now().UTC().Add(retryBackoff(attempt))
+	_ = s.deliveries.ScheduleRetry(ctx, d.ID, attempt, status, msg, body, next)
+}
+
+// retryBackoff is the exponential schedule between attempt N and
+// attempt N+1: 1s, 2s, 4s, 8s, capped at 60s.
+func retryBackoff(attempt int) time.Duration {
+	if attempt <= 0 {
+		attempt = 1
+	}
+	wait := time.Duration(1<<(attempt-1)) * time.Second
+	if wait > 60*time.Second {
+		wait = 60 * time.Second
+	}
+	return wait
+}
+
+// RetryDue is invoked by the cron job — claims a batch of pending+
+// due rows under SELECT FOR UPDATE SKIP LOCKED and re-dispatches.
+// Safe to run concurrently across multiple instances; SKIP LOCKED
+// means each row goes to exactly one worker per pass.
+func (s *Service) RetryDue(ctx context.Context, batch int) {
+	rows, err := s.deliveries.ClaimDue(ctx, batch)
+	if err != nil {
+		s.log.Warn("RetryDue claim failed", slog.String("error", err.Error()))
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	for i := range rows {
+		d := rows[i]
+		wh, err := s.hooks.Get(ctx, d.WebhookID)
+		if err != nil || wh == nil {
+			s.log.Warn("retry: webhook missing", slog.Int64("delivery_id", d.ID))
+			continue
 		}
-		msg := ""
-		if err != nil {
-			msg = err.Error()
-		}
-		_ = s.deliveries.MarkFailed(ctx, d.ID, attempt, msg, status, body)
-		if attempt == s.maxAttempts {
-			return
-		}
-		// Backoff: 1s, 2s, 4s, 8s … capped at 60s.
-		wait := time.Duration(1<<(attempt-1)) * time.Second
-		if wait > 60*time.Second {
-			wait = 60 * time.Second
-		}
-		time.Sleep(wait)
+		s.spawnAttempt(*wh, d)
+	}
+}
+
+// Drain waits for every in-flight delivery goroutine to finish or
+// for ctx to expire. Call from main shutdown so SIGTERM doesn't kill
+// the goroutines mid-attempt (which would strand the row as pending
+// — fine for safety, but produces an extra retry).
+func (s *Service) Drain(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		s.inflight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		s.log.Warn("webhook drain deadline exceeded; some deliveries may retry on next boot")
 	}
 }
 

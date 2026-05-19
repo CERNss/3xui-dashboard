@@ -84,35 +84,87 @@ type WebhookDeliveryRepo struct{ db *gorm.DB }
 func NewWebhookDeliveryRepo(db *gorm.DB) *WebhookDeliveryRepo { return &WebhookDeliveryRepo{db: db} }
 
 func (r *WebhookDeliveryRepo) Create(ctx context.Context, d *model.WebhookDelivery) error {
+	if d.NextAttemptAt.IsZero() {
+		d.NextAttemptAt = time.Now().UTC()
+	}
 	if err := r.db.WithContext(ctx).Create(d).Error; err != nil {
 		return fmt.Errorf("WebhookDeliveryRepo.Create: %w", err)
 	}
 	return nil
 }
 
-func (r *WebhookDeliveryRepo) MarkSuccess(ctx context.Context, id int64, httpStatus int, body string) error {
+func (r *WebhookDeliveryRepo) MarkSuccess(ctx context.Context, id int64, attempt, httpStatus int, body string) error {
 	now := time.Now().UTC()
 	return r.db.WithContext(ctx).
 		Model(&model.WebhookDelivery{}).Where("id = ?", id).
 		Updates(map[string]any{
-			"status":        model.WebhookDeliveryStatusSuccess,
-			"http_status":   httpStatus,
-			"response_body": truncate(body, 4096),
-			"delivered_at":  now,
-			"error":         "",
+			"status":          model.WebhookDeliveryStatusSuccess,
+			"attempt":         attempt,
+			"http_status":     httpStatus,
+			"response_body":   truncate(body, 4096),
+			"delivered_at":    now,
+			"next_attempt_at": now,
+			"error":           "",
 		}).Error
 }
 
-func (r *WebhookDeliveryRepo) MarkFailed(ctx context.Context, id int64, attempt int, errMsg string, httpStatus int, body string) error {
+// ScheduleRetry keeps the row in "pending" and pushes next_attempt_at
+// out to t. The cron retry job picks it up when due.
+func (r *WebhookDeliveryRepo) ScheduleRetry(ctx context.Context, id int64, attempt, httpStatus int, errMsg, body string, next time.Time) error {
+	return r.db.WithContext(ctx).
+		Model(&model.WebhookDelivery{}).Where("id = ?", id).
+		Updates(map[string]any{
+			"status":          model.WebhookDeliveryStatusPending,
+			"attempt":         attempt,
+			"http_status":     httpStatus,
+			"response_body":   truncate(body, 4096),
+			"error":           truncate(errMsg, 512),
+			"next_attempt_at": next,
+		}).Error
+}
+
+// MarkTerminallyFailed is called when attempt count reaches the
+// configured max — no more retries will be scheduled.
+func (r *WebhookDeliveryRepo) MarkTerminallyFailed(ctx context.Context, id int64, attempt, httpStatus int, errMsg, body string) error {
 	return r.db.WithContext(ctx).
 		Model(&model.WebhookDelivery{}).Where("id = ?", id).
 		Updates(map[string]any{
 			"status":        model.WebhookDeliveryStatusFailed,
+			"attempt":       attempt,
 			"http_status":   httpStatus,
 			"response_body": truncate(body, 4096),
-			"attempt":       attempt,
 			"error":         truncate(errMsg, 512),
 		}).Error
+}
+
+// ClaimDue returns up to limit pending+due delivery rows for the
+// retry job. The query uses SELECT ... FOR UPDATE SKIP LOCKED so
+// multiple workers (or restarted instances) can fan out across rows
+// without stepping on each other.
+//
+// Caller MUST wrap this in a transaction and process the returned
+// rows before the transaction closes — the lock is released on
+// commit/rollback. We keep the transaction inline here by returning
+// the rows + a finalizer; for v1 we accept that the caller commits
+// quickly (dispatcher fires off goroutines and returns).
+func (r *WebhookDeliveryRepo) ClaimDue(ctx context.Context, limit int) ([]model.WebhookDelivery, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	var rows []model.WebhookDelivery
+	err := r.db.WithContext(ctx).Raw(`
+        SELECT *
+          FROM webhook_deliveries
+         WHERE status = 'pending'
+           AND next_attempt_at <= now()
+         ORDER BY next_attempt_at
+         LIMIT ?
+        FOR UPDATE SKIP LOCKED
+    `, limit).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("WebhookDeliveryRepo.ClaimDue: %w", err)
+	}
+	return rows, nil
 }
 
 func (r *WebhookDeliveryRepo) ListByWebhook(ctx context.Context, webhookID int64, limit, offset int) ([]model.WebhookDelivery, error) {

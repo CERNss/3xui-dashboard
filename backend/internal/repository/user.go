@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/cern/3xui-dashboard/internal/model"
 )
@@ -147,11 +148,17 @@ func (r *UserRepo) Delete(ctx context.Context, id int64) error {
 
 // AdjustBalance atomically adds delta to balance_cents and writes a
 // balance_logs row. Returns the new balance.
+//
+// Concurrency: the user row is read with SELECT ... FOR UPDATE so
+// concurrent calls on the same user serialize through the row lock.
+// Without the lock, a parallel charge + refund could each read the
+// same starting balance and persist conflicting "balance_after"
+// values, leaking money.
 func (r *UserRepo) AdjustBalance(ctx context.Context, userID, delta int64, reason, note string, orderID *int64) (int64, error) {
 	var newBalance int64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var u model.User
-		if err := tx.Clauses().First(&u, userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&u, userID).Error; err != nil {
 			return err
 		}
 		newBalance = u.BalanceCents + delta

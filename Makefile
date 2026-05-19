@@ -1,4 +1,4 @@
-.PHONY: build build-frontend build-backend dev dev-frontend dev-backend tidy clean test test-backend test-frontend lint lint-backend lint-frontend migrate docker-build docker-up docker-down
+.PHONY: build build-frontend build-backend dev dev-frontend dev-backend tidy clean test test-backend test-e2e test-frontend lint lint-backend lint-frontend migrate docker-build docker-up docker-down
 
 # ---- Paths ----
 ROOT     := $(shell pwd)
@@ -46,6 +46,16 @@ test: test-backend test-frontend
 
 test-backend:
 	cd $(BACKEND) && go test ./...
+
+# test-e2e expects $INTEGRATION_DB_URL to point at a writable Postgres
+# (the integration test resets the schema before each run). Spin one
+# up with:
+#   docker run -d --rm --name pg-e2e -e POSTGRES_PASSWORD=test \
+#     -e POSTGRES_DB=dashboard_e2e -p 5499:5432 postgres:16-alpine
+test-e2e:
+	cd $(BACKEND) && \
+	  INTEGRATION_DB_URL=$${INTEGRATION_DB_URL:-postgres://postgres:test@127.0.0.1:5499/dashboard_e2e?sslmode=disable} \
+	  go test -count=1 -v -run TestFullFlow ./internal/e2e/...
 
 test-frontend:
 	cd $(FRONTEND) && npm run typecheck
