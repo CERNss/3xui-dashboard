@@ -1,133 +1,159 @@
-# Tasks — add-protocol-wireguard
+# Tasks — add-protocol-wireguard (v2, post-T0)
 
-## 0. Prerequisite: verify 3x-ui WG API surface
+## ✅ 0. T0 — endpoint capture (DONE 2026-05-20)
 
-Before any code, capture the actual endpoint shape from a real
-node. The implementation pivots on this — different 3x-ui forks
-expose WG differently.
+Findings in `notes/3xui-wg-api.md`. Key conclusions:
+- Fork unifies WG under `/panel/api/inbounds/*` — no separate
+  WGClient surface
+- Peer add/remove = RMW on inbound.settings.peers[] via
+  `POST /panel/api/inbounds/update/:id`
+- Node generates keypairs by default; whether we can override is
+  T1.5 to verify
+- Side concern: existing dashboard XrayClient may not match the
+  fork's actual route set — separate `audit-xrayclient-vs-fork`
+  change tracks this
 
-- [ ] 0.1 Set up a test 3x-ui node with WG panel enabled
-  (minimum version per the proposal — verify whether the
-  panel ships in 3x-ui main or as a separate fork).
-- [ ] 0.2 Capture exact paths + request/response envelopes for:
-  - List WG inbounds
-  - Add WG inbound (server-side config)
-  - List WG peers under an inbound
-  - Add WG peer (with public key)
-  - Remove WG peer
-- [ ] 0.3 Record findings in `openspec/changes/add-protocol-wireguard/notes/3xui-wg-api.md`.
-- [ ] 0.4 Re-confirm or update design.md's "Runtime client split"
-  section + the assumed endpoint paths in proposal.md.
+## 1. Schema + crypto (low risk, foundational)
 
-## 1. Runtime client refactor
+- [ ] 1.1 Migration `0009_wg_peers.up.sql`:
+  ```sql
+  CREATE TABLE wg_peers (
+      id                    BIGSERIAL PRIMARY KEY,
+      client_ownership_id   BIGINT NOT NULL UNIQUE REFERENCES client_ownerships(id) ON DELETE CASCADE,
+      public_key            TEXT NOT NULL,
+      private_key_encrypted BYTEA NOT NULL,
+      allocated_ip          INET NOT NULL,
+      inbound_id            BIGINT NOT NULL,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  ALTER TABLE nodes
+      ADD COLUMN supported_protocols TEXT[] NOT NULL DEFAULT ARRAY['vless','vmess','trojan','shadowsocks'];
+  ```
+- [ ] 1.2 `internal/service/wgcrypto/`:
+  - `keypair.go` — generate curve25519 pair via
+    `golang.org/x/crypto/curve25519`; derive public from private
+    via `X25519(priv, BasePoint)`
+  - `cipher.go` — AES-256-GCM with key from `WG_MASTER_KEY` env;
+    nonce stored as ciphertext prefix
+  - tests: roundtrip, tampered ciphertext rejected, derive matches
+    a known WG keypair fixture
 
-- [ ] 1.1 Extract `runtime.XrayClient` interface from the existing
-  per-node Remote (no behavior change — pure rename + interface
-  declaration so the future WGClient can sit alongside).
-- [ ] 1.2 Add `runtime.WGClient` interface + `Manager.GetWG(nodeID)`
-  helper that returns `(WGClient, error)`. Error includes
-  `ErrWGCapabilityAbsent` distinct from `ErrNodeNotFound`.
-- [ ] 1.3 Add `runtime.WGInbound` + `runtime.WGPeer` types.
-- [ ] 1.4 Implement WGClient against the API shape captured in T0.
-- [ ] 1.5 Tests: httptest fake matching the captured envelope shape.
+## 2. Runtime client — extend `XrayClient` (no split)
 
-## 2. Probe + WG capability detection
+- [ ] 2.1 Add `XrayClient.UpdateInbound(ctx, id int64, inbound runtime.Inbound) error`
+  → `POST /panel/api/inbounds/update/:id`. Existing `AddInbound`
+  + `RemoveInbound` patterns; same `{success, msg, obj}` envelope.
+- [ ] 2.2 Confirm probe call → `GET /panel/api/inbounds/options`
+  returns enumerable protocol list. If yes, parse + persist into
+  `nodes.supported_protocols`. If no (T0 didn't verify shape),
+  fall back to a probe-create+probe-delete sniff.
+- [ ] 2.3 Tests: httptest fake serves the captured WG inbound shape;
+  client round-trips through marshal/unmarshal.
 
-- [ ] 2.1 Extend `ProbeJob.probeOne` to call WG list endpoint after
-  the Xray list. On 404 → record `node.wg_supported = false` in
-  the node row + status object; on 200 → record true.
-- [ ] 2.2 Migration: add `nodes.wg_supported BOOLEAN NOT NULL DEFAULT FALSE`.
-- [ ] 2.3 Admin Nodes page surfaces the WG flag (icon chip).
+## 3. WG-aware Inbound type
 
-## 3. Inbound model + storage
+- [ ] 3.1 `runtime.WGSettings` Go struct matching captured JSON:
+  ```go
+  type WGSettings struct {
+      MTU         int       `json:"mtu"`
+      SecretKey   string    `json:"secretKey"`
+      Peers       []WGPeer  `json:"peers"`
+      NoKernelTun bool      `json:"noKernelTun"`
+  }
+  type WGPeer struct {
+      PrivateKey string   `json:"privateKey"`
+      PublicKey  string   `json:"publicKey"`
+      AllowedIPs []string `json:"allowedIPs"`
+      KeepAlive  int      `json:"keepAlive"`
+  }
+  ```
+- [ ] 3.2 Helper `(inb Inbound) IsWireguard() bool` — checks
+  `protocol == "wireguard"`. Used everywhere conditional logic
+  branches.
 
-- [ ] 3.1 Migration: `node_inbound_snapshots.is_wireguard BOOLEAN`,
-  `wg_peers` table per design.md.
-- [ ] 3.2 New `internal/service/inbound/wg.go` with WG-typed CRUD.
-- [ ] 3.3 Inbound admin handler: route `protocol=wireguard` to the
-  WG service path.
+## 4. Provisioning — peer add/remove via RMW + advisory lock
 
-## 4. Crypto: WG keypair gen + master encryption
+- [ ] 4.1 `ClientService.AddWGPeer(ctx, ownership, inbound)`:
+  - Open tx
+  - `SELECT pg_advisory_xact_lock(inbound_id)` to serialize
+  - GET inbound (fresh state, others may have added peers since
+    we last looked)
+  - Generate keypair locally via wgcrypto
+  - Allocate next-free IP from `<inbound.subnet>` (parse from
+    settings.peers[].allowedIPs first byte / hardcoded 10.0.0.0/24
+    in v1 if no explicit subnet field)
+  - Append peer to settings.peers[]
+  - POST `/inbounds/update/:id` with new settings
+  - Insert `wg_peers` row with AES-encrypted private key
+  - Commit
+- [ ] 4.2 `ClientService.RemoveWGPeer(ctx, ownership)`:
+  - Same RMW pattern; remove peer by public_key match
+- [ ] 4.3 Branch `ClientService.Provision` on `inbound.IsWireguard()`:
+  - WG → AddWGPeer path above
+  - non-WG → existing `/clients/add` path
+- [ ] 4.4 Branch `ExpiryJob.disableOnNode` similarly:
+  - WG → RemoveWGPeer
+  - non-WG → existing `UpdateClient(Enable=false)`
+- [ ] 4.5 Tests: integration test with mockPanel that captures the
+  full RMW sequence (GET, mutate, POST); verify final inbound has
+  the new peer; verify ownership row + wg_peers row both written
 
-- [ ] 4.1 `internal/service/wgcrypto/keypair.go`: generate curve25519
-  pair via `golang.org/x/crypto/curve25519`. Public + private keys
-  base64-encoded per WireGuard wire format.
-- [ ] 4.2 `WG_MASTER_KEY` env var: 32 hex-encoded bytes for
-  AES-256-GCM of stored private keys. Helper to encrypt/decrypt
-  with per-row nonce stored prefix in BYTEA.
-- [ ] 4.3 Tests: roundtrip; corrupt ciphertext rejected;
-  wrong-master-key rejected.
+## 5. Subscription rendering
 
-## 5. Client provisioning: WG path
+- [ ] 5.1 `internal/sub/wireguard.go`: `Build(peer, inbound, node) string`
+  → produces `.conf` ini text per design.md format
+- [ ] 5.2 Sub handler: `?format=wireguard` → text/plain `.conf` body
+- [ ] 5.3 `?format=wireguard-zip` → ZIP with one `.conf` per peer
+  (via `archive/zip`)
+- [ ] 5.4 Extend Clash converter — WG outbound per peer
+- [ ] 5.5 Extend sing-box converter — WG outbound per peer
+- [ ] 5.6 Base64 + SIP008 SKIP WG peers (per existing sub spec
+  delta — emit `X-Subscription-Hint: wireguard` header if user
+  has WG entries)
+- [ ] 5.7 Tests: `wg_peers` fixtures → `.conf` body parses cleanly
+  via `gopkg.in/ini.v1`; Clash YAML output valid via `yaml.Unmarshal`
 
-- [ ] 5.1 `clientsvc.ProvisionClient` branches on
-  `inbound.IsWireguard`. WG path:
-  - Reserve next-free IP from the inbound subnet via
-    `pg_advisory_xact_lock` on `(inbound_id, ip_low_watermark)`
-    so two concurrent provisions can't allocate the same IP.
-  - Generate keypair, encrypt private, insert `wg_peers` row.
-  - Call `WGClient.AddWGPeer` with public key + allocated IP/32.
-  - Insert `client_ownerships` row referencing the inbound.
-- [ ] 5.2 Port-conflict detection: reject WG inbound creation if its
-  listen port collides with any existing Xray inbound on that node
-  (the node's wg-quick + Xray would fight over the port otherwise).
-- [ ] 5.3 Revocation (ExpiryJob.disableOnNode): branch on IsWG and
-  call `RemoveWGPeer` instead of `UpdateClient(Enable=false)`.
-- [ ] 5.4 Tests: provision → wg_peers row exists, public key on
-  node; expire → peer removed from node, wg_peers row retained
-  (for renewal); renew → peer re-added with the same public key.
+## 6. Handlers
 
-## 6. Subscription assembly
+- [ ] 6.1 `admin.InboundHandler.create` route already exists; ensure
+  it pipes `protocol=wireguard` through unchanged (the unified
+  XrayClient.AddInbound handles it)
+- [ ] 6.2 `admin.InboundHandler.listPeers(:id)` — new endpoint
+  exposing wg_peers rows (masked private keys) for ops debugging
+- [ ] 6.3 Sub handler: ensure UA auto-detect prefers `wireguard`
+  format for WG-only subscriptions (per subscription spec delta)
 
-- [ ] 6.1 `internal/sub/wireguard.go`: build `.conf` text from a
-  `wg_peers` row + its inbound. Use Go's `text/template` for the
-  Interface/Peer blocks.
-- [ ] 6.2 New format keys: `wireguard` (single conf),
-  `wireguard-zip` (multi-peer zip via `archive/zip`).
-- [ ] 6.3 Extend Clash + sing-box converters to emit WG outbound
-  stanzas when a peer exists for the user. URI base64 + SIP008
-  formats SKIP wg peers (no representation).
-- [ ] 6.4 Tests: single-peer conf has Interface + Peer; multi-peer
-  zip contains one file per peer; Clash output has wireguard
-  outbound type when peer present.
+## 7. Frontend
 
-## 7. HTTP handlers
+- [ ] 7.1 Inbound editor modal: conditional fields on `protocol ==
+  'wireguard'` — drop transport/security tabs, show subnet input
+  (defaulting `10.0.0.0/24`), MTU input
+- [ ] 7.2 Inbound list page: "WireGuard" filter tab; column shows
+  peer count instead of client count
+- [ ] 7.3 Portal Subscription page: format picker gets "WireGuard"
+  option; button text → "下载配置文件" instead of "复制 URL"
+- [ ] 7.4 vitest mount smoke for WG inbound editor + WG sub format
 
-- [ ] 7.1 Admin: `POST /api/admin/inbounds` accepts
-  `protocol=wireguard` and dispatches to the WG service. Same
-  endpoint, branched by protocol field.
-- [ ] 7.2 Admin: new `GET /api/admin/inbounds/wireguard/:id/peers`
-  for ops debugging — lists allocated IPs + masked public keys.
-- [ ] 7.3 Public sub: subscription handler already routes by
-  `?format=` — wire the new format strings.
+## 8. Capability gating
 
-## 8. Frontend
-
-- [ ] 8.1 Inbound list page: tab/section for WireGuard inbounds.
-- [ ] 8.2 New `InboundEditorWGModal.vue`: subnet + listen port +
-  server-generated keypair display (read-only, copy-to-clipboard).
-- [ ] 8.3 Portal Subscription page: format picker gains
-  "WireGuard"; button text + click handler swap to download
-  `.conf` instead of QR/copy.
-- [ ] 8.4 vitest: WG modal smoke + format-picker branch test.
+- [ ] 8.1 Backend: list of available providers + protocols at
+  `GET /api/admin/capabilities` (admin frontend reads this on
+  page load)
+- [ ] 8.2 Frontend: hide WG features when no probed node has
+  `wireguard` in supported_protocols
 
 ## 9. Spec promotion + ROADMAP
 
-- [ ] 9.1 Move `openspec/changes/add-protocol-wireguard/specs/*`
-  → `openspec/specs/` (modifications folded into the canonical
-  spec.md files; new `wireguard` capability NOT created — WG is
-  a `multi-protocol` extension across runtime + inbound + sub).
-- [ ] 9.2 Update `openspec/specs/README.md` pillar table: 多协议
-  4/4 → 5/5; move "WireGuard runtime + sub" from gap list to
-  module list.
-- [ ] 9.3 Update `openspec/ROADMAP.md`: mark #8 ✅.
+- [ ] 9.1 Fold `changes/add-protocol-wireguard/specs/*` into
+  `openspec/specs/{runtime-3xui-client,inbound-management,
+  client-provisioning,subscription}/spec.md`
+- [ ] 9.2 ROADMAP: 多协议 4/4 → 5/5; #8 ❌ → ✅
 
 ## 10. Documentation
 
-- [ ] 10.1 `.env.example`: add `WG_MASTER_KEY` block with the
-  generation command + rotation footnote.
-- [ ] 10.2 `docs/operator/wireguard-setup.md`: brief note covering
-  3x-ui WG panel installation prereq + WG_MASTER_KEY generation
-  + first-WG-inbound walkthrough.
-- [ ] 10.3 Mention port-conflict avoidance + revocation semantics
-  in the operator doc.
+- [ ] 10.1 `.env.example`: WG_MASTER_KEY block + generation
+  command (`openssl rand -hex 32`) + rotation hazard footnote
+- [ ] 10.2 `docs/operator/wireguard-setup.md`: fork compatibility
+  note (this dashboard's WG support requires the extended 3x-ui
+  fork running on the operator's nodes), WG_MASTER_KEY setup,
+  first-WG-inbound walkthrough

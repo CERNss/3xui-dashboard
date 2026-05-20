@@ -1,215 +1,270 @@
-# Design — add-protocol-wireguard
+# Design — add-protocol-wireguard (post-T0, v2)
 
-## Why this is structurally different from #1-#7
+> **Status**: T0 capture done (2026-05-20). See
+> `notes/3xui-wg-api.md` for raw findings. This document supersedes
+> the original v1 design — kept in git history if archeology
+> needed.
 
-Every previous protocol-adjacent change extended the same Xray-shaped
-abstractions: a `runtime.Inbound` row, an `inbound-management`
-editor with transport/security tabs, a `BuildLink` switch that emits
-`vless://` / `vmess://` / `trojan://` / `ss://`. WireGuard breaks
-the model:
+## What changed vs v1
 
-| Dimension | Xray-shaped (4 existing) | WireGuard |
-|---|---|---|
-| Engine | Xray-core | wireguard-go / kernel module |
-| API surface on 3x-ui | `/panel/api/inbounds/*` | `/panel/api/wireguard/*` (separate) |
-| Transport | TCP/TLS layered | UDP, single layer |
-| Auth | Per-client UUID / password | Per-peer ed25519/curve25519 keypair |
-| Sub format | URI scheme + base64 | `.conf` file |
-| Client identity | `email` field on inbound settings | `[Peer]` block matched by PublicKey |
-| Enable/disable | `enable: false` on client | Add/remove from `[Peer]` list |
+v1 assumed stock 3x-ui needs a separate WG panel surface that we'd
+wrap via a new `runtime.WGClient` interface. T0 disproved that:
+the deployed fork unifies WG under the same `/panel/api/inbounds/*`
+endpoint set, distinguishing by `protocol="wireguard"` + a
+WG-specific `settings` JSON shape. No new runtime client. No new
+auth path. No new wire envelope.
 
-The design choice is to **carve out a WG-specific path through
-each layer** rather than try to unify with the existing 4. Trying
-to unify produces a leaky abstraction (every callsite branches on
-"is WG?" anyway).
+What stays carved out:
+1. **Subscription rendering** — WG outputs `.conf` not URI
+2. **Peer storage** — `peers[]` nested in inbound settings (not a
+   `/clients/*` entry), so peer add/remove = read-modify-write
+   the whole inbound
+3. **Key custody** — node generates both halves of the keypair;
+   we read + AES-encrypt + store locally
 
 ## Architecture overview
 
 ```
-              ┌──────────────────────────────────────────────────────┐
-              │  3xui-dashboard                                      │
-              │                                                      │
-              │  ┌──────────────────┐  ┌────────────────────────┐   │
-              │  │ Xray inbound     │  │ WireGuard inbound      │   │
-              │  │ flow (existing)  │  │ flow (NEW)             │   │
-              │  └────────┬─────────┘  └───────────┬────────────┘   │
-              │           │ runtime.AddClient      │ runtime.AddWGPeer
-              │           │ runtime.UpdateClient   │ runtime.RemoveWGPeer
-              │           ▼                        ▼                 │
-              │   ┌───────────────┐        ┌──────────────────┐     │
-              │   │ XrayClient    │        │ WGClient (NEW)   │     │
-              │   │ (per-node)    │        │ (per-node)       │     │
-              │   └───────┬───────┘        └────────┬─────────┘     │
-              └───────────┼─────────────────────────┼───────────────┘
-                          │ /panel/api/inbounds/*   │ /panel/api/wireguard/*
-                          ▼                         ▼
-                  ┌─────────────────────────────────────┐
-                  │ 3x-ui panel on node                 │
-                  │  (single Bearer token serves both   │
-                  │   surfaces)                         │
-                  └─────────────────────────────────────┘
+                              Existing path (XrayClient)
+              ┌────────────────────────────────────────────┐
+              │  3xui-dashboard                            │
+              │                                            │
+              │  ┌─────────────────────────┐               │
+              │  │ XrayClient (per-node)    │              │
+              │  │                          │              │
+              │  │   AddInbound(protocol="vless"/"vmess"   │
+              │  │              /"trojan"/"shadowsocks"    │
+              │  │              /"wireguard"/"hysteria")   │
+              │  │                                         │
+              │  │   AddClient(email, inboundId, ...)      │
+              │  │     ↓                                   │
+              │  │     uses /panel/api/clients/add         │
+              │  │     for VLESS/VMess/Trojan/SS/Hysteria  │
+              │  │                                         │
+              │  │   UpdateInbound(id, full settings)      │
+              │  │     ↓                                   │
+              │  │     uses /panel/api/inbounds/update/:id │
+              │  │     used by WG peer add/remove          │
+              │  │     (read settings → mutate peers[] →   │
+              │  │      write back)                        │
+              │  └─────────────────────────────────────────┘
+              └────────────────────────────────────────────┘
+                          │
+                          ▼ Bearer token
+              ┌─────────────────────────────────────────┐
+              │ 3x-ui fork                              │
+              │  /panel/api/inbounds/*                  │
+              │  /panel/api/clients/*                   │
+              │  /panel/api/server/*                    │
+              └─────────────────────────────────────────┘
 ```
 
-## Runtime client split
+## API contract for WG (captured from T0)
 
-Today `runtime.Manager` exposes a single client type per node. The
-clean version: keep `Manager` as the registry but split the
-per-node client into two interfaces.
+### Create WG inbound
 
-```go
-package runtime
+```
+POST /panel/api/inbounds/add
+Authorization: Bearer <token>
+Content-Type: application/json   (or x-www-form-urlencoded with field
+                                  names matching the JSON keys —
+                                  empirically the latter also works)
 
-// XrayClient is the existing surface, renamed.
-type XrayClient interface {
-    ListInbounds(ctx) ([]Inbound, error)
-    AddClient(ctx, tag string, c Client) error
-    UpdateClient(ctx, tag string, c Client) error
-    // …
-}
-
-// WGClient is the new WG panel surface.
-type WGClient interface {
-    ListWGInbounds(ctx) ([]WGInbound, error)
-    AddWGPeer(ctx, inboundID int64, p WGPeer) error
-    RemoveWGPeer(ctx, inboundID int64, publicKey string) error
-}
-
-// Node bundles both — Manager.Get returns this.
-type Node interface {
-    XrayClient
-    WGClient
-    Probe(ctx) (Probe, error)  // unified, both surfaces healthy
+{
+  "remark": "wg-tokyo",
+  "enable": true,
+  "expiryTime": 0,
+  "listen": "",
+  "port": 51820,
+  "protocol": "wireguard",
+  "settings": "{...JSON string of wgSettings...}",
+  "streamSettings": "",            // EMPTY for WG (no transport layer)
+  "sniffing": "{...JSON string...}"
 }
 ```
 
-`Probe` returns `online` only when BOTH `/inbounds/list` AND
-`/wireguard/list` (or whatever the actual paths are) return 200.
-If WG isn't installed on a particular node, the WG endpoint
-returns 404; the probe SHOULD treat 404 as "WG capability absent"
-not "node offline" — the node can still serve Xray inbounds.
+`settings` for `protocol="wireguard"`:
 
-## Key generation: client-side
+```json
+{
+  "mtu": 1420,
+  "secretKey": "<base64 32 bytes>",   // server private key (node-generated)
+  "peers": [
+    {
+      "privateKey": "<base64>",       // peer private key (node-generated!)
+      "publicKey":  "<base64>",
+      "allowedIPs": ["10.0.0.2/32"],
+      "keepAlive":  0
+    }
+  ],
+  "noKernelTun": false
+}
+```
 
-Choose **dashboard generates the keypair**, not the node. Reasons:
+### Add WG peer (no atomic endpoint — RMW)
 
-- Private keys never traverse 3x-ui's API surface
-- No dependency on a specific 3x-ui WG endpoint version's behavior
-  around key returns
-- `golang.org/x/crypto/curve25519` is stdlib-adjacent (we already
-  pull in golang.org/x/crypto for password hashing)
+```
+1. GET  /panel/api/inbounds/get/<id>           ← read full inbound
+2. parse settings JSON → mutate peers[] (append/remove)
+3. POST /panel/api/inbounds/update/<id>
+   { ...full inbound row with new settings string... }
+```
 
-Flow:
-1. `ProvisionClient(user, wg_inbound)` generates a fresh curve25519
-   keypair locally
-2. Allocates next-free IP from `wg_inbound.subnet` (transactional)
-3. Stores `(public_key, private_key_encrypted, allocated_ip)` in
-   a new `wg_peers` table
-4. Calls `WGClient.AddWGPeer(inbound_id, {public_key, allowed_ips: allocated_ip/32})`
-   — only the PUBLIC key goes to the node
-5. Subscription handler decrypts + emits the private key in the
-   `.conf` file
+**Concurrency hazard**: two callers can step on each other.
+Mitigation v1: `pg_advisory_xact_lock(inbound_id)` around the
+RMW window. v2: optimistic check (re-read, compare peer count,
+retry once).
 
-Private key encryption uses a dashboard-level master key from a
-new `WG_MASTER_KEY` env var (32-byte AES key, hex-encoded). If the
-operator loses it, all WG peers must be regenerated — documented as
-a "rotate carefully" footnote in `.env.example`.
+### Subscription rendering
 
-## Subscription format
+Per `notes/3xui-wg-api.md`, our dashboard derives the WG `.conf`
+locally rather than asking the node for a pre-rendered one:
 
 ```ini
 [Interface]
-PrivateKey = <generated>
-Address = <allocated_ip>/<subnet_bits>
-DNS = 1.1.1.1, 8.8.8.8
+PrivateKey = <decrypted from wg_peers.private_key_encrypted>
+Address    = <wg_peers.allocated_ip>/<subnet bits>
+DNS        = 1.1.1.1, 8.8.8.8
 
 [Peer]
-PublicKey = <inbound.server_public_key>
-Endpoint = <node.host>:<inbound.listen_port>
-AllowedIPs = 0.0.0.0/0, ::/0
+PublicKey           = <derived from inbound settings.secretKey via curve25519 scalar mult>
+Endpoint            = <node.host>:<inbound.port>
+AllowedIPs          = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 ```
 
-- **DNS**: hardcoded 1.1.1.1 + 8.8.8.8 in v1. Per-deployment override
-  via settings is a follow-up.
-- **AllowedIPs**: full-tunnel (`0.0.0.0/0, ::/0`) by default. Split-
-  tunnel = follow-up.
-- **PersistentKeepalive**: 25s (the WireGuard quickstart default).
-  Important for NAT scenarios.
+The fork stores `secretKey` (server's private key) but doesn't
+return a `publicKey` field. We derive client-side via
+`golang.org/x/crypto/curve25519.X25519(secretKey, BasePoint)`.
 
-`?format=wireguard` returns one config for the user's first active
-WG peer. `?format=wireguard-zip` returns a ZIP when multiple peers
-exist (e.g. user has WG enabled on tokyo-1 AND singapore-1).
+## Where Xray-shaped protocols live vs WG
 
-The Clash + sing-box converters gain a WG outbound stanza per peer
-when mixed subscriptions are requested. URI-bundle + SIP008 formats
-SKIP WG entries (no representation possible).
+| Protocol | Inbound endpoint | Client add endpoint | Settings shape | URI sub format |
+|---|---|---|---|---|
+| vless / vmess / trojan / shadowsocks | `/inbounds/add` | `/clients/add` w/ inboundIds | `clients[]` of `Client{id/password/...}` | URI scheme |
+| **wireguard** | same `/inbounds/add` | ❌ no client API path — RMW via `/inbounds/update/:id` | `peers[]` of WGPeer | `.conf` text |
+| hysteria | same `/inbounds/add` | `/clients/add` ✓ | `clients[]` of `Client{auth: ...}` | `hysteria2://` URI |
 
-## Schema additions
+WG is the ONLY protocol that doesn't fit the `/clients/*` API
+shape. Everything else uses the unified flow.
+
+## Concurrency: pg_advisory_xact_lock
+
+```go
+func (s *ClientService) AddWGPeer(ctx, inboundID int64, peer WGPeer) error {
+    return s.db.Transaction(func(tx *gorm.DB) error {
+        // advisory lock — one mutation at a time per inbound
+        if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, inboundID).Error; err != nil {
+            return err
+        }
+        inbound, err := s.rt.Inbound(ctx, inboundID)   // GET /inbounds/get/:id
+        if err != nil { return err }
+
+        var settings wgSettings
+        json.Unmarshal([]byte(inbound.Settings), &settings)
+        settings.Peers = append(settings.Peers, peer)
+        newSettings, _ := json.Marshal(settings)
+        inbound.Settings = string(newSettings)
+
+        return s.rt.UpdateInbound(ctx, inboundID, inbound)  // POST /inbounds/update/:id
+    })
+}
+```
+
+The advisory lock is shed at COMMIT — by then the inbound on the
+node is already updated. Lock duration = one round-trip to the
+node, typically <200ms. Acceptable serialization for v1.
+
+## Capability detection
+
+The fork supports more protocols (WG, Hysteria) than canonical
+3x-ui (4 Xray protocols). Different nodes in a fleet may run
+different forks. The dashboard needs to know per-node which
+protocols are available.
+
+Plan:
+- On node probe (existing `ProbeJob`), call `GET /panel/api/inbounds/options`
+- This returns protocol metadata — we cache the list as
+  `nodes.protocols TEXT[]` (postgres array)
+- Inbound editor + provisioning hide WG when target node's
+  protocols array lacks `"wireguard"`
+
+If `/inbounds/options` doesn't enumerate protocols (T0 didn't
+verify the response shape — needs T1 probe), fallback: assume
+canonical 4 + sniff WG by attempting a probe-create then probe-
+delete in startup mode.
+
+## Schema additions (REVISED from v1)
 
 ```sql
--- New table: 1:1 with client_ownerships rows that target a WG inbound.
+-- wg_peers: 1:1 with client_ownerships rows that target a WG inbound.
+-- Source of truth for the peer's PRIVATE key (encrypted).
 CREATE TABLE wg_peers (
     id                    BIGSERIAL PRIMARY KEY,
     client_ownership_id   BIGINT NOT NULL UNIQUE REFERENCES client_ownerships(id) ON DELETE CASCADE,
     public_key            TEXT NOT NULL,
     private_key_encrypted BYTEA NOT NULL,
     allocated_ip          INET NOT NULL,
+    inbound_id            BIGINT NOT NULL,   -- denormalized for RMW lookup
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX wg_peers_ownership ON wg_peers (client_ownership_id);
 
--- WG-specific fields on the existing inbounds metadata.
--- (Stored as JSON in settings today; new flag distinguishes WG.)
-ALTER TABLE node_inbound_snapshots
-    ADD COLUMN is_wireguard BOOLEAN NOT NULL DEFAULT FALSE;
+-- Per-node protocol capability cache, refreshed on each probe.
+ALTER TABLE nodes
+    ADD COLUMN supported_protocols TEXT[] NOT NULL DEFAULT ARRAY['vless','vmess','trojan','shadowsocks'];
 ```
 
-`client_ownerships` does NOT gain a column — the WG-ness is derived
-from the inbound (one WG inbound, all its ownerships are WG-typed).
+Drop the v1 `node_inbound_snapshots.is_wireguard` column — the
+protocol is already on the inbound row itself, we don't need a
+mirror.
 
-## Revocation path
+## Key custody (revised security model)
 
-ExpiryJob today calls `XrayClient.UpdateClient(tag, {Enable: false})`
-on the node side. WG has no "disable" flag — peers must be REMOVED.
+v1 said "dashboard generates locally, private key never traverses
+3x-ui's API". T0 ruled this out — the fork generates server-side.
 
-Plan: ExpiryJob's `disableOnNode` helper grows a branch:
-```go
-if ownership.IsWG() {
-    rt.RemoveWGPeer(inboundID, ownership.WGPublicKey)
-} else {
-    rt.UpdateClient(tag, runtime.Client{Email: o.ClientEmail, Enable: false})
-}
-```
+Revised model:
+1. Dashboard creates WG inbound via `/inbounds/add` with an empty
+   `peers: []`
+2. Dashboard provisions a peer by calling `/inbounds/update/:id`
+   with `peers: [{...}]` where the privateKey/publicKey are
+   GENERATED LOCALLY via `curve25519` BEFORE the call
+3. Read-back via `/inbounds/get/:id` to confirm the node accepted
+   the keypair (this is the privacy-preserving path)
 
-When the order is renewed (user buys again), provisioning re-adds
-the SAME public key (we keep the row in `wg_peers`, just re-issue
-the AddWGPeer call). User's existing config file still works — no
-re-download required.
+**Test in T1**: does the fork accept dashboard-supplied peer
+keypairs, or does it overwrite them with its own? If the latter,
+we lose the privacy property and fall back to "read back the
+peer's privateKey after the node generates it, AES-encrypt
+immediately". Either way our `wg_peers.private_key_encrypted`
+holds the truth.
 
-## Frontend changes
+## What v1 got right (preserved)
 
-- **Inbounds list page**: new tab/section "WireGuard". Lives next
-  to the existing 4-protocol table.
-- **WG inbound editor**: completely new component — no
-  transport/security tabs. Fields: listen port, subnet, server
-  public/private keys (server-generated on first save).
-- **WG peer list inside an inbound**: shows allocated IPs + masked
-  public keys. Useful for ops debugging.
-- **Portal subscription page**: existing format picker gains
-  "WireGuard" — when active, button text changes to "下载配置文件"
-  (download .conf) instead of "扫码 / 复制 URL".
+- `wg_peers` table 1:1 with `client_ownerships`
+- `WG_MASTER_KEY` AES-256-GCM env var for private-key encryption
+  at rest
+- `.conf` + `wireguard-zip` subscription formats
+- Clash + sing-box WG outbound emission for mixed subscriptions
+- URI base64 / SIP008 skip WG with `X-Subscription-Hint` header
+  (covered in the subscription spec delta)
 
 ## What we'll regret if we don't do it this way
 
-- **Try to fold WG into the existing Inbound model** — every editor,
-  every BuildLink call, every settings parser gets an "is this WG?"
-  branch. Carving out a separate path is the cleaner cost.
-- **Trust the node to manage keypairs** — couples us to a specific
-  3x-ui WG endpoint version's behavior, and exposes private keys
-  to 3x-ui's internal logs.
-- **Skip the wg_peers table, derive everything from ownership** —
-  ownership rows lose the public key, can't reconstruct subscription
-  after a node ↔ dashboard config drift.
-- **Ship without verifying 3x-ui WG endpoint shape** — if the actual
-  path differs from this design's assumed `/panel/api/wireguard/*`,
-  the runtime client refactor balloons. Prereq before T1.
+- **Try to add a WGClient interface anyway** — pointless
+  abstraction when the wire is the same
+- **Pre-allocate peer IPs locally before calling the node** —
+  the node already does this; we just read back `allowedIPs`
+- **Bypass `/clients/*` for Hysteria too** — Hysteria fits the
+  unified flow; reusing the same code path is half the diff
+- **Skip the advisory lock** — peer-add races on a busy panel
+  will silently lose entries
+
+---
+
+# Historical: v1 design (superseded)
+
+The v1 design assumed a separate WG panel surface needing
+`runtime.WGClient`. Kept in this file's git history for the
+record. Diff against this v2 by checking out the commit before
+"T0 capture" landed.

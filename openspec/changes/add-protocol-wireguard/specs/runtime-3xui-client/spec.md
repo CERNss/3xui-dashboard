@@ -2,65 +2,69 @@
 
 ### Requirement: Per-Node API Surface
 
-The runtime client SHALL expose two interfaces per node — one for
-the Xray-managed inbounds (existing) and one for the WireGuard
-panel surface (new) — but share a single Bearer-token credential
-and SSRF-guarded HTTP client.
+The runtime client SHALL speak ONE API surface per node — the
+unified `/panel/api/inbounds/*` set used for VLESS/VMess/Trojan/
+Shadowsocks/WireGuard/Hysteria alike, distinguished by the
+`protocol` field on each inbound. There SHALL NOT be a separate
+per-protocol client interface.
 
-#### Scenario: Node bundles both surfaces
+#### Scenario: Unified inbound creation
 
-- **WHEN** `runtime.Manager.Get(nodeID)` returns a `Node` handle
-- **THEN** the handle SHALL implement both `XrayClient` and `WGClient`
-- **AND** SHALL share the same `*http.Client` (one connection pool per node)
-- **AND** SHALL share the same Bearer token
+- **WHEN** `XrayClient.AddInbound(ctx, inbound)` is called with `inbound.Protocol = "wireguard"`
+- **THEN** the client SHALL POST to `/panel/api/inbounds/add` with the same envelope used for VLESS / VMess inbounds
+- **AND** SHALL serialize the WG-specific settings into the `settings` field as a JSON string per `notes/3xui-wg-api.md`
 
-#### Scenario: WG capability detection on probe
+#### Scenario: Inbound update for peer mutation
 
-- **WHEN** the probe job calls the WG list endpoint on a node
-- **AND** the node returns HTTP 404 (WG panel not installed)
-- **THEN** the probe SHALL mark `node.wg_supported = false`
-- **AND** SHALL NOT mark the node offline (Xray-only nodes are still healthy)
-
-#### Scenario: WG capability error vs node offline
-
-- **WHEN** any non-WG endpoint (e.g. Xray list) fails with a timeout
-- **THEN** the probe SHALL mark the node offline as before
-- **WHEN** the WG list endpoint specifically returns 404
-- **THEN** the node stays online with `wg_supported = false`
+- **WHEN** the dashboard needs to add or remove a WG peer
+- **THEN** the runtime client SHALL expose `UpdateInbound(ctx, id, inbound)` mapping to `POST /panel/api/inbounds/update/:id`
+- **AND** callers SHALL perform a read-modify-write cycle: `GetInbound(id)` → mutate `settings.peers[]` → `UpdateInbound(id, inbound)`
 
 ## ADDED Requirements
 
-### Requirement: WireGuard Client Interface
+### Requirement: Protocol Capability Detection
 
-The runtime package SHALL expose a `WGClient` interface for the
-WG-specific endpoints, with operations matching the actual
-3x-ui WG panel surface (paths captured in
-`changes/add-protocol-wireguard/notes/3xui-wg-api.md` after task 0).
+The probe job SHALL populate `nodes.supported_protocols` with the
+set of inbound protocols the node's panel build supports. The
+dashboard SHALL hide protocol-specific UI on nodes that don't
+support that protocol.
+
+#### Scenario: Probe captures supported protocols
+
+- **WHEN** `ProbeJob` runs against a node
+- **AND** the node's `/panel/api/inbounds/options` endpoint returns an enumerable protocol list
+- **THEN** the dashboard SHALL persist that list to `nodes.supported_protocols`
+- **AND** SHALL refresh the cache on every successful probe (cheap; doesn't require change-detection)
+
+#### Scenario: Fallback when /inbounds/options unavailable
+
+- **WHEN** the node returns 404 on `/inbounds/options` OR the response shape doesn't enumerate protocols
+- **THEN** the dashboard SHALL default `supported_protocols` to `['vless','vmess','trojan','shadowsocks']` (canonical 3x-ui baseline)
+- **AND** SHALL log a warning identifying the node so the operator can manually flag it as WG-capable if needed
+
+### Requirement: WG Inbound Settings Schema
+
+The runtime package SHALL expose typed Go structs for WG settings,
+serializable to the JSON-string `settings` field of an Inbound:
 
 ```go
-type WGClient interface {
-    ListWGInbounds(ctx context.Context) ([]WGInbound, error)
-    AddWGPeer(ctx context.Context, inboundID int64, peer WGPeer) error
-    RemoveWGPeer(ctx context.Context, inboundID int64, publicKey string) error
+type WGSettings struct {
+    MTU         int      `json:"mtu"`
+    SecretKey   string   `json:"secretKey"`
+    Peers       []WGPeer `json:"peers"`
+    NoKernelTun bool     `json:"noKernelTun"`
+}
+type WGPeer struct {
+    PrivateKey string   `json:"privateKey"`
+    PublicKey  string   `json:"publicKey"`
+    AllowedIPs []string `json:"allowedIPs"`
+    KeepAlive  int      `json:"keepAlive"`
 }
 ```
 
-#### Scenario: Add peer with public key only
+#### Scenario: Settings roundtrip
 
-- **WHEN** the dashboard calls `WGClient.AddWGPeer(inbound, peer)`
-- **THEN** the request body SHALL include the peer's PublicKey + AllowedIPs (allocated subnet/32)
-- **AND** SHALL NOT include any private-key material
-- **AND** the dashboard SHALL retain the private key locally, encrypted with `WG_MASTER_KEY`
-
-### Requirement: WG-Specific Errors
-
-The runtime client SHALL surface WG capability errors distinctly
-from generic node errors so callers can branch (e.g. provisioning
-SHOULD fail with a typed error if a non-WG-capable node receives
-a WG provisioning request).
-
-#### Scenario: ErrWGCapabilityAbsent
-
-- **WHEN** `Manager.GetWG(nodeID)` is called on a node whose WG panel returns 404
-- **THEN** it SHALL return `(nil, ErrWGCapabilityAbsent)`
-- **AND** this error SHALL be distinct from `ErrNodeNotFound`
+- **WHEN** a WG inbound is fetched via `GetInbound(id)`
+- **AND** its `settings` field is JSON-unmarshalled into `WGSettings`
+- **THEN** the resulting struct SHALL faithfully reproduce all peer keypairs and allowed IPs
+- **AND** re-marshalling SHALL produce the SAME `settings` string the fork accepts on `UpdateInbound`

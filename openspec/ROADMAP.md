@@ -14,7 +14,7 @@ single state. Update this file whenever a change ships.
 ```
                             完成度    打分逻辑
 1. 运维管理   █████████████████░░░  85%   admin UI 全 + 到期 cron + 仅缺 traffic-reset / auto-renewal
-2. 多协议     █████████████████░░░  85%   节点 4/4（stock 3x-ui 上限，#8 T0 确认 WG 不在 3x-ui scope）+ 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect）
+2. 多协议     █████████████████░░░  85%   节点 4/6（实测 fork 支持 WG+Hysteria，#8 +#10 spec-ready）+ 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect）
 3. 支付系统   ████████████░░░░░░░░  60%   alipay 当面付 + Stripe Checkout（两个网关 + 通用 Gateway 接口 + payment_pending 状态机 + 失败兜底 poll）+ 仍缺 auto-renewal
 4. 通知系统   ████████████████░░░░  80%   多通道 fanout：邮件 + Telegram + Discord + 飞书；router 配置化；7 个事件类型订阅（client lifecycle + node offline/recovered + order.*）+ 仍缺持久化重试队列
 5. 用户界面   ███████████████████░  95%   admin 95% + portal 80% + 设计系统 95% + 移动响应式（#9 shipped）
@@ -190,7 +190,9 @@ admin moderation of users/plans/orders.
 | | (b) Sing-box JSON 输出 | ✅ #1 |
 | | (c) SIP008 输出 | ✅ #1 |
 | | (d) User-Agent 自动选格式 | ✅ #1 |
-| | (e) ~~WireGuard 节点侧 runtime + links + 订阅渲染~~ | ❌ #8 dropped — T0 验证 3x-ui 没 WG 面板 |
+| | (e) WireGuard 节点侧 runtime + links + 订阅渲染 | 🚧 #8 spec v2 ready (fork 实测支持) |
+| | (f) Hysteria 协议 | 🚧 #10 spec ready (T0 顺带发现) |
+| | (g) Runtime XrayClient path realign vs fork 真实路由 | 🚧 #11 audit-xrayclient-vs-fork spec ready (P0 阻塞 #8 实现) |
 | **3. 支付** | (a) 支付宝当面付（含回调验签） | #5 `add-payment-alipay` |
 | | (b) Stripe（Checkout + Webhook） | #6 `add-payment-stripe` |
 | | (c) PayPal | 未排期（市场需求低于前两个） |
@@ -225,7 +227,9 @@ admin moderation of users/plans/orders.
 | 5 | `add-payment-alipay` | 支付 | 20% → 45%（实际达成） | ✅ shipped (2026-05-20)：alipay 当面付 QR + 异步 notify + RSA2 sign/verify（纯 stdlib 无 SDK 依赖）+ payment-poll 30s 兜底 + payment_pending/paid/payment_failed/payment_expired 状态机。Auto-renewal 拆到独立 change |
 | 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。Subscriptions 拆到 add-billing-auto-renewal |
 | 7 | `add-notification-channels` | 通知 | 50% → 80%（实际达成） | ✅ shipped (2026-05-20)：Channel 接口 + Router（env-var 配置化路由）+ 4 个 channel（email 复用 mailer / Telegram bot / Discord webhook / 飞书 interactive card）+ NodeRecovered 事件区分启动首次上线 vs 故障恢复 + 每 channel 独立 dedup key（kind 后缀）+ 通用 PostJSON 含 retry/Retry-After。Per-user channel routing 拆到 add-user-notification-prefs |
-| 8 | `add-protocol-wireguard` | 多协议 | — | ❌ dropped (2026-05-20)：T0 在真实 3x-ui 节点（Xray v26.4.25）实测，所有 `/panel/api/wireguard/*` 路径 404，Xray 配置无 `wireguard` 字串。canonical 3x-ui fork 没有 WG 面板。详见 `notes/3xui-wg-api.md`。Spec 保留作历史 design 参考；slot 让给 v2 增强（auto-renewal / coupons / cryptomus） |
+| 8 | `add-protocol-wireguard` | 多协议 | 节点 4 → 5 | 🚧 spec v2 ready (2026-05-20)：T0 第二轮实测推翻先前结论——deployed fork 是非 canonical，支持 10 协议，WG 走统一 `/panel/api/inbounds/*`。spec/design/tasks 已 rewrite，等实现。详见 `notes/3xui-wg-api.md` |
+| 10 | `add-protocol-hysteria` | 多协议 | 节点 5 → 6 | 🚧 spec ready (2026-05-20)：T0 顺带发现 Hysteria 也在 fork 协议下拉里，且适配 unified `/clients/add` 流程，diff 小于 #8。spec scaffold 落地 |
+| 11 | `audit-xrayclient-vs-fork` | 运维质量 | 修正 path drift | 🚧 spec ready (2026-05-20)：T0 副产物——发现 `/inbounds/addClient` 等几个 XrayClient 假设的端点在 fork 上是 404；真实路径迁到 `/clients/*`。当前 dashboard 部署到真实节点时 client 操作会 silent fail。优先级 P0（先行实施再开 #8 实现） |
 | 9 | `add-mobile-responsive` | 用户界面 | 90% → 95%（实际达成） | ✅ shipped (2026-05-20)：AdminLayout 改 off-canvas drawer + 移动 top bar；PortalLayout 水平滚动 nav + 移动端 logout icon-only；admin 表格全部包 overflow-x-auto；7 个页面 header 改 flex-col → sm:flex-row；padding 阶梯式（px-4 / sm:px-6 / lg:px-8）|
 
 做完 1-9 → 5 维度都 ≥ 80%，综合 ~85%，可以真上线给真用户。
@@ -259,4 +263,10 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前状态**：v1 范围全部完成 — 1-7 + 9 shipped，#8 T0 验证后 dropped（stock 3x-ui 没 WG 面板，超出 dashboard mission）。5 大支柱全部 ≥ 80%（综合 ~85%），可上线给真用户。下一阶段是 v2 增强：auto-renewal cron、coupon 系统、cryptomus 加密货币支付、admin dashboard 图表、多语言完善、per-user 通知偏好等。
+> **当前状态**：v1 全部 shipped + T0 真实节点探测改变了 #8 走向。三个新 change 已 spec scaffold：
+>
+> - `#11 audit-xrayclient-vs-fork` (P0, 阻塞) — 修当前 runtime 跟 fork 真实路径的偏差。先做这个再开 #8 实现
+> - `#8 add-protocol-wireguard` (v2 spec ready) — fork 实测支持 WG，统一 inbound API，RMW peers[]
+> - `#10 add-protocol-hysteria` (spec ready) — T0 顺手发现，适配 unified `/clients/*` 流程
+>
+> 推进顺序: #11 → #8 → #10。三个做完节点支持 4 → 6 协议，多协议维度 85% → ~95%。

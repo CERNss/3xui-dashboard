@@ -1,40 +1,27 @@
 # add-protocol-wireguard
 
-## ⚠️ T0 result (2026-05-20) — recommend DROP
+## ⚠️ T0 result (2026-05-20) — REVERSED, change is GO
 
-Probed a live production 3x-ui node (canonical stock fork, Xray-core
-v26.4.25). Findings in `notes/3xui-wg-api.md`. Summary:
+First-pass T0 saw 404s on `/panel/api/wireguard/*` and concluded
+"stock 3x-ui doesn't ship WG; drop #8". That was correct for the
+canonical fork but **wrong for the deployed fork** — which extends
+3x-ui to support **10 inbound protocols** (vmess/vless/trojan/
+shadowsocks/wireguard/hysteria/mixed/http/tunnel/tun) under a
+single unified `/panel/api/inbounds/*` endpoint set.
 
-- **Zero** WG endpoints exist (`/panel/api/wireguard/*`, `/wg`, every
-  variant tested → 404).
-- Xray config dump contains no `wireguard` substring anywhere.
-- Xray-core has no native WireGuard inbound — confirmed by the
-  upstream protocol list (vless/vmess/trojan/shadowsocks/dokodemo/
-  socks/http only).
+Second-pass capture confirms (see `notes/3xui-wg-api.md`):
 
-The whole proposal below was built on the assumption "recent 3x-ui
-≥v2.4 ships a separate WG panel". That assumption is **false** for
-the canonical fork. The proposal as written cannot ship against
-stock 3x-ui.
+- WG is `protocol="wireguard"` on the SAME `/inbounds/add`
+  endpoint — no separate WGClient surface
+- Settings shape: `{mtu, secretKey, peers[{privateKey, publicKey,
+  allowedIPs, keepAlive}], noKernelTun}`
+- Node generates BOTH server keypair AND each peer's keypair
+- Peer add/remove = read-modify-write the entire inbound's
+  settings JSON (no atomic peer endpoint)
 
-**Recommended decision: drop #8.** Rationale:
-- This dashboard's mission is "central control panel for 3x-ui
-  nodes". If 3x-ui itself doesn't support WG, neither do we.
-- The 4 existing Xray protocols cover the practical "fast UDP
-  tunnel" need via Reality + QUIC + xtls-vision.
-- Bringing our own WG daemon (e.g. SSH-managing wg-quick) breaks
-  the framing and doubles the node-provisioning surface.
-
-ROADMAP: mark #8 ❌ permanently with this note; reallocate the slot
-to v2 work (auto-renewal, coupons, cryptomus).
-
-The rest of this proposal is preserved below as historical context
-for the design pattern (WG-specific carve-outs across runtime /
-inbound / sub / provisioning) — useful if a future 3x-ui fork does
-add a WG panel, or if option B (Xray WG outbound for ops routing)
-becomes interesting.
-
----
+Design.md needs major rework against this reality (recorded
+inline below). Proposal goes from ❌ dropped → ✅ ready for
+implementation, with revised mechanics.
 
 ## Why
 
