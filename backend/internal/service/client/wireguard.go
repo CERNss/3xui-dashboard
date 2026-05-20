@@ -300,7 +300,16 @@ func (p *WGProvisioner) RemovePeer(ctx context.Context, nodeID int64, inboundTag
 		if err := p.peers.DeleteByOwnership(ctx, tx, own.ID); err != nil {
 			return err
 		}
-		return p.ownership.ClearForClient(ctx, nodeID, inboundTag, clientEmail)
+		// Clear ownership ON THE TX, not via p.ownership which would
+		// open a second pool connection — that path deadlocks under
+		// PrepareStmt cache contention (observed in
+		// TestRemovePeer_ClearsBothSides 2026-05-21).
+		if err := tx.WithContext(ctx).
+			Where("node_id = ? AND inbound_tag = ? AND client_email = ?", nodeID, inboundTag, clientEmail).
+			Delete(&model.ClientOwnership{}).Error; err != nil {
+			return fmt.Errorf("clear ownership in tx: %w", err)
+		}
+		return nil
 	})
 }
 

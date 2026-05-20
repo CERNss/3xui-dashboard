@@ -108,6 +108,13 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 	case strings.Contains(req.URL.Path, "/delClientByEmail/"):
 		m.handleDelClientByEmail(w, req)
 
+	case strings.HasPrefix(req.URL.Path, "/panel/api/inbounds/update/"):
+		m.handleUpdateInbound(w, req)
+
+	case req.URL.Path == "/panel/api/inbounds/add":
+		// Distinct from /addClient (which is matched earlier in the switch).
+		m.handleAddInbound(w, req)
+
 	default:
 		writeEnv(w, nil)
 	}
@@ -214,6 +221,98 @@ func (m *mockPanel) handleDelClientByEmail(w http.ResponseWriter, req *http.Requ
 		in.Settings = string(out)
 	}
 	writeEnv(w, nil)
+}
+
+// handleUpdateInbound mirrors POST /panel/api/inbounds/update/:id
+// with form-encoded body. The dashboard uses this as the WG peer
+// RMW push and as the re-push fallback when surgical client edits
+// fail (e.g. delete-last-client quirk). Form fields mirror
+// remote.go::wireInbound: protocol, settings, streamSettings, etc.
+func (m *mockPanel) handleUpdateInbound(w http.ResponseWriter, req *http.Request) {
+	parts := strings.Split(req.URL.Path, "/")
+	// "" "panel" "api" "inbounds" "update" "<id>"
+	if len(parts) < 6 {
+		writeEnv(w, nil)
+		return
+	}
+	idStr := parts[5]
+	if err := req.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, in := range m.inbounds {
+		if intToStr(in.ID) != idStr {
+			continue
+		}
+		if s := req.FormValue("settings"); s != "" {
+			in.Settings = s
+		}
+		if s := req.FormValue("streamSettings"); s != "" {
+			in.StreamSettings = s
+		}
+		if s := req.FormValue("protocol"); s != "" {
+			in.Protocol = s
+		}
+		writeEnv(w, *in)
+		return
+	}
+	writeEnv(w, nil)
+}
+
+// handleAddInbound mirrors POST /panel/api/inbounds/add. Body is
+// form-encoded; mock just allocates an id and stashes the rendered
+// inbound so tests covering admin-creates-inbound flows pick it up.
+func (m *mockPanel) handleAddInbound(w http.ResponseWriter, req *http.Request) {
+	if err := req.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	tag := req.FormValue("tag")
+	if tag == "" {
+		http.Error(w, "missing tag", http.StatusBadRequest)
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.idCount++
+	in := &runtime.Inbound{
+		ID:             m.idCount,
+		Tag:            tag,
+		Protocol:       req.FormValue("protocol"),
+		Settings:       req.FormValue("settings"),
+		StreamSettings: req.FormValue("streamSettings"),
+		Sniffing:       req.FormValue("sniffing"),
+		Remark:         req.FormValue("remark"),
+		Enable:         req.FormValue("enable") == "true",
+	}
+	m.inbounds[tag] = in
+	writeEnv(w, *in)
+}
+
+// intToStr is a tiny helper to compare a path segment against an
+// int64 id without pulling strconv in for one call.
+func intToStr(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
 }
 
 func writeEnv(w http.ResponseWriter, obj any) {

@@ -5,6 +5,7 @@ package inbound
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 )
 
 // NodeListSource is the subset of repository / service.node access
@@ -74,12 +76,60 @@ func (s *Service) Get(ctx context.Context, nodeID int64, tag string) (*runtime.I
 
 // Add creates an inbound on a node. The returned inbound carries the
 // panel-assigned id.
+//
+// WireGuard inbounds get a server keypair filled in here when the
+// caller left `secretKey` empty: the production fork (T1 verified
+// 2026-05-21) stores empty strings verbatim and the inbound stays
+// non-functional until the first peer provision lazily fills it.
+// Filling at create-time means an admin who creates a WG inbound
+// from the UI gets a working tunnel without having to provision
+// at least one peer first.
 func (s *Service) Add(ctx context.Context, nodeID int64, in *runtime.Inbound) (*runtime.Inbound, error) {
+	if in != nil && in.IsWireguard() {
+		if err := ensureWGSecretKey(in); err != nil {
+			return nil, err
+		}
+	}
 	r, err := s.rt.Get(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}
 	return r.AddInbound(ctx, in)
+}
+
+// ensureWGSecretKey mutates in.Settings in place when the inbound
+// is a WG one whose secretKey is empty. Idempotent: a non-empty
+// secretKey passes through unchanged. MTU=0 is also stamped to
+// the WireGuard-recommended 1420 (avoids overlay fragmentation).
+func ensureWGSecretKey(in *runtime.Inbound) error {
+	var s runtime.WGSettings
+	if in.Settings != "" {
+		if err := json.Unmarshal([]byte(in.Settings), &s); err != nil {
+			return fmt.Errorf("decode WG settings: %w", err)
+		}
+	}
+	dirty := false
+	if s.SecretKey == "" {
+		kp, err := wgcrypto.GenerateKeypair()
+		if err != nil {
+			return fmt.Errorf("generate WG server keypair: %w", err)
+		}
+		s.SecretKey = kp.Private
+		dirty = true
+	}
+	if s.MTU == 0 {
+		s.MTU = 1420
+		dirty = true
+	}
+	if !dirty {
+		return nil
+	}
+	out, err := json.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("re-marshal WG settings: %w", err)
+	}
+	in.Settings = string(out)
+	return nil
 }
 
 // Update mutates an existing inbound. If the tag doesn't exist on
@@ -99,6 +149,13 @@ func (s *Service) Update(ctx context.Context, nodeID int64, tag string, in *runt
 			slog.Int64("node_id", nodeID),
 			slog.String("tag", tag),
 		)
+		// Falling through to AddInbound — same WG keypair fill
+		// invariant applies as in Add().
+		if in != nil && in.IsWireguard() {
+			if err := ensureWGSecretKey(in); err != nil {
+				return nil, err
+			}
+		}
 		return r.AddInbound(ctx, in)
 	}
 	return nil, err

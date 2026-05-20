@@ -195,6 +195,8 @@ interface Model {
   tlsAlpn: string[]            // h2 / http/1.1
   tlsFingerprint: '' | 'chrome' | 'firefox' | 'safari' | 'ios' | 'android' | 'edge' | 'random' | 'randomized'
   tlsAllowInsecure: boolean
+  tlsCertificateFile: string   // node-local file path; used by Hysteria + any TLS-bearing protocol
+  tlsKeyFile: string           // node-local file path
   realityDest: string
   realityServerNames: string
   realityPublicKey: string
@@ -268,6 +270,8 @@ function blankModel(): Model {
     tlsAlpn: ['h2', 'http/1.1'],
     tlsFingerprint: 'chrome',
     tlsAllowInsecure: false,
+    tlsCertificateFile: '',
+    tlsKeyFile: '',
     realityDest: 'www.cloudflare.com:443',
     realityServerNames: 'www.cloudflare.com',
     realityPublicKey: '',
@@ -439,6 +443,15 @@ function hydrateFromInbound(in_: Inbound) {
       out.tlsAlpn = Array.isArray(s.tlsSettings.alpn) ? s.tlsSettings.alpn : ['h2', 'http/1.1']
       out.tlsFingerprint = s.tlsSettings.fingerprint ?? 'chrome'
       out.tlsAllowInsecure = !!s.tlsSettings.allowInsecure
+      // Cert paths live in tlsSettings.certificates[0]. The fork
+      // accepts an array but the dashboard only edits the first
+      // entry; multi-cert SNI multiplexing stays an advanced-tab
+      // raw-JSON edit.
+      const cert = Array.isArray(s.tlsSettings.certificates) && s.tlsSettings.certificates[0]
+      if (cert) {
+        out.tlsCertificateFile = cert.certificateFile ?? ''
+        out.tlsKeyFile = cert.keyFile ?? ''
+      }
     }
     if (s.realitySettings) {
       out.realityDest = s.realitySettings.dest ?? ''
@@ -519,6 +532,9 @@ function buildStream(): object {
         alpn: ['h3'],
         fingerprint: mv.tlsFingerprint || undefined,
         allowInsecure: mv.tlsAllowInsecure,
+        certificates: mv.tlsCertificateFile || mv.tlsKeyFile
+          ? [{ certificateFile: mv.tlsCertificateFile, keyFile: mv.tlsKeyFile }]
+          : [],
       },
       hysteriaSettings: {
         version: 2,
@@ -582,6 +598,9 @@ function buildStream(): object {
       alpn: mv.tlsAlpn,
       fingerprint: mv.tlsFingerprint || undefined,
       allowInsecure: mv.tlsAllowInsecure,
+      certificates: mv.tlsCertificateFile || mv.tlsKeyFile
+        ? [{ certificateFile: mv.tlsCertificateFile, keyFile: mv.tlsKeyFile }]
+        : [],
     }
   } else if (mv.security === 'reality') {
     out.realitySettings = {
@@ -878,9 +897,26 @@ const expiryDisplay = computed({
             <Row label="Allow Insecure">
               <ToggleBtn v-model="m.tlsAllowInsecure" />
             </Row>
+            <Row label="证书路径">
+              <input
+                v-model="m.tlsCertificateFile"
+                type="text"
+                class="input font-mono text-xs"
+                placeholder="/etc/letsencrypt/live/example.com/fullchain.pem"
+              />
+            </Row>
+            <Row label="私钥路径">
+              <input
+                v-model="m.tlsKeyFile"
+                type="text"
+                class="input font-mono text-xs"
+                placeholder="/etc/letsencrypt/live/example.com/privkey.pem"
+              />
+            </Row>
             <p class="text-xs text-surface-500">
-              Hysteria 2 强制 TLS + ALPN=h3 + UDP，固定不可改。证书路径请在节点本地 acme.sh / certbot 维护；dashboard 不上传证书，
-              改 cert 路径要走「高级配置」raw JSON。
+              Hysteria 2 强制 TLS + ALPN=h3 + UDP。证书 / 私钥需要是节点本地文件系统的绝对路径
+              （acme.sh / certbot 默认放在 <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">/etc/letsencrypt/live/&lt;domain&gt;/</code>）；
+              dashboard 只传路径，不上传证书内容。两路径都留空时 Xray 用 self-signed，配 Allow Insecure 才能连通。
             </p>
           </template>
         </div>
@@ -1027,6 +1063,25 @@ const expiryDisplay = computed({
                 </select>
               </Row>
               <Row label="Allow Insecure"><ToggleBtn v-model="m.tlsAllowInsecure" /></Row>
+              <Row label="证书路径">
+                <input
+                  v-model="m.tlsCertificateFile"
+                  type="text"
+                  class="input font-mono text-xs"
+                  placeholder="/etc/letsencrypt/live/example.com/fullchain.pem"
+                />
+              </Row>
+              <Row label="私钥路径">
+                <input
+                  v-model="m.tlsKeyFile"
+                  type="text"
+                  class="input font-mono text-xs"
+                  placeholder="/etc/letsencrypt/live/example.com/privkey.pem"
+                />
+              </Row>
+              <p class="pl-32 text-xs text-surface-500">
+                节点本地文件路径。两路径都留空 → Xray 使用 self-signed 证书。
+              </p>
             </template>
 
             <template v-if="m.security === 'reality'">
