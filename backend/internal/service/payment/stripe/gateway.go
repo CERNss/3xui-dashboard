@@ -81,16 +81,14 @@ func (g *Gateway) VerifyNotify(params map[string]string, signature string) error
 	return fmt.Errorf("stripe: use VerifyWebhookRaw — Stripe signs the raw body, not params")
 }
 
-// VerifyWebhookRaw is the Stripe-specific verification entrypoint.
-// The public webhook handler calls this with the bytes it read from
-// the request body BEFORE any parsing — that's the same bytes
-// Stripe signed.
+// VerifyWebhookRaw satisfies the payment.RawBodyVerifier interface.
+// The public webhook handler asserts that interface and calls this
+// method with the bytes it read from the request body BEFORE any
+// parsing — that's the same bytes Stripe signed.
 func (g *Gateway) VerifyWebhookRaw(rawBody []byte, sigHeader string) error {
 	return VerifyWebhook(rawBody, sigHeader, g.webhookSecret, g.now())
 }
 
-// Inspect lets handlers reach the underlying client for ad-hoc
-// queries (the webhook handler resolves a session ID → order_id
-// via this). Returns nil if the gateway wasn't constructed via
-// New, so callers must nil-check.
-func (g *Gateway) Inspect() *Client { return g.client }
+// Compile-time interface assertion — fails build if Gateway stops
+// implementing RawBodyVerifier.
+var _ payment.RawBodyVerifier = (*Gateway)(nil)

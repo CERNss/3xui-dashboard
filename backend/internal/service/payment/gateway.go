@@ -59,9 +59,30 @@ type Gateway interface {
 	Query(ctx context.Context, providerOrderID string) (Status, error)
 
 	// VerifyNotify validates the signature on an inbound notify
-	// payload. The handler decodes the request body into params +
-	// pulls the provider's "signature" field separately.
+	// payload that's been pre-parsed into a param map (e.g. alipay's
+	// form-encoded callback). Providers whose webhooks sign the RAW
+	// body (Stripe HMAC over JSON) should additionally implement
+	// RawBodyVerifier and return an error from this method.
 	VerifyNotify(params map[string]string, signature string) error
+}
+
+// RawBodyVerifier is an optional capability for gateways that sign
+// the raw request body instead of (or in addition to) the parsed
+// param map. Handlers detect support with a type assertion:
+//
+//	if v, ok := gw.(payment.RawBodyVerifier); ok {
+//	    err := v.VerifyWebhookRaw(rawBody, sigHeader)
+//	    ...
+//	}
+//
+// Stripe implements this. Alipay does not — its callback is form-
+// encoded and the canonical-params Verify is sufficient.
+type RawBodyVerifier interface {
+	// VerifyWebhookRaw checks the provider-specific signature header
+	// against the raw request body. Returning nil means accept; any
+	// non-nil error means reject (handler should respond 400 and
+	// NOT advance any order).
+	VerifyWebhookRaw(rawBody []byte, sigHeader string) error
 }
 
 // Registry holds the enabled gateways keyed by provider name. App

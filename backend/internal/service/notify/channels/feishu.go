@@ -142,5 +142,3 @@ func (f *Feishu) Send(ctx context.Context, msg notify.Message) error {
 	return nil
 }
 
-// Ensure http import isn't unused if we drop the explicit reference.
-var _ = http.MethodPost

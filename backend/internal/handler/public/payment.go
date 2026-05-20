@@ -11,7 +11,6 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/service/billing"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
-	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
 )
 
 // PaymentNotifyHandler exposes the public async-notify endpoints
@@ -141,17 +140,18 @@ func (h *PaymentNotifyHandler) stripeWebhook(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, "stripe not configured")
 		return
 	}
-	// Type-assert to the concrete stripe.Gateway so we can call
-	// VerifyWebhookRaw — the payment.Gateway interface doesn't
-	// expose it (alipay signs params, stripe signs raw body).
-	sg, ok := gw.(*stripe.Gateway)
+	// Stripe signs the RAW body — assert the optional capability
+	// instead of the concrete *stripe.Gateway type so any future
+	// HMAC-style provider (wechatpay, paypal) gets the same handler
+	// shape for free.
+	verifier, ok := gw.(payment.RawBodyVerifier)
 	if !ok {
-		h.log.Error("stripe gateway has wrong type")
+		h.log.Error("stripe gateway does not implement RawBodyVerifier")
 		c.String(http.StatusInternalServerError, "stripe wiring broken")
 		return
 	}
 	sigHeader := c.GetHeader("Stripe-Signature")
-	if err := sg.VerifyWebhookRaw(rawBody, sigHeader); err != nil {
+	if err := verifier.VerifyWebhookRaw(rawBody, sigHeader); err != nil {
 		h.log.Warn("stripe webhook signature failed",
 			slog.String("remote", c.ClientIP()),
 			slog.String("error", err.Error()),
