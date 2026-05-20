@@ -120,15 +120,8 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 		if s.wg == nil {
 			return nil, fmt.Errorf("provision: WG inbound %q encountered but WG_MASTER_KEY not configured", inboundTag)
 		}
-		ownership, _, err := s.wg.ProvisionPeer(ctx, userID, nodeID, inboundTag, clientEmail, params.PlanID)
+		ownership, _, err := s.wg.ProvisionPeer(ctx, userID, nodeID, inboundTag, clientEmail, params)
 		if err != nil {
-			return nil, err
-		}
-		// Apply plan-driven expiry + limit on top of the WG-provisioned
-		// row. ProvisionPeer's own Save writes a baseline ownership
-		// with no expiry/limit; we update in place so the row reflects
-		// the purchase.
-		if err := s.applyPlanWindow(ctx, ownership, params); err != nil {
 			return nil, err
 		}
 		s.log.Info("provisioned WG peer",
@@ -434,32 +427,3 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-// applyPlanWindow stamps the plan's DurationDays + TrafficLimitBytes
-// onto an already-persisted ownership row. Used by the WG branch of
-// ProvisionClient where the WGProvisioner has already written a
-// baseline row but doesn't know about plan params. Extends existing
-// expiry if the user is renewing.
-func (s *Service) applyPlanWindow(ctx context.Context, row *model.ClientOwnership, params PlanParams) error {
-	now := time.Now().UTC()
-	newExpiry := computeExpiry(now, row, params.DurationDays)
-	if !newExpiry.IsZero() {
-		v := newExpiry
-		row.ExpiresAt = &v
-	} else {
-		row.ExpiresAt = nil
-	}
-	if params.TrafficLimitBytes > 0 {
-		v := params.TrafficLimitBytes
-		row.TrafficLimitBytes = &v
-	} else {
-		row.TrafficLimitBytes = nil
-	}
-	if params.PlanID != nil {
-		row.PlanID = params.PlanID
-	}
-	row.Enabled = true
-	if _, err := s.ownership.Upsert(ctx, row); err != nil {
-		return fmt.Errorf("apply plan window: %w", err)
-	}
-	return nil
-}

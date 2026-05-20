@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -57,14 +58,15 @@ func NewWGProvisioner(
 //   - First call:  generates a keypair, allocates the next-free
 //     IP inside the inbound's subnet, appends a peer to the
 //     remote inbound's settings.peers[] via UpdateInboundByID,
-//     and writes both the ownership row and the wg_peers mirror.
-//   - Re-provisioning the same ownership returns the existing
-//     row without mutating the node — keypair rotation is an
-//     explicit RotatePeer call (not implemented in v1).
+//     and writes both the ownership row and the wg_peers mirror
+//     in one transaction. PlanParams (expiry + limit) is applied
+//     in the same Save — no second Upsert pass needed.
+//   - Re-provisioning the same ownership extends the existing row
+//     with the new expiry window but does not mutate the node.
 //
 // Returns the persisted ClientOwnership row plus the WGPeer row
 // the caller needs to render the .conf for the user.
-func (p *WGProvisioner) ProvisionPeer(ctx context.Context, userID, nodeID int64, inboundTag, clientEmail string, planID *int64) (*model.ClientOwnership, *model.WGPeer, error) {
+func (p *WGProvisioner) ProvisionPeer(ctx context.Context, userID, nodeID int64, inboundTag, clientEmail string, params PlanParams) (*model.ClientOwnership, *model.WGPeer, error) {
 	r, err := p.rt.Get(ctx, nodeID)
 	if err != nil {
 		return nil, nil, err
@@ -161,19 +163,35 @@ func (p *WGProvisioner) ProvisionPeer(ctx context.Context, userID, nodeID int64,
 			return fmt.Errorf("push inbound update: %w", err)
 		}
 
-		// Persist ownership + peer mirror.
+		// Persist ownership + peer mirror in the same tx. The plan
+		// window (expiry + traffic limit) is baked into the initial
+		// Save so we don't need a second Upsert pass after the tx
+		// commits.
+		newExpiry := computeExpiry(time.Now().UTC(), existingOwn, params.DurationDays)
+		var expiresAt *time.Time
+		if !newExpiry.IsZero() {
+			v := newExpiry
+			expiresAt = &v
+		}
+		var trafficLimit *int64
+		if params.TrafficLimitBytes > 0 {
+			v := params.TrafficLimitBytes
+			trafficLimit = &v
+		}
 		row := &model.ClientOwnership{
-			UserID:      userID,
-			NodeID:      nodeID,
-			InboundTag:  inboundTag,
-			ClientEmail: clientEmail,
-			PlanID:      planID,
-			Enabled:     true,
+			UserID:            userID,
+			NodeID:            nodeID,
+			InboundTag:        inboundTag,
+			ClientEmail:       clientEmail,
+			PlanID:            params.PlanID,
+			ExpiresAt:         expiresAt,
+			TrafficLimitBytes: trafficLimit,
+			Enabled:           true,
 		}
 		if existingOwn != nil {
 			row.ID = existingOwn.ID
 		}
-		if err := tx.Clauses().Save(row).Error; err != nil {
+		if err := tx.Save(row).Error; err != nil {
 			return fmt.Errorf("save ownership: %w", err)
 		}
 		ownershipOut = row
