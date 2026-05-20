@@ -152,12 +152,12 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 			logger.Error("WGProvisioner init failed", slog.String("err", err.Error()))
 		} else {
 			wgProvisioner = prov
+			clientService.SetWGProvisioner(prov)
 			logger.Info("wireguard provisioning enabled")
 		}
 	} else {
 		logger.Info("WG_MASTER_KEY not set — wireguard features disabled")
 	}
-	_ = wgProvisioner // wired in WG handler / sub renderer (follow-up commits)
 
 	// Traffic.
 	trafficRepo := repository.NewTrafficSampleRepo(db)
@@ -220,6 +220,9 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	_ = scheduler.Add("webhook-retry", "@every 15s", webhookRetryJob.RunOnce)
 	notifyLogRepo := repository.NewNotificationLogRepo(db)
 	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, notifyLogRepo, rtManager, bus, logger)
+	if wgProvisioner != nil {
+		expiryJob.SetWGRemover(wgProvisioner)
+	}
 	_ = scheduler.Add("expiry", "@every 5m", expiryJob.RunOnce)
 	paymentPollJob := job.NewPaymentPollJob(billingService, paymentRegistry, 15*time.Minute, logger)
 	_ = scheduler.Add("payment-poll", "@every 30s", paymentPollJob.RunOnce)

@@ -39,15 +39,30 @@ import (
 // fetches from including the link. Existing user apps that already
 // cached the credentials will keep working until the node itself
 // expires them. See ROADMAP §1 if this needs to be hardened.
+// WGRemover is the optional hook ExpiryJob calls when an expired
+// ownership lives on a WireGuard inbound. The unified UpdateClient
+// path doesn't apply (the fork's WG inbound has no per-peer enable
+// bit) — disabling means removing the peer entry entirely.
+// Implemented by *service/client.WGProvisioner; app.Build wires
+// it in when WG_MASTER_KEY is configured.
+type WGRemover interface {
+	RemovePeer(ctx context.Context, nodeID int64, inboundTag, clientEmail string) error
+}
+
 type ExpiryJob struct {
 	ownership *repository.ClientOwnershipRepo
 	settings  *repository.SettingRepo
 	users     *repository.UserRepo
 	logs      *repository.NotificationLogRepo
 	rt        *runtime.Manager
+	wg        WGRemover // optional; nil → WG ownerships fall back to DB-only disable
 	bus       *event.Bus
 	log       *slog.Logger
 }
+
+// SetWGRemover attaches the WG peer-removal hook. Idempotent.
+// Called by app.Build when cfg.WireGuard.Enabled().
+func (j *ExpiryJob) SetWGRemover(r WGRemover) { j.wg = r }
 
 // NewExpiryJob constructs an ExpiryJob.
 //
@@ -160,11 +175,15 @@ func (j *ExpiryJob) processExpired(ctx context.Context, o *model.ClientOwnership
 	)
 }
 
-// disableOnNode pushes Enable=false to the node's panel via
-// runtime.UpdateClient. Returns the underlying error so the caller
-// can log/decide policy. Skips silently if the runtime manager is
-// nil (test fixtures) or the node is disabled — in either case
-// pushing makes no sense.
+// disableOnNode pushes the appropriate node-side disable for an
+// expired ownership. For Xray-family inbounds (VLESS/VMess/Trojan/
+// SS/Hysteria) the unified `UpdateClient(Email, Enable=false)`
+// flips the per-client enable bit. For WireGuard there is no such
+// bit — the peer entry has to be removed from settings.peers[]
+// via the WGProvisioner's advisory-locked RMW path.
+//
+// Skips silently if the runtime manager is nil (test fixtures) or
+// the node is disabled — in either case pushing makes no sense.
 func (j *ExpiryJob) disableOnNode(ctx context.Context, o *model.ClientOwnership) error {
 	if j.rt == nil {
 		return nil
@@ -175,6 +194,27 @@ func (j *ExpiryJob) disableOnNode(ctx context.Context, o *model.ClientOwnership)
 			return nil
 		}
 		return err
+	}
+	// Resolve the inbound once so we can tell WG apart from the
+	// unified path. A missing inbound (tag rename / deletion) is
+	// treated as already-disabled.
+	in, err := r.GetInbound(ctx, o.InboundTag)
+	if err != nil {
+		if errors.Is(err, runtime.ErrTagNotFound) {
+			return nil
+		}
+		return err
+	}
+	if in.IsWireguard() {
+		if j.wg == nil {
+			// WG_MASTER_KEY not configured — we can't decrypt or
+			// reconstitute the peer. Log + leave the DB flip as the
+			// only enforcement layer.
+			j.log.Warn("expired WG ownership but no WGRemover wired — DB-only disable",
+				"ownership_id", o.ID, "node_id", o.NodeID, "inbound", o.InboundTag)
+			return nil
+		}
+		return j.wg.RemovePeer(ctx, o.NodeID, o.InboundTag, o.ClientEmail)
 	}
 	// Push Enable=false. UpdateClient looks up the existing client
 	// by email on the node and merges; passing only Enable + Email

@@ -45,8 +45,14 @@ type Service struct {
 	ownership *repository.ClientOwnershipRepo
 	users     UserLookup
 	plans     PlanLookup
+	wg        *WGProvisioner // optional; nil when WG_MASTER_KEY not set
 	log       *slog.Logger
 }
+
+// SetWGProvisioner attaches the WG provisioner so ProvisionClient
+// can delegate WG inbounds to its RMW path. Idempotent. Called by
+// app.Build once at startup when cfg.WireGuard.Enabled().
+func (s *Service) SetWGProvisioner(p *WGProvisioner) { s.wg = p }
 
 // UserLookup / PlanLookup are tiny interfaces to keep the client
 // package decoupled from full user / plan services. main wires
@@ -104,6 +110,33 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 
 	// Stable 3x-ui email handle for this (user, node, inbound) triple.
 	clientEmail := user.SubID
+
+	// WireGuard branch: peer mutation goes through the advisory-locked
+	// RMW path, not the unified /clients/add endpoint. The WG flow
+	// also persists the encrypted private key in wg_peers and applies
+	// expiry/limit on the ownership row only (the panel's WG inbound
+	// has no per-peer expiry / traffic-cap concept).
+	if in.IsWireguard() {
+		if s.wg == nil {
+			return nil, fmt.Errorf("provision: WG inbound %q encountered but WG_MASTER_KEY not configured", inboundTag)
+		}
+		ownership, _, err := s.wg.ProvisionPeer(ctx, userID, nodeID, inboundTag, clientEmail, params.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		// Apply plan-driven expiry + limit on top of the WG-provisioned
+		// row. ProvisionPeer's own Save writes a baseline ownership
+		// with no expiry/limit; we update in place so the row reflects
+		// the purchase.
+		if err := s.applyPlanWindow(ctx, ownership, params); err != nil {
+			return nil, err
+		}
+		s.log.Info("provisioned WG peer",
+			slog.Int64("user_id", userID), slog.Int64("node_id", nodeID),
+			slog.String("inbound", inboundTag),
+		)
+		return ownership, nil
+	}
 
 	existing, err := s.ownership.GetByTriple(ctx, nodeID, inboundTag, clientEmail)
 	if err != nil {
@@ -399,4 +432,34 @@ func randomHex(n int) string {
 		panic("crypto/rand: " + err.Error())
 	}
 	return hex.EncodeToString(b)
+}
+
+// applyPlanWindow stamps the plan's DurationDays + TrafficLimitBytes
+// onto an already-persisted ownership row. Used by the WG branch of
+// ProvisionClient where the WGProvisioner has already written a
+// baseline row but doesn't know about plan params. Extends existing
+// expiry if the user is renewing.
+func (s *Service) applyPlanWindow(ctx context.Context, row *model.ClientOwnership, params PlanParams) error {
+	now := time.Now().UTC()
+	newExpiry := computeExpiry(now, row, params.DurationDays)
+	if !newExpiry.IsZero() {
+		v := newExpiry
+		row.ExpiresAt = &v
+	} else {
+		row.ExpiresAt = nil
+	}
+	if params.TrafficLimitBytes > 0 {
+		v := params.TrafficLimitBytes
+		row.TrafficLimitBytes = &v
+	} else {
+		row.TrafficLimitBytes = nil
+	}
+	if params.PlanID != nil {
+		row.PlanID = params.PlanID
+	}
+	row.Enabled = true
+	if _, err := s.ownership.Upsert(ctx, row); err != nil {
+		return fmt.Errorf("apply plan window: %w", err)
+	}
+	return nil
 }

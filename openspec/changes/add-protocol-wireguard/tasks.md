@@ -85,15 +85,18 @@ Findings in `notes/3xui-wg-api.md`. Key conclusions:
 - [x] 4.2 `WGProvisioner.RemovePeer(ctx, nodeID, inboundTag, email)`:
   - Same advisory-lock + RMW pattern; removes peer by
     public_key match; clears `wg_peers` mirror + ownership row
-- [~] 4.3 Branch `ClientService.Provision` on `inbound.IsWireguard()`
-  — DEFERRED. WGProvisioner is a sibling service rather than a
-  branch inside `ProvisionClient` because WG ownerships have no
-  `email/uuid/password` to sync via the unified flow. Plan-purchase
-  callsite (billing) needs the branch — tracked as #8.1 follow-up.
-- [~] 4.4 Branch `ExpiryJob.disableOnNode` — DEFERRED to #8.1
-  follow-up alongside 4.3. The current expiry job calls
-  `UpdateClient(Enable=false)` which 404s for WG ownerships;
-  acceptable for v1 since WG is opt-in via WG_MASTER_KEY.
+- [x] 4.3 `ClientService.ProvisionClient` branches on
+  `inbound.IsWireguard()`: delegates to `WGProvisioner.ProvisionPeer`
+  and applies plan window (expiry + traffic limit) on top of the
+  baseline ownership row via `applyPlanWindow`. Wired through
+  `ClientService.SetWGProvisioner`, called from app.Build when
+  WG_MASTER_KEY is configured. (Shipped 2026-05-21 as #8.1.)
+- [x] 4.4 `ExpiryJob.disableOnNode` branches on
+  `inbound.IsWireguard()`: when WG, calls `WGRemover.RemovePeer`
+  (the WGProvisioner's RMW path) instead of
+  `UpdateClient(Enable=false)`. When no WGRemover is attached
+  (WG_MASTER_KEY unset), logs a warning and leaves the DB flip
+  as the only enforcement layer. (Shipped 2026-05-21 as #8.1.)
 - [x] 4.5 Tests: allocator unit tests cover the IP picker
   (lowest free / skips taken / refuses gateway / errors on
   exhaustion / parses CIDR + bare-IP inputs).
