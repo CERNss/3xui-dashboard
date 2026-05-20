@@ -140,7 +140,7 @@ const emit = defineEmits<{
 // Local model — every field 3x-ui's add-inbound modal exposes
 // =========================================================================
 
-type ProtocolName = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard'
+type ProtocolName = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard' | 'hysteria'
 type TransmissionName = 'tcp' | 'ws' | 'grpc' | 'httpupgrade' | 'h2' | 'xhttp' | 'kcp' | 'quic'
 type SecurityName = 'none' | 'tls' | 'reality'
 
@@ -307,23 +307,31 @@ const tabs = [
   { key: 'advanced', label: '高级配置' },
 ] as const
 
-// WireGuard inbounds don't have streamSettings or sniffing —
-// the protocol carries its own UDP transport. Hide those tabs
-// so admins don't fill out fields the panel will ignore.
+// Protocol-specific tab visibility:
+//   - WireGuard: no streamSettings / no sniffing — hide both
+//   - Hysteria 2: streamSettings shape is fixed (network=hysteria,
+//     TLS mandatory, ALPN locked) — Stream tab would only confuse
+//     since most of its widgets don't apply. Sniffing still useful
+//     for routing decisions, but the panel ignores it for UDP, so
+//     hide it too.
 const visibleTabs = computed(() => {
-  if (m.value.protocol === 'wireguard') {
+  const p = m.value.protocol
+  if (p === 'wireguard') {
+    return tabs.filter((t) => t.key !== 'stream' && t.key !== 'sniffing')
+  }
+  if (p === 'hysteria') {
     return tabs.filter((t) => t.key !== 'stream' && t.key !== 'sniffing')
   }
   return tabs
 })
 
-// If the protocol flips to wireguard while the user is on a
-// hidden tab, bounce them back to basic — otherwise they see
-// an empty pane.
+// If the protocol flips to a transport-free protocol while the
+// user is standing on a now-hidden tab, bounce them back to basic.
 watch(
   () => m.value.protocol,
   (p) => {
-    if (p === 'wireguard' && (activeTab.value === 'stream' || activeTab.value === 'sniffing')) {
+    const onHidden = activeTab.value === 'stream' || activeTab.value === 'sniffing'
+    if ((p === 'wireguard' || p === 'hysteria') && onHidden) {
       activeTab.value = 'basic'
     }
   },
@@ -488,11 +496,37 @@ function buildSettings(): object {
     // managed by the dashboard's RMW provisioning flow, not here.
     return { mtu: 1420, secretKey: '', peers: [], noKernelTun: false }
   }
+  if (mv.protocol === 'hysteria') {
+    return { clients: [], version: 2 }
+  }
   return { clients: [] }
 }
 
 function buildStream(): object {
   const mv = m.value
+
+  // Hysteria 2 has a fixed streamSettings shape — network is
+  // literally "hysteria", TLS is mandatory, ALPN is locked to
+  // ["h3"], and an extra hysteriaSettings block carries the
+  // version + udpIdleTimeout knobs. Bypass the generic builder
+  // since most of the per-network branches don't apply.
+  if (mv.protocol === 'hysteria') {
+    return {
+      network: 'hysteria',
+      security: 'tls',
+      tlsSettings: {
+        serverName: mv.tlsServerName,
+        alpn: ['h3'],
+        fingerprint: mv.tlsFingerprint || undefined,
+        allowInsecure: mv.tlsAllowInsecure,
+      },
+      hysteriaSettings: {
+        version: 2,
+        udpIdleTimeout: 60,
+      },
+    }
+  }
+
   const out: Record<string, unknown> = {
     network: mv.network,
     security: mv.security,
@@ -739,10 +773,14 @@ const expiryDisplay = computed({
               <option value="trojan">trojan</option>
               <option value="shadowsocks">shadowsocks</option>
               <option value="wireguard">wireguard</option>
+              <option value="hysteria">hysteria</option>
             </select>
           </Row>
           <p v-if="m.protocol === 'wireguard'" class="text-xs text-surface-500 pl-32">
             WireGuard：节点端自动生成 server 密钥对；客户端 peer 通过订阅流程下发，无需在此手动管理 clients。
+          </p>
+          <p v-if="m.protocol === 'hysteria'" class="text-xs text-surface-500 pl-32">
+            Hysteria 2：TLS 强制开启；ALPN 锁定 h3；客户端用 auth 字段而非 UUID/密码。证书路径需在 Stream→Security 配（节点本地文件路径）。
           </p>
           <Row label="地址">
             <input v-model="m.listen" type="text" class="input" placeholder="留空表示监听所有 IP" />
@@ -819,6 +857,30 @@ const expiryDisplay = computed({
             </p>
             <p class="text-xs text-surface-500">
               提示：dashboard 要求节点运行 MHSanaei/3x-ui fork（含 WG 模块）+ <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">WG_MASTER_KEY</code> 已配置。
+            </p>
+          </template>
+
+          <template v-else-if="m.protocol === 'hysteria'">
+            <Row label="SNI">
+              <input v-model="m.tlsServerName" type="text" class="input" placeholder="vpn.example.com" />
+            </Row>
+            <Row label="Fingerprint">
+              <select v-model="m.tlsFingerprint" class="input">
+                <option value="">none</option>
+                <option value="chrome">chrome</option>
+                <option value="firefox">firefox</option>
+                <option value="safari">safari</option>
+                <option value="ios">ios</option>
+                <option value="android">android</option>
+                <option value="randomized">randomized</option>
+              </select>
+            </Row>
+            <Row label="Allow Insecure">
+              <ToggleBtn v-model="m.tlsAllowInsecure" />
+            </Row>
+            <p class="text-xs text-surface-500">
+              Hysteria 2 强制 TLS + ALPN=h3 + UDP，固定不可改。证书路径请在节点本地 acme.sh / certbot 维护；dashboard 不上传证书，
+              改 cert 路径要走「高级配置」raw JSON。
             </p>
           </template>
         </div>

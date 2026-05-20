@@ -80,6 +80,7 @@ export interface NodeSnapshot {
 export interface Client {
   id?: string
   password?: string
+  auth?: string
   security?: string
   flow?: string
   email: string

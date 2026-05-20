@@ -26,7 +26,7 @@ const nodes = ref<Node[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const query = ref('')
-const protocolFilter = ref<'all' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard'>('all')
+const protocolFilter = ref<'all' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard' | 'hysteria'>('all')
 const expanded = ref<Set<string>>(new Set()) // "nodeID|tag"
 const snapshots = ref<Record<number, NodeSnapshot>>({}) // by node id
 
@@ -280,10 +280,19 @@ function clientStatsByEmail(in_: Inbound, email: string) {
 
 function openAddClient(f: FleetInbound) {
   const c = blankClient()
-  if (f.inbound.protocol === 'vless' || f.inbound.protocol === 'vmess') {
+  const proto = f.inbound.protocol
+  if (proto === 'vless' || proto === 'vmess') {
     c.id = crypto.randomUUID()
+    c.password = ''
+    c.auth = ''
+  } else if (proto === 'hysteria' || proto === 'hysteria2') {
+    c.id = ''
+    c.password = ''
+    c.auth = randomHex(16)
   } else {
+    c.id = ''
     c.password = randomHex(16)
+    c.auth = ''
   }
   c.subId = randomHex(8)
   clientModal.value = {
@@ -317,9 +326,15 @@ async function submitClient() {
     m.err = 'email 必填'
     return
   }
-  if (m.row.inbound.protocol === 'trojan' || m.row.inbound.protocol === 'shadowsocks') {
+  const proto = m.row.inbound.protocol
+  if (proto === 'trojan' || proto === 'shadowsocks') {
     if (!m.client.password) {
       m.err = 'password 必填 (Trojan/SS)'
+      return
+    }
+  } else if (proto === 'hysteria' || proto === 'hysteria2') {
+    if (!m.client.auth) {
+      m.err = 'auth 必填 (Hysteria)'
       return
     }
   } else {
@@ -519,6 +534,10 @@ function regenPassword() {
   clientModal.value.client.password = randomHex(16)
 }
 
+function regenAuth() {
+  clientModal.value.client.auth = randomHex(16)
+}
+
 async function copyQRUrl() {
   try {
     await navigator.clipboard.writeText(qrModal.value.url)
@@ -564,6 +583,8 @@ function protoColor(p: string): string {
     trojan: 'bg-amber-100 text-amber-800 ring-amber-200',
     shadowsocks: 'bg-pink-100 text-pink-800 ring-pink-200',
     wireguard: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
+    hysteria: 'bg-sky-100 text-sky-800 ring-sky-200',
+    hysteria2: 'bg-sky-100 text-sky-800 ring-sky-200',
   } as Record<string, string>)[p.toLowerCase()] ?? 'bg-surface-200 text-surface-800 ring-surface-300'
 }
 
@@ -683,7 +704,7 @@ onMounted(reload)
       </div>
       <div class="flex h-9 items-center gap-0.5 rounded-xl border border-surface-200 bg-surface-0 p-1 text-xs dark:border-surface-700 dark:bg-surface-900">
         <button
-          v-for="p in (['all','vless','vmess','trojan','shadowsocks','wireguard'] as const)"
+          v-for="p in (['all','vless','vmess','trojan','shadowsocks','wireguard','hysteria'] as const)"
           :key="p"
           class="rounded-lg px-3 py-1 font-medium transition-all duration-150 ease-brand"
           :class="protocolFilter === p
@@ -1031,6 +1052,13 @@ onMounted(reload)
               <div class="flex gap-1">
                 <input v-model="clientModal.client.id" type="text" class="flex-1 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" />
                 <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenUUID" title="生成新 UUID">↻</button>
+              </div>
+            </div>
+            <div v-else-if="clientModal.row && (clientModal.row.inbound.protocol === 'hysteria' || clientModal.row.inbound.protocol === 'hysteria2')">
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Auth</label>
+              <div class="flex gap-1">
+                <input v-model="clientModal.client.auth" type="text" class="flex-1 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" />
+                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenAuth" title="生成">↻</button>
               </div>
             </div>
             <div v-else-if="clientModal.row">
