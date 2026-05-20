@@ -43,9 +43,13 @@ func (r *PlanRepo) List(ctx context.Context, onlyEnabled bool) ([]model.Plan, er
 	return rows, nil
 }
 
-// Create persists a new plan.
+// Create persists a new plan. Uses Select("*") so gorm doesn't
+// skip zero-value bool fields (Enabled) — the column has a
+// `default TRUE` at the SQL layer, and without explicit selection
+// gorm would let the DB default override `Enabled: false` from
+// the caller, silently flipping disabled plans to enabled.
 func (r *PlanRepo) Create(ctx context.Context, p *model.Plan) error {
-	if err := r.db.WithContext(ctx).Create(p).Error; err != nil {
+	if err := r.db.WithContext(ctx).Select("*").Omit("ID", "CreatedAt", "UpdatedAt").Create(p).Error; err != nil {
 		return fmt.Errorf("PlanRepo.Create: %w", err)
 	}
 	return nil

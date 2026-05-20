@@ -13,7 +13,7 @@ type Webhook struct {
 	URL          string      `gorm:"column:url;not null"                         json:"url"`
 	Secret       string      `gorm:"column:secret;not null"                      json:"-"`
 	Events       StringSlice `gorm:"column:events;type:jsonb;not null;default:'[]'::jsonb" json:"events"`
-	Enabled      bool        `gorm:"column:enabled;not null;default:true"        json:"enabled"`
+	Enabled      bool        `gorm:"column:enabled;not null"                     json:"enabled"`
 	AllowPrivate bool        `gorm:"column:allow_private;not null;default:false" json:"allow_private"`
 	CreatedAt    time.Time   `gorm:"column:created_at;not null;default:now()"    json:"created_at"`
 	UpdatedAt    time.Time   `gorm:"column:updated_at;not null;default:now()"    json:"updated_at"`

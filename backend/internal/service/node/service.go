@@ -77,7 +77,9 @@ func (s *Service) Create(ctx context.Context, in Input) (*model.Node, error) {
 		Enabled:  in.Enabled,
 		Status:   model.NodeStatusUnknown,
 	}
-	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
+	// Select("*") so zero-value bool Enabled (from Input{Enabled:false})
+	// lands as false; without it gorm lets the column default override.
+	if err := s.db.WithContext(ctx).Select("*").Omit("ID", "CreatedAt", "UpdatedAt").Create(row).Error; err != nil {
 		if isUniqueViolation(err) {
 			return nil, fmt.Errorf("%w: %q", ErrDuplicateName, in.Name)
 		}

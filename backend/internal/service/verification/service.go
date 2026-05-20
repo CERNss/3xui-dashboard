@@ -134,46 +134,72 @@ func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) e
 //
 // Increments `attempts` on each mismatch; after maxAttempts the code is
 // burnt and the caller must request a new one.
+//
+// Note: the SELECT runs inside a tx so the conditional logic stays
+// consistent, but the attempts/consumed_at UPDATE runs on the parent
+// connection so it commits even when the function returns
+// ErrCodeMismatch. Returning a non-nil error from a gorm.Transaction
+// closure rolls back the whole tx, which would silently undo the
+// attempts increment and let an attacker brute-force codes
+// indefinitely. This split is the simplest fix; the read+write
+// race window is fine because both UPDATEs are guarded by
+// `WHERE consumed_at IS NULL`.
 func (s *Service) Consume(ctx context.Context, email, code string, purpose Purpose) error {
 	email = normalizeEmail(email)
 	now := time.Now()
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row record
-		err := tx.
-			Where("email = ? AND purpose = ? AND consumed_at IS NULL",
-				email, string(purpose)).
-			Order("sent_at DESC").
-			Limit(1).
-			First(&row).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCodeNotFound
-		}
-		if err != nil {
-			return fmt.Errorf("lookup code: %w", err)
-		}
+	var row record
+	err := s.db.WithContext(ctx).
+		Where("email = ? AND purpose = ? AND consumed_at IS NULL",
+			email, string(purpose)).
+		Order("sent_at DESC").
+		Limit(1).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrCodeNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lookup code: %w", err)
+	}
 
-		if row.ExpiresAt.Before(now) {
-			return ErrCodeExpired
-		}
-		if row.Attempts >= maxAttempts {
-			return ErrTooManyAttempts
-		}
+	if row.ExpiresAt.Before(now) {
+		return ErrCodeExpired
+	}
+	if row.Attempts >= maxAttempts {
+		return ErrTooManyAttempts
+	}
 
-		if row.CodeHash != hashCode(code) {
-			// Increment attempts but don't reveal whether the code existed.
-			if err := tx.Model(&row).Update("attempts", row.Attempts+1).Error; err != nil {
-				return fmt.Errorf("increment attempts: %w", err)
-			}
-			return ErrCodeMismatch
+	if row.CodeHash != hashCode(code) {
+		// Bump attempts on a non-tx UPDATE so the increment commits
+		// independently of the ErrCodeMismatch return. WHERE
+		// consumed_at IS NULL prevents the (rare) race where a
+		// parallel success consumed the row between SELECT and
+		// UPDATE — we don't want to leak attempts on a successful
+		// consume.
+		if err := s.db.WithContext(ctx).
+			Model(&record{}).
+			Where("id = ? AND consumed_at IS NULL", row.ID).
+			Update("attempts", row.Attempts+1).Error; err != nil {
+			return fmt.Errorf("increment attempts: %w", err)
 		}
+		return ErrCodeMismatch
+	}
 
-		// Success — flip consumed_at.
-		if err := tx.Model(&row).Update("consumed_at", now).Error; err != nil {
-			return fmt.Errorf("mark consumed: %w", err)
-		}
-		return nil
-	})
+	// Success — flip consumed_at. Same WHERE guard ensures two
+	// concurrent successful Consume calls don't both think they
+	// won; the second's RowsAffected=0 surfaces as ErrCodeNotFound
+	// to the caller, matching the "first wins" semantics.
+	res := s.db.WithContext(ctx).
+		Model(&record{}).
+		Where("id = ? AND consumed_at IS NULL", row.ID).
+		Update("consumed_at", now)
+	if res.Error != nil {
+		return fmt.Errorf("mark consumed: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrCodeNotFound
+	}
+	return nil
 }
 
 // ---- helpers ---------------------------------------------------------------

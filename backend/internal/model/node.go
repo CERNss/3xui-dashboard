@@ -14,7 +14,7 @@ type Node struct {
 	Port        int        `gorm:"column:port;not null"                        json:"port"`
 	BasePath    string     `gorm:"column:base_path;not null;default:''"        json:"base_path"`
 	APIToken    string     `gorm:"column:api_token;not null"                   json:"-"`
-	Enabled     bool       `gorm:"column:enabled;not null;default:true"        json:"enabled"`
+	Enabled     bool       `gorm:"column:enabled;not null"                     json:"enabled"`
 	LastSeenAt  *time.Time `gorm:"column:last_seen_at"                         json:"last_seen_at,omitempty"`
 	CPUPercent  float64    `gorm:"column:cpu_pct;not null;default:0"           json:"cpu_pct"`
 	MemPercent  float64    `gorm:"column:mem_pct;not null;default:0"           json:"mem_pct"`

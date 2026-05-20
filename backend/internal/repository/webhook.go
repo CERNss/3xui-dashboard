@@ -45,7 +45,10 @@ func (r *WebhookRepo) Get(ctx context.Context, id int64) (*model.Webhook, error)
 }
 
 func (r *WebhookRepo) Create(ctx context.Context, w *model.Webhook) error {
-	if err := r.db.WithContext(ctx).Create(w).Error; err != nil {
+	// Select("*") so zero-value bool Enabled lands as false (gorm
+	// otherwise lets the column default override it). Same fix as
+	// PlanRepo.Create.
+	if err := r.db.WithContext(ctx).Select("*").Omit("ID", "CreatedAt", "UpdatedAt").Create(w).Error; err != nil {
 		return fmt.Errorf("WebhookRepo.Create: %w", err)
 	}
 	return nil
