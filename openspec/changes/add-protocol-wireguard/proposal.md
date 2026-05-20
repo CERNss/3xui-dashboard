@@ -1,5 +1,41 @@
 # add-protocol-wireguard
 
+## ⚠️ T0 result (2026-05-20) — recommend DROP
+
+Probed a live production 3x-ui node (canonical stock fork, Xray-core
+v26.4.25). Findings in `notes/3xui-wg-api.md`. Summary:
+
+- **Zero** WG endpoints exist (`/panel/api/wireguard/*`, `/wg`, every
+  variant tested → 404).
+- Xray config dump contains no `wireguard` substring anywhere.
+- Xray-core has no native WireGuard inbound — confirmed by the
+  upstream protocol list (vless/vmess/trojan/shadowsocks/dokodemo/
+  socks/http only).
+
+The whole proposal below was built on the assumption "recent 3x-ui
+≥v2.4 ships a separate WG panel". That assumption is **false** for
+the canonical fork. The proposal as written cannot ship against
+stock 3x-ui.
+
+**Recommended decision: drop #8.** Rationale:
+- This dashboard's mission is "central control panel for 3x-ui
+  nodes". If 3x-ui itself doesn't support WG, neither do we.
+- The 4 existing Xray protocols cover the practical "fast UDP
+  tunnel" need via Reality + QUIC + xtls-vision.
+- Bringing our own WG daemon (e.g. SSH-managing wg-quick) breaks
+  the framing and doubles the node-provisioning surface.
+
+ROADMAP: mark #8 ❌ permanently with this note; reallocate the slot
+to v2 work (auto-renewal, coupons, cryptomus).
+
+The rest of this proposal is preserved below as historical context
+for the design pattern (WG-specific carve-outs across runtime /
+inbound / sub / provisioning) — useful if a future 3x-ui fork does
+add a WG panel, or if option B (Xray WG outbound for ops routing)
+becomes interesting.
+
+---
+
 ## Why
 
 The 多协议支持 pillar today covers 4 protocols (VLESS, VMess, Trojan,
