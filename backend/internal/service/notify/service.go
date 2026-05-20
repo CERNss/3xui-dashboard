@@ -36,6 +36,15 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 )
 
+// NotificationLogStore is the dedup gate the service uses. Defined
+// locally as an interface so unit tests can stub it without standing
+// up a Postgres instance — the production impl is
+// repository.NotificationLogRepo.
+type NotificationLogStore interface {
+	AlreadySent(ctx context.Context, kind string, ownershipID int64) (bool, error)
+	MarkSent(ctx context.Context, kind string, ownershipID int64, userEmail string) error
+}
+
 // Service wires the bus subscriber + channels + router + repos.
 type Service struct {
 	bus       *event.Bus
@@ -43,20 +52,21 @@ type Service struct {
 	channels  map[string]Channel
 	users     *repository.UserRepo
 	ownership *repository.ClientOwnershipRepo
-	logs      *repository.NotificationLogRepo
+	logs      NotificationLogStore
 	log       *slog.Logger
 }
 
 // New wires the service. `channels` is a flat list — the service
 // indexes by Channel.Name(). The router decides which channels see
-// each event type.
+// each event type. `logs` is the NotificationLogStore interface so
+// tests can pass a stub without a real DB.
 func New(
 	bus *event.Bus,
 	router *Router,
 	channels []Channel,
 	users *repository.UserRepo,
 	ownership *repository.ClientOwnershipRepo,
-	logs *repository.NotificationLogRepo,
+	logs NotificationLogStore,
 	lg *slog.Logger,
 ) *Service {
 	idx := make(map[string]Channel, len(channels))

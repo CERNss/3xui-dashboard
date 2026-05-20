@@ -79,39 +79,79 @@ func (j *ProbeJob) RunOnce(ctx context.Context) {
 }
 
 func (j *ProbeJob) probeOne(ctx context.Context, n model.Node) {
-	res, err := j.nodes.Probe(ctx, n.ID)
+	_, err := j.nodes.Probe(ctx, n.ID)
 	if err != nil {
 		j.log.Warn("probe failed",
 			slog.Int64("node_id", n.ID),
 			slog.String("node", n.Name),
 			slog.String("error", err.Error()),
 		)
-		j.bus.PublishType(event.NodeProbeFailed, NodeProbeFailedPayload{
-			NodeID: n.ID, Name: n.Name, Error: err.Error(),
-		})
-		if n.Status == model.NodeStatusOnline {
-			j.bus.PublishType(event.NodeOffline, NodeStatusChangedPayload{
-				NodeID: n.ID, Name: n.Name, Prior: n.Status, Now: model.NodeStatusOffline,
+	}
+	for _, ev := range probeTransitionEvents(n.ID, n.Name, n.Status, err) {
+		j.bus.PublishType(ev.Type, ev.Payload)
+	}
+}
+
+// probeTransitionEvent is one (event_type, payload) pair to publish
+// after a single probe call. Returned by probeTransitionEvents so
+// the side-effect (Publish) is separable from the decision logic
+// (what to publish based on prior status + probe outcome).
+type probeTransitionEvent struct {
+	Type    string
+	Payload any
+}
+
+// probeTransitionEvents is the pure decision: given (nodeID, name,
+// priorStatus, probeErr), what events should fire? Pulled out of
+// probeOne so we can unit-test every transition matrix cell
+// without standing up a node.Service.
+//
+// Truth table:
+//
+//   prior=online,    err=nil  → []                       (steady state)
+//   prior=online,    err≠nil  → [probe_failed, offline]  (started failing)
+//   prior=offline,   err=nil  → [online, recovered]      (recovered)
+//   prior=offline,   err≠nil  → [probe_failed]           (still failing)
+//   prior=unknown,   err=nil  → [online]                 (first probe ok)
+//   prior=unknown,   err≠nil  → [probe_failed]           (first probe failed)
+func probeTransitionEvents(nodeID int64, name, prior string, probeErr error) []probeTransitionEvent {
+	if probeErr != nil {
+		out := []probeTransitionEvent{{
+			Type: event.NodeProbeFailed,
+			Payload: NodeProbeFailedPayload{
+				NodeID: nodeID, Name: name, Error: probeErr.Error(),
+			},
+		}}
+		if prior == model.NodeStatusOnline {
+			out = append(out, probeTransitionEvent{
+				Type: event.NodeOffline,
+				Payload: NodeStatusChangedPayload{
+					NodeID: nodeID, Name: name, Prior: prior, Now: model.NodeStatusOffline,
+				},
 			})
 		}
-		return
+		return out
 	}
-	// Probe succeeded.
-	if n.Status != model.NodeStatusOnline {
-		j.bus.PublishType(event.NodeOnline, NodeStatusChangedPayload{
-			NodeID: n.ID, Name: n.Name, Prior: n.Status, Now: model.NodeStatusOnline,
+	if prior == model.NodeStatusOnline {
+		return nil
+	}
+	out := []probeTransitionEvent{{
+		Type: event.NodeOnline,
+		Payload: NodeStatusChangedPayload{
+			NodeID: nodeID, Name: name, Prior: prior, Now: model.NodeStatusOnline,
+		},
+	}}
+	if prior == model.NodeStatusOffline {
+		// Genuine recovery, not first-probe — distinct event so ops
+		// channels can subscribe to recoveries without boot chatter.
+		out = append(out, probeTransitionEvent{
+			Type: event.NodeRecovered,
+			Payload: NodeStatusChangedPayload{
+				NodeID: nodeID, Name: name, Prior: prior, Now: model.NodeStatusOnline,
+			},
 		})
-		// NodeRecovered specifically marks the offline → online
-		// transition (not the unknown → online "first probe" case).
-		// Distinct from NodeOnline so ops channels can subscribe to
-		// just genuine recoveries and skip startup chatter.
-		if n.Status == model.NodeStatusOffline {
-			j.bus.PublishType(event.NodeRecovered, NodeStatusChangedPayload{
-				NodeID: n.ID, Name: n.Name, Prior: n.Status, Now: model.NodeStatusOnline,
-			})
-		}
 	}
-	_ = res
+	return out
 }
 
 // Type aliases for the canonical payloads in
