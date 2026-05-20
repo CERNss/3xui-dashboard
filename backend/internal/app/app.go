@@ -31,6 +31,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
 	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
+	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/notify"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
@@ -158,6 +159,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	orderRepo := repository.NewOrderRepo(db)
 	paymentRegistry := payment.NewRegistry()
 	paymentRegistry.Register(alipay.New(cfg.Alipay))
+	paymentRegistry.Register(stripe.New(cfg.Stripe))
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)

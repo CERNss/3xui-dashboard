@@ -25,6 +25,7 @@ type Config struct {
 	OIDC   OIDC
 	SMTP   SMTP
 	Alipay Alipay
+	Stripe Stripe
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
@@ -125,6 +126,24 @@ func (a Alipay) Enabled() bool {
 	return a.AppID != "" && a.PrivateKey != "" && a.AlipayPublicKey != ""
 }
 
+// Stripe configures the Checkout Sessions gateway. Stripe distinguishes
+// test vs live by the secret key prefix (sk_test_... vs sk_live_...),
+// so there's no separate sandbox URL — the API host is always
+// api.stripe.com.
+type Stripe struct {
+	SecretKey            string // sk_live_... or sk_test_...
+	WebhookSecret        string // whsec_... — used to HMAC-verify inbound webhooks
+	Currency             string // ISO 4217 lowercase, defaults to "usd"
+	SuccessURL           string // where Stripe redirects after success — usually /portal/orders?stripe=ok
+	CancelURL            string // where Stripe redirects on cancel — usually /portal/plans?stripe=cancel
+	SessionExpiryMinutes int    // 0 → 30 minutes (Stripe's API default is 24h but we expire eagerly)
+}
+
+// Enabled reports whether the stripe gateway is fully configured.
+func (s Stripe) Enabled() bool {
+	return s.SecretKey != "" && s.WebhookSecret != ""
+}
+
 // Load reads configuration. If envFile is non-empty it is loaded as a
 // dotenv-format file; values still get overridden by real environment
 // variables (process env wins). Missing required keys produce a single
@@ -152,6 +171,8 @@ func Load(envFile string) (*Config, error) {
 	v.SetDefault("PUBLIC_REGISTRATION", false)
 	v.SetDefault("EMAIL_DOMAIN_ALLOWLIST", "")
 	v.SetDefault("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
+	v.SetDefault("STRIPE_CURRENCY", "usd")
+	v.SetDefault("STRIPE_SESSION_EXPIRY_MINUTES", 30)
 
 	if envFile != "" {
 		v.SetConfigFile(envFile)
@@ -218,6 +239,14 @@ func Load(envFile string) (*Config, error) {
 			Gateway:         v.GetString("ALIPAY_GATEWAY"),
 			NotifyURL:       v.GetString("ALIPAY_NOTIFY_URL"),
 			ReturnURL:       v.GetString("ALIPAY_RETURN_URL"),
+		},
+		Stripe: Stripe{
+			SecretKey:            v.GetString("STRIPE_SECRET_KEY"),
+			WebhookSecret:        v.GetString("STRIPE_WEBHOOK_SECRET"),
+			Currency:             v.GetString("STRIPE_CURRENCY"),
+			SuccessURL:           v.GetString("STRIPE_SUCCESS_URL"),
+			CancelURL:            v.GetString("STRIPE_CANCEL_URL"),
+			SessionExpiryMinutes: v.GetInt("STRIPE_SESSION_EXPIRY_MINUTES"),
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),
 		EmailDomainAllowlist: splitCSV(v.GetString("EMAIL_DOMAIN_ALLOWLIST")),

@@ -110,10 +110,14 @@ async function buy(plan: Plan) {
   const chosen = inbounds.value.find(ib => ib.node_id === nodeID && ib.inbound_tag === inboundTag)
   const where = chosen ? `${chosen.node_name} · ${chosen.remark || chosen.inbound_tag}` : '所选节点'
 
-  const methodLabel = selectedMethod.value === 'alipay' ? '支付宝' : '余额'
-  const messageBody = selectedMethod.value === 'alipay'
-    ? `开通在「${where}」\n通过${methodLabel}支付 ${formatYuan(plan.price_cents)}。`
-    : `开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`
+  const methodLabel =
+    selectedMethod.value === 'alipay' ? '支付宝'
+    : selectedMethod.value === 'stripe' ? 'Stripe'
+    : '余额'
+  const messageBody =
+    selectedMethod.value === 'balance'
+      ? `开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`
+      : `开通在「${where}」\n通过${methodLabel}支付 ${formatYuan(plan.price_cents)}。`
   const ok = await askConfirm({
     title: `购买「${plan.name}」`,
     message: messageBody,
@@ -132,6 +136,19 @@ async function buy(plan: Plan) {
     if (selectedMethod.value === 'alipay') {
       const order = await portalBillingApi.purchaseViaPayment('alipay', input)
       alipayModal.value = { open: true, order }
+      return
+    }
+    if (selectedMethod.value === 'stripe') {
+      const order = await portalBillingApi.purchaseViaPayment('stripe', input)
+      // Stripe Checkout is a hosted page — payment_qr_url is the
+      // redirect target, not a QR source. We leave the page; the
+      // success/cancel URLs configured server-side bring the user
+      // back to /portal/orders or /portal/plans.
+      if (order.payment_qr_url) {
+        window.location.href = order.payment_qr_url
+        return
+      }
+      flash.value = { kind: 'err', text: 'Stripe 未返回支付链接' }
       return
     }
     const order = await portalBillingApi.purchase(input)
@@ -270,6 +287,7 @@ onMounted(load)
           <span class="text-sm font-medium" :class="selectedMethod === m ? 'text-accent-700 dark:text-accent-300' : 'text-ink-900 dark:text-surface-50'">
             <template v-if="m === 'alipay'">支付宝</template>
             <template v-else-if="m === 'balance'">余额</template>
+            <template v-else-if="m === 'stripe'">Stripe</template>
             <template v-else>{{ m }}</template>
           </span>
         </label>

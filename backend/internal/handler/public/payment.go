@@ -1,7 +1,9 @@
 package public
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +11,7 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/service/billing"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
+	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
 )
 
 // PaymentNotifyHandler exposes the public async-notify endpoints
@@ -32,6 +35,7 @@ func NewPaymentNotifyHandler(b *billing.Service, lg *slog.Logger) *PaymentNotify
 // rate-limit middleware we add downstream.
 func (h *PaymentNotifyHandler) RegisterRoutes(rg *gin.Engine) {
 	rg.POST("/api/public/payment/alipay/notify", h.alipayNotify)
+	rg.POST("/api/public/payment/stripe/webhook", h.stripeWebhook)
 }
 
 // alipayNotify handles alipay async notifies. Per alipay's contract:
@@ -106,6 +110,97 @@ func (h *PaymentNotifyHandler) alipayNotify(c *gin.Context) {
 	}
 	// Any other trade_status (e.g. WAIT_BUYER_PAY) → we just ack.
 	c.String(http.StatusOK, "success")
+}
+
+// stripeWebhook handles Stripe webhook events. Per Stripe's contract:
+//
+//   - Body is application/json
+//   - Must verify Stripe-Signature HMAC against the RAW body — Gin's
+//     JSON binding would mutate whitespace, so we read raw bytes
+//     FIRST and verify before parsing
+//   - 200 with any body = accepted; Stripe stops retrying
+//   - Non-2xx triggers retry with exponential backoff for ~3 days
+//
+// Events we handle:
+//
+//   - checkout.session.completed     → ConfirmPayment
+//   - checkout.session.async_payment_failed → FailPayment
+//   - checkout.session.expired       → ExpirePayment (via lookup)
+//
+// All other event types are ack'd (200 {}) so Stripe doesn't retry.
+func (h *PaymentNotifyHandler) stripeWebhook(c *gin.Context) {
+	// Read raw body BEFORE any binding — Gin won't have touched it
+	// since we have no middleware that reads the body here.
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.String(http.StatusBadRequest, "read body: %v", err)
+		return
+	}
+	gw, err := h.gateway("stripe")
+	if err != nil {
+		c.String(http.StatusServiceUnavailable, "stripe not configured")
+		return
+	}
+	// Type-assert to the concrete stripe.Gateway so we can call
+	// VerifyWebhookRaw — the payment.Gateway interface doesn't
+	// expose it (alipay signs params, stripe signs raw body).
+	sg, ok := gw.(*stripe.Gateway)
+	if !ok {
+		h.log.Error("stripe gateway has wrong type")
+		c.String(http.StatusInternalServerError, "stripe wiring broken")
+		return
+	}
+	sigHeader := c.GetHeader("Stripe-Signature")
+	if err := sg.VerifyWebhookRaw(rawBody, sigHeader); err != nil {
+		h.log.Warn("stripe webhook signature failed",
+			slog.String("remote", c.ClientIP()),
+			slog.String("error", err.Error()),
+		)
+		c.String(http.StatusBadRequest, "bad signature")
+		return
+	}
+
+	// Parse only the fields we care about — Stripe's event payloads
+	// are huge but we just need event.type + the session object.
+	var ev struct {
+		Type string `json:"type"`
+		Data struct {
+			Object struct {
+				ID                string `json:"id"`
+				ClientReferenceID string `json:"client_reference_id"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rawBody, &ev); err != nil {
+		c.String(http.StatusBadRequest, "bad json: %v", err)
+		return
+	}
+	sessionID := ev.Data.Object.ID
+
+	switch ev.Type {
+	case "checkout.session.completed":
+		if _, err := h.billing.ConfirmPayment(c.Request.Context(), sessionID); err != nil {
+			if errors.Is(err, billing.ErrOrderNotFound) {
+				// Permanent miss — ack so stripe stops retrying.
+				h.log.Warn("stripe webhook for unknown session",
+					slog.String("session_id", sessionID))
+				c.JSON(http.StatusOK, gin.H{})
+				return
+			}
+			h.log.Error("ConfirmPayment failed",
+				slog.String("session_id", sessionID),
+				slog.String("error", err.Error()),
+			)
+			c.String(http.StatusInternalServerError, "internal error")
+			return
+		}
+	case "checkout.session.async_payment_failed":
+		_ = h.billing.FailPayment(c.Request.Context(), sessionID, "stripe reports async_payment_failed")
+	case "checkout.session.expired":
+		_ = h.billing.FailPayment(c.Request.Context(), sessionID, "stripe reports session expired")
+	}
+	// Any other event type → ack and move on.
+	c.JSON(http.StatusOK, gin.H{})
 }
 
 func (h *PaymentNotifyHandler) gateway(provider string) (payment.Gateway, error) {

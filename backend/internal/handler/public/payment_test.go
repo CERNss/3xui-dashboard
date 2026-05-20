@@ -124,6 +124,31 @@ func TestAlipayNotify_BadSignature(t *testing.T) {
 	}
 }
 
+// ---- Stripe ---------------------------------------------------------------
+
+// We can't easily construct a full stripe.Gateway in a handler test
+// (it lives in another package), so we exercise the failure paths
+// that don't require the gateway — bad signature header, gateway
+// not configured. Roundtrip success is covered by stripe package
+// tests + the e2e suite once it exists.
+
+func TestStripeWebhook_GatewayNotConfigured(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := billing.New(nil, nil, nil, nil, nil, payment.NewRegistry(), logger)
+	h := NewPaymentNotifyHandler(svc, logger)
+	e := gin.New()
+	h.RegisterRoutes(e)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/public/payment/stripe/webhook", strings.NewReader(`{"type":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Stripe-Signature", "t=1700000000,v1=abc")
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
 func TestAlipayNotify_GatewayNotConfigured(t *testing.T) {
 	// Build a handler with NO gateway registered.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

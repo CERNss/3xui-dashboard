@@ -15,7 +15,7 @@ single state. Update this file whenever a change ships.
                             完成度    打分逻辑
 1. 运维管理   █████████████████░░░  85%   admin UI 全 + 到期 cron + 仅缺 traffic-reset / auto-renewal
 2. 多协议     █████████████████░░░  85%   节点 4/5 + 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect 已交付）
-3. 支付系统   █████████░░░░░░░░░░░  45%   骨架齐 + alipay 当面付（QR + 异步通知 + 失败兜底 poll）+ 仍缺 stripe / auto-renewal
+3. 支付系统   ████████████░░░░░░░░  60%   alipay 当面付 + Stripe Checkout（两个网关 + 通用 Gateway 接口 + payment_pending 状态机 + 失败兜底 poll）+ 仍缺 auto-renewal
 4. 通知系统   ██████████░░░░░░░░░░  50%   client.expired/expiring_soon publisher 接通 + 仍缺 bot/queue
 5. 用户界面   ██████████████████░░  90%   admin 95% + portal 75% + 设计系统 95%
 ─────────────────────────────────────────
@@ -223,7 +223,7 @@ admin moderation of users/plans/orders.
 | 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75%→90% / 运维 60%→75%（实际达成） | ✅ shipped `08553c3` (2026-05-20) |
 | 4 | `add-billing-cron-jobs` | 运维 + 通知 | 运维 75%→85% / 通知 40%→50%（部分） | ⚠️ partial (commit `1c0a183`)：到期 cron 已交付；traffic-reset + 自动续费等 #5 |
 | 5 | `add-payment-alipay` | 支付 | 20% → 45%（实际达成） | ✅ shipped (2026-05-20)：alipay 当面付 QR + 异步 notify + RSA2 sign/verify（纯 stdlib 无 SDK 依赖）+ payment-poll 30s 兜底 + payment_pending/paid/payment_failed/payment_expired 状态机。Auto-renewal 拆到独立 change |
-| 6 | `add-payment-stripe` | 支付 | 45% → 60% | ❌ 未开 |
+| 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。Subscriptions 拆到 add-billing-auto-renewal |
 | 7 | `add-notification-channels` | 通知 | 40% → 80% | ❌ 未开 |
 | 8 | `add-protocol-wireguard` | 多协议 | 节点 4/5 → 5/5（WireGuard runtime/links/sub） | ❌ 未开（低优先级） |
 | 9 | `add-mobile-responsive` | 用户界面 | 90% → 95% | ❌ 未开 |
@@ -244,6 +244,7 @@ admin moderation of users/plans/orders.
 | `add-billing-cron-jobs`（部分） | 2026-05-20 | ExpiryJob 接通：DB-side 到期处理 + 警告事件 publisher（client.expired / client.expiring_soon），@every 5m。Traffic-reset + 自动续费推到 #5（运维 75%→85%, 通知 40%→50%） |
 | `tech-debt-cleanup` | 2026-05-20 | P0-P2 一波清债：notify bridge（event→mailer 自动发邮件）+ 持久化 dedup（notification_log 表 + bus/mailer 两层独立 kind）+ ExpiryJob 节点侧 aggressive disable + ConfirmModal 替代 native confirm() + Plans 价格精度（Math.round 全路径）+ Subscription QR 防闪（monotonic token）+ Vitest 前端测试栈（20 个测试通过）+ Stats 服务端聚合（单次 /api/admin/stats vs 3 × list(limit=1000)）+ CORS 中间件 + 登录 rate limit + Prometheus /metrics（http_requests_total + duration histogram，route-template 标签防 cardinality 爆炸） |
 | `add-payment-alipay` | 2026-05-20 | 支付宝 当面付：service/payment/alipay 自包含（precreate + trade.query + 异步 notify 验签，纯 stdlib RSA2 无 SDK 依赖）+ payment.Gateway 接口（stripe/wechatpay 可同形态接入，不动 billing 核心）+ orders 表加 payment_method/qr_url/provider_order_id/expires_at + 状态机 payment_pending → paid → completed + 兜底 payment-poll @every 30s + portal 支付方式 picker + AlipayPayModal（QR + 3s 轮询 + 倒计时）。支付系统 20% → 45% |
+| `add-payment-stripe` | 2026-05-20 | Stripe Checkout Sessions（hosted redirect，无需自建支付 UI）：service/payment/stripe 自包含 + HMAC-SHA256 webhook 签名验证（raw body before binding）+ 5min replay 防护 + 多 v1 接受（rotation 兼容）+ stdlib only（hmac/sha256/subtle）。复用 #5 的 Gateway 接口 + 状态机 + payment-poll job，几乎零侵入 billing。Frontend Plans.vue 分流：alipay → QR modal / stripe → window.location.href。支付系统 45% → 60% |
 
 ---
 
@@ -257,4 +258,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-payment-stripe`（# 6）— Stripe Checkout 集成。alipay 已落地，gateway 抽象到位，#6 只需要在 service/payment/stripe/ 里新增一个 Gateway 实现 + 配置 + 一个 webhook 路由。
+> **当前焦点**：`add-notification-channels`（# 7）— 把 client.expired/expiring_soon/over_limit + order.* 事件扩展到 Telegram / Discord / 飞书 webhook + bot channels。事件总线 + notify service 已就位，剩下的是 channel-specific adapter（每个 channel 一个文件 + 配置 + 测试）。

@@ -23,7 +23,7 @@ export type OrderStatus =
   | 'payment_failed'
   | 'payment_expired'
 
-export type PaymentMethod = 'balance' | 'alipay'
+export type PaymentMethod = 'balance' | 'alipay' | 'stripe'
 
 export interface Order {
   id: number
