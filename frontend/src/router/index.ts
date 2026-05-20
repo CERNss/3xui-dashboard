@@ -41,6 +41,30 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, titleKey: 'nav.inbounds' },
       },
       {
+        path: 'users',
+        name: 'admin.users',
+        component: () => import('@/views/admin/Users.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.users' },
+      },
+      {
+        path: 'plans',
+        name: 'admin.plans',
+        component: () => import('@/views/admin/Plans.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.plans' },
+      },
+      {
+        path: 'orders',
+        name: 'admin.orders',
+        component: () => import('@/views/admin/Orders.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.orders' },
+      },
+      {
+        path: 'stats',
+        name: 'admin.stats',
+        component: () => import('@/views/admin/Stats.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.stats' },
+      },
+      {
         path: 'settings',
         name: 'admin.settings',
         component: () => import('@/views/admin/Settings.vue'),

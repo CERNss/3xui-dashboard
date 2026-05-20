@@ -33,10 +33,15 @@ const sections: NavSection[] = [
         label: '系统状态',
         icon: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 7v5l3 2',
       },
+      {
+        to: '/admin/stats',
+        label: '统计',
+        icon: 'M3 17l6-6 4 4 8-8M14 7h7v7',
+      },
     ],
   },
   {
-    title: '运维',
+    title: '节点运维',
     items: [
       {
         to: '/admin/nodes',
@@ -47,6 +52,26 @@ const sections: NavSection[] = [
         to: '/admin/inbounds',
         label: '入站列表',
         icon: 'M4 6h16M4 12h16M4 18h16',
+      },
+    ],
+  },
+  {
+    title: '用户与计费',
+    items: [
+      {
+        to: '/admin/users',
+        label: '用户管理',
+        icon: 'M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+      },
+      {
+        to: '/admin/plans',
+        label: '套餐管理',
+        icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
+      },
+      {
+        to: '/admin/orders',
+        label: '订单管理',
+        icon: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6',
       },
     ],
   },
