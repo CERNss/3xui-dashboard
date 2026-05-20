@@ -2,7 +2,6 @@ package alipay
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -68,12 +67,6 @@ func (g *Gateway) CreatePayment(ctx context.Context, order *model.Order, planNam
 func (g *Gateway) Query(ctx context.Context, providerOrderID string) (payment.Status, error) {
 	resp, err := g.client.TradeQuery(ctx, providerOrderID)
 	if err != nil {
-		// Distinguish "alipay says trade not found" (treat as pending —
-		// possibly the precreate response hadn't landed yet) from real
-		// errors (network, signature failure).
-		if isNotFoundError(err) {
-			return payment.StatusPending, nil
-		}
 		return "", err
 	}
 	switch resp.TradeStatus {
@@ -93,27 +86,3 @@ func (g *Gateway) Query(ctx context.Context, providerOrderID string) (payment.St
 func (g *Gateway) VerifyNotify(params map[string]string, signature string) error {
 	return VerifyRSA2(params, signature, g.client.alipayPublicKey)
 }
-
-// isNotFoundError detects alipay's "trade does not exist" responses
-// — sub_code ACQ.TRADE_NOT_EXIST. The do() method bubbles this as
-// a string-formatted error so we string-match the sub_code rather
-// than introducing a new typed error.
-func isNotFoundError(err error) bool {
-	var alipayErr *AlipayError
-	if errors.As(err, &alipayErr) {
-		return alipayErr.SubCode == "ACQ.TRADE_NOT_EXIST"
-	}
-	return false
-}
-
-// AlipayError is reserved for future typed-error work; the current
-// do() wraps codes as fmt.Errorf strings, which isNotFoundError
-// covers via errors.As — both shapes return false here today, but
-// the type is exported so callers can switch on it later.
-type AlipayError struct {
-	Code    string
-	SubCode string
-	Msg     string
-}
-
-func (e *AlipayError) Error() string { return e.Code + ":" + e.Msg }

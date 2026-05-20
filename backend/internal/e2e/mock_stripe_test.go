@@ -102,6 +102,3 @@ func (m *mockStripe) SignWebhook(body []byte, signedAt time.Time) string {
 	return "t=" + ts + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// Compile-time guard so unused-imports don't break the build before
-// any test in this file actually uses these helpers.
-var _ = testing.T{}

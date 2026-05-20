@@ -2,10 +2,10 @@ package e2e
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -74,7 +74,6 @@ func orderRow(t *testing.T, h *harness, id int64) *model.Order {
 func TestAlipay_PurchaseFlow_HappyPath(t *testing.T) {
 	mock := newMockAlipayHarness(t)
 	h := setupHarness(t, mock.opt)
-	mock.bind(t, h)
 
 	adminTok := h.adminLogin(t)
 	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
@@ -138,7 +137,6 @@ func TestAlipay_PurchaseFlow_HappyPath(t *testing.T) {
 func TestAlipay_Notify_BadSignature(t *testing.T) {
 	mock := newMockAlipayHarness(t)
 	h := setupHarness(t, mock.opt)
-	mock.bind(t, h)
 
 	adminTok := h.adminLogin(t)
 	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
@@ -283,7 +281,6 @@ func TestPaymentMethods_ReflectsConfiguredGateways(t *testing.T) {
 func TestPaymentMethods_IncludesAlipayWhenConfigured(t *testing.T) {
 	mock := newMockAlipayHarness(t)
 	h := setupHarness(t, mock.opt)
-	mock.bind(t, h)
 	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
 	var out struct {
 		Methods []string `json:"methods"`
@@ -336,15 +333,6 @@ func newMockAlipayHarness(t *testing.T) *alipayHarness {
 	}
 }
 
-// bind is currently a no-op — the harnessOption captures everything
-// the mock needs. Kept as a stub so tests have a consistent shape
-// (`mock := new...; h := setupHarness(t, mock.opt); mock.bind(t, h)`)
-// in case future bindings need post-build wiring (e.g. swapping a
-// runtime manager's HTTP client).
-func (a *alipayHarness) bind(t *testing.T, h *harness) {
-	t.Helper()
-}
-
 type stripeHarness struct {
 	stripe *mockStripe
 	opt    harnessOption
@@ -374,7 +362,7 @@ type rawResponse struct {
 	body       string
 }
 
-func postForm(t *testing.T, h *harness, path string, form interface{ Encode() string }) rawResponse {
+func postForm(t *testing.T, h *harness, path string, form url.Values) rawResponse {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, h.URL(path), strings.NewReader(form.Encode()))
 	if err != nil {
@@ -408,6 +396,3 @@ func postRaw(t *testing.T, h *harness, path string, body []byte, headers map[str
 	return rawResponse{StatusCode: resp.StatusCode, body: string(raw)}
 }
 
-// jsonRoundTrip is kept for future expansion (asserting JSON
-// response bodies against typed structs).
-var _ = json.Marshal
