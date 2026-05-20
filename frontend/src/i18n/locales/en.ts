@@ -12,6 +12,10 @@ export default {
     nodes: 'Nodes',
     inbounds: 'Inbounds',
     settings: 'Settings',
+    subscription: 'Subscription',
+    plans: 'Plans',
+    orders: 'Orders',
+    profile: 'Profile',
   },
   auth: {
     login: 'Log in',

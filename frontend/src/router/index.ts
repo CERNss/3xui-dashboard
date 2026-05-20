@@ -75,6 +75,30 @@ const portalRoutes: RouteRecordRaw[] = [
         component: () => import('@/views/portal/Dashboard.vue'),
         meta: { requiresUser: true, titleKey: 'nav.dashboard' },
       },
+      {
+        path: 'subscription',
+        name: 'portal.subscription',
+        component: () => import('@/views/portal/Subscription.vue'),
+        meta: { requiresUser: true, titleKey: 'nav.subscription' },
+      },
+      {
+        path: 'plans',
+        name: 'portal.plans',
+        component: () => import('@/views/portal/Plans.vue'),
+        meta: { requiresUser: true, titleKey: 'nav.plans' },
+      },
+      {
+        path: 'orders',
+        name: 'portal.orders',
+        component: () => import('@/views/portal/Orders.vue'),
+        meta: { requiresUser: true, titleKey: 'nav.orders' },
+      },
+      {
+        path: 'profile',
+        name: 'portal.profile',
+        component: () => import('@/views/portal/Profile.vue'),
+        meta: { requiresUser: true, titleKey: 'nav.profile' },
+      },
     ],
   },
 ]

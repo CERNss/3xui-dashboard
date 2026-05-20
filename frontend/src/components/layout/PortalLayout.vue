@@ -21,14 +21,23 @@ function logout() {
       <div class="text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">
         {{ $t('app.title') }}
       </div>
-      <nav class="flex items-center gap-2 text-sm">
+      <nav class="flex items-center gap-1 text-sm">
         <router-link
-          to="/portal/dashboard"
+          v-for="item in [
+            { to: '/portal/dashboard',    label: $t('nav.dashboard') },
+            { to: '/portal/subscription', label: $t('nav.subscription') },
+            { to: '/portal/plans',        label: $t('nav.plans') },
+            { to: '/portal/orders',       label: $t('nav.orders') },
+            { to: '/portal/profile',      label: $t('nav.profile') },
+          ]"
+          :key="item.to"
+          :to="item.to"
           class="rounded-lg px-3 py-1.5 font-medium text-surface-600 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
           active-class="!text-accent-700 dark:!text-accent-300"
         >
-          {{ $t('nav.dashboard') }}
+          {{ item.label }}
         </router-link>
+        <span class="mx-1 h-5 w-px bg-surface-200 dark:bg-surface-700"></span>
         <button
           :title="theme.theme === 'dark' ? '切换浅色' : '切换深色'"
           class="flex h-8 w-8 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50"

@@ -12,6 +12,10 @@ export default {
     nodes: '节点列表',
     inbounds: '入站列表',
     settings: '面板设置',
+    subscription: '订阅',
+    plans: '套餐',
+    orders: '订单',
+    profile: '资料',
   },
   auth: {
     login: '登录',
