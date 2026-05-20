@@ -4,9 +4,13 @@ import { computed, onMounted, ref } from 'vue'
 import { adminOrdersApi, type AdminOrder } from '@/api/admin/orders'
 import { adminPlansApi, type AdminPlan } from '@/api/admin/plans'
 import { adminUsersApi, type AdminUser } from '@/api/admin/users'
-import Skeleton from '@/components/common/Skeleton.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
+
+const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
 
 const orders = ref<AdminOrder[]>([])
 const plansById = ref<Map<number, AdminPlan>>(new Map())
@@ -76,6 +80,38 @@ const stats = computed(() => {
   return { total, completed, revenue }
 })
 
+// Refund: only completed / paid orders are eligible. Admin can
+// provide an optional reason that gets recorded in the user's
+// balance-ledger note for the +PriceCents credit.
+const refundingId = ref<number | null>(null)
+const refundErr = ref<string | null>(null)
+
+async function refund(o: AdminOrder) {
+  const ok = await askConfirm({
+    title: '退款',
+    message: `订单 #${o.id}（${planName(o.plan_id)}，${formatYuan(o.price_cents)}）将退款给 ${userEmail(o.user_id)}，余额自动 +${formatYuan(o.price_cents)}。客户端不会自动停用，需要的话去 inbounds 页手动处理。`,
+    variant: 'danger',
+    confirmLabel: '退款',
+  })
+  if (!ok) return
+  refundingId.value = o.id
+  refundErr.value = null
+  try {
+    const updated = await adminOrdersApi.refund(o.id, 'admin manual refund')
+    // Optimistic replace so the user sees the chip flip without a full reload.
+    const i = orders.value.findIndex(x => x.id === o.id)
+    if (i >= 0) orders.value.splice(i, 1, updated)
+  } catch (e: any) {
+    refundErr.value = formatError(e, '退款失败')
+  } finally {
+    refundingId.value = null
+  }
+}
+
+function refundable(s: string): boolean {
+  return s === 'completed' || s === 'paid'
+}
+
 onMounted(reload)
 </script>
 
@@ -132,6 +168,7 @@ onMounted(reload)
             <th class="px-6 py-3 font-medium">状态</th>
             <th class="px-6 py-3 font-medium">下单</th>
             <th class="px-6 py-3 font-medium">完成</th>
+            <th class="px-6 py-3 text-right font-medium">操作</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
@@ -149,6 +186,17 @@ onMounted(reload)
             </td>
             <td class="px-6 py-3.5 text-xs text-surface-500">{{ new Date(o.created_at).toLocaleString() }}</td>
             <td class="px-6 py-3.5 text-xs text-surface-500">{{ o.completed_at ? new Date(o.completed_at).toLocaleString() : '—' }}</td>
+            <td class="px-6 py-3.5 text-right">
+              <button
+                v-if="refundable(o.status)"
+                type="button"
+                class="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                :disabled="refundingId === o.id"
+                @click="refund(o)"
+              >
+                {{ refundingId === o.id ? '处理中…' : '退款' }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -159,6 +207,18 @@ onMounted(reload)
       icon="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
       title="没有订单"
       :description="orders.length === 0 ? '还没有用户购买套餐。' : '当前过滤条件下没有订单。'"
+    />
+
+    <p v-if="refundErr" class="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800">{{ refundErr }}</p>
+    <ConfirmModal
+      v-if="confirmState"
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :confirm-label="confirmState.confirmLabel"
+      :variant="confirmState.variant"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
     />
   </div>
 </template>

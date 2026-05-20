@@ -172,6 +172,21 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 			return nil, fmt.Errorf("provision: add panel client: %w", err)
 		}
 	} else {
+		// Re-purchase: zero the panel-side traffic counter BEFORE
+		// extending. Without this, a user who used 80GB of last
+		// month's 100GB plan would carry the 80GB into their fresh
+		// plan and trip the over_limit rule immediately. Reset is
+		// idempotent at the panel level (no-op on missing client),
+		// and a transient failure here is logged but not fatal —
+		// the renewal Update still goes through, and the next
+		// traffic-snapshot tick will reconcile.
+		if err := r.ResetClientTraffic(ctx, inboundTag, clientEmail); err != nil {
+			s.log.Warn("traffic-reset on re-purchase failed (renewal proceeds)",
+				slog.String("inbound", inboundTag),
+				slog.String("email", clientEmail),
+				slog.String("err", err.Error()),
+			)
+		}
 		if err := r.UpdateClient(ctx, inboundTag, wireClient); err != nil {
 			// Update can fail on rare-but-possible identifier
 			// rotations — fall back to add to keep provisioning

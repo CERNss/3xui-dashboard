@@ -29,6 +29,7 @@ func (h *PlanHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 	o := rg.Group("/orders")
 	o.GET("", h.ListOrders)
+	o.POST("/:id/refund", h.RefundOrder)
 }
 
 func (h *PlanHandler) List(c *gin.Context) {
@@ -115,6 +116,34 @@ func (h *PlanHandler) ListOrders(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"orders": rows, "limit": limit, "offset": offset})
+}
+
+// RefundOrder POSTs to /orders/:id/refund with optional
+// {"reason": "..."} body. Credits the user's balance, marks the
+// order refunded, emits OrderRefunded. 400 on invalid state.
+func (h *PlanHandler) RefundOrder(c *gin.Context) {
+	id, ok := parseInt64(c, "id")
+	if !ok {
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	// Body is optional — empty refund is fine.
+	_ = c.ShouldBindJSON(&req)
+	order, err := h.svc.RefundOrder(c.Request.Context(), id, req.Reason)
+	if err != nil {
+		switch {
+		case errors.Is(err, billing.ErrOrderNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, billing.ErrInvalidOrderState):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, order)
 }
 
 func parseInt64Q(s string) (int64, error) {

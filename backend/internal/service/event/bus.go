@@ -38,6 +38,11 @@ const (
 	OrderCreated     = "order.created"
 	OrderCompleted   = "order.completed"
 	OrderFailed      = "order.failed"
+	// OrderRefunded fires when an admin manually refunds a completed
+	// order via /api/admin/orders/:id/refund. Distinct from the
+	// automatic refund-on-provisioning-failure path which still
+	// emits OrderFailed.
+	OrderRefunded    = "order.refunded"
 	// Payment-gateway lifecycle (alipay, stripe, …). Distinct from
 	// OrderCompleted so subscribers can react to "user paid" vs
 	// "client provisioned" — the two happen at different instants

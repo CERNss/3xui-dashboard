@@ -31,4 +31,7 @@ export interface ListOrdersResponse {
 export const adminOrdersApi = {
   list: (params?: ListOrdersParams) =>
     adminClient.get<ListOrdersResponse>('/orders', { params }).then((r) => r.data),
+
+  refund: (id: number, reason: string) =>
+    adminClient.post<AdminOrder>(`/orders/${id}/refund`, { reason }).then((r) => r.data),
 }

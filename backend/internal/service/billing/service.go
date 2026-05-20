@@ -30,6 +30,10 @@ var (
 	ErrPlanDisabled        = errors.New("billing: plan disabled")
 	ErrInvalidInput        = errors.New("billing: invalid input")
 	ErrOrderNotFound       = errors.New("billing: order not found")
+	// ErrInvalidOrderState fires when an admin tries to refund an
+	// order that isn't in a refundable state (e.g. already refunded,
+	// or still pending payment).
+	ErrInvalidOrderState   = errors.New("billing: order not in refundable state")
 )
 
 // Service composes the repos + the client provisioning service.
@@ -498,6 +502,56 @@ func (s *Service) ListOrdersByUser(ctx context.Context, userID int64, limit, off
 
 func (s *Service) ListOrdersAdmin(ctx context.Context, filter repository.OrderFilter, limit, offset int) ([]model.Order, error) {
 	return s.orders.ListAdmin(ctx, filter, limit, offset)
+}
+
+// RefundOrder is the admin-initiated manual refund flow. Credits
+// the user's balance, marks the order refunded, and emits
+// OrderRefunded so notification channels can fan out. Does NOT
+// touch the panel-side client — if the admin wants to disable
+// the underlying access, they use the client-management UI
+// separately. This is intentional: refund ≠ revoke (sometimes
+// an op refunds a partial charge and leaves access in place).
+//
+// Refundable states:
+//   - completed: full refund, credit = PriceCents
+//   - paid: payment confirmed but provisioning hadn't run — same
+//     credit, since the user paid PriceCents
+//
+// Already-refunded / failed / pending orders return
+// ErrInvalidOrderState. Idempotent: a repeat call on an
+// already-refunded order returns ErrInvalidOrderState.
+func (s *Service) RefundOrder(ctx context.Context, orderID int64, reason string) (*model.Order, error) {
+	order, err := s.orders.Get(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if order == nil {
+		return nil, ErrOrderNotFound
+	}
+	switch order.Status {
+	case model.OrderStatusCompleted, model.OrderStatusPaid:
+		// refundable
+	default:
+		return nil, fmt.Errorf("%w: status=%s", ErrInvalidOrderState, order.Status)
+	}
+
+	// Credit the user.
+	if _, err := s.users.AdjustBalance(ctx, order.UserID, order.PriceCents, model.BalanceReasonOrderRefund, reason, &order.ID); err != nil {
+		return nil, fmt.Errorf("billing.RefundOrder: credit user: %w", err)
+	}
+	if err := s.orders.MarkRefunded(ctx, order.ID, reason); err != nil {
+		return nil, fmt.Errorf("billing.RefundOrder: mark refunded: %w", err)
+	}
+	s.bus.PublishType(event.OrderRefunded, payload.Order{
+		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents, Reason: "admin_refund",
+	})
+	s.log.Info("admin refunded order",
+		slog.Int64("order_id", order.ID),
+		slog.Int64("user_id", order.UserID),
+		slog.Int64("amount", order.PriceCents),
+		slog.String("reason", reason),
+	)
+	return s.orders.Get(ctx, order.ID)
 }
 
 // ---- helpers --------------------------------------------------------------
