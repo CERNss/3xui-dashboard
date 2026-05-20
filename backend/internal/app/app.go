@@ -34,6 +34,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/notify"
+	"github.com/cern/3xui-dashboard/internal/service/notify/channels"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
@@ -194,11 +195,40 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	paymentPollJob := job.NewPaymentPollJob(billingService, paymentRegistry, 15*time.Minute, logger)
 	_ = scheduler.Add("payment-poll", "@every 30s", paymentPollJob.RunOnce)
 
-	// Notify service — subscribes to client lifecycle events and
-	// dispatches emails to the owning user via mailer. Wired AFTER
-	// the bus + mailer + repos exist; subscriptions register on
-	// Start() and live for the process lifetime.
-	notify.New(bus, mailerSvc, userRepo, ownershipRepo, notifyLogRepo, logger).Start()
+	// Notify service — multi-channel fanout. Channels not configured
+	// (empty env vars) report Enabled()=false and the dispatch loop
+	// silently skips them. Router parsed from NOTIFY_ROUTES; empty
+	// → legacy email-only behavior for client lifecycle events.
+	notifyRouter, routerErr := notify.ParseRoutes(cfg.Notify.Routes)
+	if routerErr != nil {
+		// Misconfigured routes are a hard boot error — operator should
+		// see this immediately, not silently.
+		logger.Error("invalid NOTIFY_ROUTES",
+			"error", routerErr.Error(),
+			"value", cfg.Notify.Routes,
+		)
+		panic("invalid NOTIFY_ROUTES: " + routerErr.Error())
+	}
+	notifyChannels := []notify.Channel{
+		channels.NewEmail(mailerSvc, cfg.Notify.OpsRecipient),
+		channels.NewTelegram(cfg.Notify.Telegram.BotToken, cfg.Notify.Telegram.ChatID),
+		channels.NewDiscord(cfg.Notify.Discord.WebhookURL),
+		channels.NewFeishu(cfg.Notify.Feishu.WebhookURL),
+	}
+	// Warn for channels referenced in routes but unconfigured — helps
+	// operators catch missing env vars without crashing the app.
+	enabledByName := map[string]bool{}
+	for _, c := range notifyChannels {
+		enabledByName[c.Name()] = c.Enabled()
+	}
+	for _, name := range notifyRouter.ConfiguredChannels() {
+		if !enabledByName[name] {
+			logger.Warn("notify route references unconfigured channel",
+				"channel", name,
+				"hint", "events routed only to this channel will be dropped")
+		}
+	}
+	notify.New(bus, notifyRouter, notifyChannels, userRepo, ownershipRepo, notifyLogRepo, logger).Start()
 
 	// SPA.
 	web.Register(engine)

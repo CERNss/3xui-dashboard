@@ -27,44 +27,50 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/config"
 	jobpkg "github.com/cern/3xui-dashboard/internal/job"
-	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 )
 
-// countingHandler tallies INFO-level slog records emitted by the
-// disabled-SMTP mailer (which logs "to", "subject", "body" attrs per
-// would-be send). We match on "subject" specifically — that attr is
-// unique to the mailer's noop path; the notify service's own
-// "delivered" info log only has "to" + "kind".
-type countingHandler struct {
-	mu        sync.Mutex
-	delivered int
+// stubChannel is the test double for Channel. It records every Send
+// so tests can assert call count + recipient + message shape.
+type stubChannel struct {
+	mu       sync.Mutex
+	name     string
+	enabled  bool
+	sends    []Message
+	sendErr  error // when set, Send returns this and skips recording
 }
 
-func (h *countingHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
-func (h *countingHandler) Handle(_ context.Context, r slog.Record) error {
-	if r.Level == slog.LevelInfo {
-		hasSubject := false
-		r.Attrs(func(a slog.Attr) bool {
-			if a.Key == "subject" {
-				hasSubject = true
-				return false
-			}
-			return true
-		})
-		if hasSubject {
-			h.mu.Lock()
-			h.delivered++
-			h.mu.Unlock()
-		}
+func newStubChannel(name string) *stubChannel { return &stubChannel{name: name, enabled: true} }
+
+func (s *stubChannel) Name() string  { return s.name }
+func (s *stubChannel) Enabled() bool { return s.enabled }
+func (s *stubChannel) Send(_ context.Context, msg Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sendErr != nil {
+		return s.sendErr
 	}
+	s.sends = append(s.sends, msg)
 	return nil
 }
-func (h *countingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h *countingHandler) WithGroup(_ string) slog.Handler      { return h }
+func (s *stubChannel) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sends)
+}
+
+// countingHandler is unused under the new stubChannel-based tests
+// but kept as a placeholder for future tests that need to observe
+// slog output.
+type countingHandler struct{ mu sync.Mutex }
+
+func (h *countingHandler) Enabled(_ context.Context, _ slog.Level) bool { return false }
+func (h *countingHandler) Handle(_ context.Context, _ slog.Record) error { return nil }
+func (h *countingHandler) WithAttrs(_ []slog.Attr) slog.Handler         { return h }
+func (h *countingHandler) WithGroup(_ string) slog.Handler              { return h }
 
 func setupDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -136,24 +142,27 @@ func seedOwnership(t *testing.T, db *gorm.DB, userID int64) *model.ClientOwnersh
 	return o
 }
 
-func newServiceWithCapture(t *testing.T, db *gorm.DB) (*Service, *countingHandler) {
+// newServiceWithCapture builds a notify.Service with a single stub
+// "email" channel and the default router. `email` is the only
+// channel the legacy lifecycle tests need — ops-channel routing is
+// covered separately. The stub records each Send for assertions.
+func newServiceWithCapture(t *testing.T, db *gorm.DB) (*Service, *stubChannel) {
 	t.Helper()
-	h := &countingHandler{}
-	logger := slog.New(h)
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	bus := event.New()
-	// Mailer in disabled mode — logs INFO with `to` attr per send,
-	// which countingHandler tallies.
-	mailerSvc := mailer.New(config.SMTP{}, logger)
+	email := newStubChannel("email")
+	router, _ := ParseRoutes("") // defaults: client lifecycle → email
 	svc := New(
 		bus,
-		mailerSvc,
+		router,
+		[]Channel{email},
 		repository.NewUserRepo(db),
 		repository.NewClientOwnershipRepo(db),
 		repository.NewNotificationLogRepo(db),
 		logger,
 	)
 	svc.Start()
-	return svc, h
+	return svc, email
 }
 
 func TestExpired_SendsEmailViaJobPayload(t *testing.T) {
@@ -173,7 +182,7 @@ func TestExpired_SendsEmailViaJobPayload(t *testing.T) {
 		ExpiredAt:   time.Now().UTC(),
 	})
 	// Bus is synchronous — handler has finished by Publish return.
-	if got := h.delivered; got != 1 {
+	if got := h.Count(); got != 1 {
 		t.Errorf("expected 1 mail delivered, got %d", got)
 	}
 }
@@ -192,7 +201,7 @@ func TestExpired_DedupSecondPublish(t *testing.T) {
 	svc.bus.PublishType(event.ClientExpired, payload)
 	svc.bus.PublishType(event.ClientExpired, payload) // second pass — dedup
 
-	if got := h.delivered; got != 1 {
+	if got := h.Count(); got != 1 {
 		t.Errorf("expected exactly 1 mail (dedup), got %d", got)
 	}
 }
@@ -209,11 +218,11 @@ func TestExpired_UserWithNoEmail_NoMailButLogsDedup(t *testing.T) {
 		InboundTag: o.InboundTag, ClientEmail: o.ClientEmail,
 	})
 
-	if got := h.delivered; got != 0 {
+	if got := h.Count(); got != 0 {
 		t.Errorf("user without email should NOT receive mail, got %d delivered", got)
 	}
 	// Dedup row IS written so we don't recheck on every tick.
-	already, _ := repository.NewNotificationLogRepo(db).AlreadySent(context.Background(), string(kindExpired), o.ID)
+	already, _ := repository.NewNotificationLogRepo(db).AlreadySent(context.Background(), "expired_email", o.ID)
 	if !already {
 		t.Errorf("expected dedup row even when email skipped")
 	}
@@ -232,7 +241,7 @@ func TestExpiringSoon_FromJobPayload(t *testing.T) {
 		InboundTag: o.InboundTag, ClientEmail: o.ClientEmail,
 		ExpiresAt: exp, DaysRemaining: 2,
 	})
-	if got := h.delivered; got != 1 {
+	if got := h.Count(); got != 1 {
 		t.Errorf("expected 1 mail for expiring_soon, got %d", got)
 	}
 }
@@ -249,7 +258,7 @@ func TestOverLimit_FromTrafficPayload(t *testing.T) {
 		NodeID: o.NodeID, NodeName: "test", InboundTag: o.InboundTag,
 		ClientEmail: o.ClientEmail, Up: 1_000_000, Down: 9_000_000, Limit: 10_000_000,
 	})
-	if got := h.delivered; got != 1 {
+	if got := h.Count(); got != 1 {
 		t.Errorf("expected 1 mail for over_limit, got %d", got)
 	}
 }
@@ -265,7 +274,7 @@ func TestOverLimit_UnknownClient_NoMail(t *testing.T) {
 		NodeID: 1, NodeName: "test", InboundTag: "different-tag",
 		ClientEmail: "nobody@example", Up: 1, Down: 1, Limit: 1,
 	})
-	if got := h.delivered; got != 0 {
+	if got := h.Count(); got != 0 {
 		t.Errorf("unknown client should not deliver, got %d", got)
 	}
 }

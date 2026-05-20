@@ -26,9 +26,34 @@ type Config struct {
 	SMTP   SMTP
 	Alipay Alipay
 	Stripe Stripe
+	Notify Notify
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
+}
+
+// Notify configures multi-channel notification dispatch. `Routes`
+// is the env-var string parsed by notify.ParseRoutes; per-channel
+// blocks hold the IM-platform-specific bits.
+type Notify struct {
+	Routes       string
+	OpsRecipient string // default "to:" address for email-routed ops alerts
+	Telegram     NotifyTelegram
+	Discord      NotifyDiscord
+	Feishu       NotifyFeishu
+}
+
+type NotifyTelegram struct {
+	BotToken string
+	ChatID   string
+}
+
+type NotifyDiscord struct {
+	WebhookURL string
+}
+
+type NotifyFeishu struct {
+	WebhookURL string
 }
 
 type Server struct {
@@ -247,6 +272,20 @@ func Load(envFile string) (*Config, error) {
 			SuccessURL:           v.GetString("STRIPE_SUCCESS_URL"),
 			CancelURL:            v.GetString("STRIPE_CANCEL_URL"),
 			SessionExpiryMinutes: v.GetInt("STRIPE_SESSION_EXPIRY_MINUTES"),
+		},
+		Notify: Notify{
+			Routes:       v.GetString("NOTIFY_ROUTES"),
+			OpsRecipient: v.GetString("NOTIFY_OPS_RECIPIENT"),
+			Telegram: NotifyTelegram{
+				BotToken: v.GetString("TELEGRAM_BOT_TOKEN"),
+				ChatID:   v.GetString("TELEGRAM_CHAT_ID"),
+			},
+			Discord: NotifyDiscord{
+				WebhookURL: v.GetString("DISCORD_WEBHOOK_URL"),
+			},
+			Feishu: NotifyFeishu{
+				WebhookURL: v.GetString("FEISHU_WEBHOOK_URL"),
+			},
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),
 		EmailDomainAllowlist: splitCSV(v.GetString("EMAIL_DOMAIN_ALLOWLIST")),

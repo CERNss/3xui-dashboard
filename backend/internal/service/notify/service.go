@@ -1,17 +1,22 @@
-// Package notify bridges domain events to user-facing channels —
-// today email (via mailer); future Telegram / Discord / Slack
-// subscribers slot in here too.
+// Package notify bridges domain events to user-facing channels.
 //
-// The bridge subscribes to the in-process event bus for client-
-// lifecycle events (expired / expiring_soon / over_limit), resolves
-// the owning user's email, formats a templated body, and dispatches
-// via mailer.Send.
+// Two delivery shapes coexist:
 //
-// Persistent dedup: we write a `notification_log` row before sending
-// so a restart in the middle of a warn window doesn't re-spam the
-// user. The row is upserted by (kind, ownership_id) and the send
-// happens only if the insert is new — DB conflict means we already
-// notified.
+//  1. **Per-user lifecycle events** — client.expired / expiring_soon
+//     / over_limit. We resolve the owning user's email, build a
+//     Message with Recipient = user.email, and dispatch through the
+//     channels routed for the event type. The email channel uses
+//     Recipient; webhook-style channels (telegram/discord/feishu)
+//     ignore Recipient and send to their configured admin target.
+//
+//  2. **Ops events** — node.offline / node.recovered / order.* —
+//     no per-user recipient. Webhook channels send to admin targets;
+//     the email channel falls back to its `opsRecipient` config.
+//
+// Persistent dedup: `notification_log` per (kind, ownership_id OR
+// dedup_key). The kind suffix is per-channel (e.g. expiring_soon_telegram
+// vs expiring_soon_email) so a redelivery to one channel doesn't
+// block the other.
 package notify
 
 import (
@@ -19,11 +24,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
-	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/event"
@@ -31,42 +37,40 @@ import (
 	jobpkg "github.com/cern/3xui-dashboard/internal/job"
 )
 
-// kind enumerates the notification flavours this bridge handles.
-// Kept narrow so a future change adding a new event type forces an
-// explicit code update (rather than silently silencing the new
-// event).
-type kind string
-
-const (
-	kindExpired      kind = "expired_email"
-	kindExpiringSoon kind = "expiring_soon_email"
-	kindOverLimit    kind = "over_limit_email"
-)
-
-// Service wires the bus subscriber + mailer + repos. It's started
-// once at app boot; there is no Stop() — the bus is process-scoped
-// and dies with the binary.
+// Service wires the bus subscriber + channels + router + repos.
 type Service struct {
 	bus       *event.Bus
-	mailer    *mailer.Mailer
+	router    *Router
+	channels  map[string]Channel
 	users     *repository.UserRepo
 	ownership *repository.ClientOwnershipRepo
 	logs      *repository.NotificationLogRepo
 	log       *slog.Logger
 }
 
-// New wires the service. Call Start() to register handlers.
+// New wires the service. `channels` is a flat list — the service
+// indexes by Channel.Name(). The router decides which channels see
+// each event type.
 func New(
 	bus *event.Bus,
-	mailer *mailer.Mailer,
+	router *Router,
+	channels []Channel,
 	users *repository.UserRepo,
 	ownership *repository.ClientOwnershipRepo,
 	logs *repository.NotificationLogRepo,
 	lg *slog.Logger,
 ) *Service {
+	idx := make(map[string]Channel, len(channels))
+	for _, c := range channels {
+		if c == nil {
+			continue
+		}
+		idx[c.Name()] = c
+	}
 	return &Service{
 		bus:       bus,
-		mailer:    mailer,
+		router:    router,
+		channels:  idx,
 		users:     users,
 		ownership: ownership,
 		logs:      logs,
@@ -74,28 +78,29 @@ func New(
 	}
 }
 
-// Start subscribes to the relevant event types. Idempotent in the
-// sense that re-calling registers extra handlers — only call once.
+// Start subscribes to every event type the service handles.
+// Idempotent in the sense that re-calling registers extra handlers
+// — only call once.
 func (s *Service) Start() {
 	s.bus.Subscribe(event.ClientExpired, s.onExpired)
 	s.bus.Subscribe(event.ClientExpiringSoon, s.onExpiringSoon)
 	s.bus.Subscribe(event.ClientOverLimit, s.onOverLimit)
+	s.bus.Subscribe(event.NodeOffline, s.onNodeOffline)
+	s.bus.Subscribe(event.NodeRecovered, s.onNodeRecovered)
+	s.bus.Subscribe(event.OrderPaymentConfirmed, s.onOrderPaymentConfirmed)
+	s.bus.Subscribe(event.OrderPaymentFailed, s.onOrderPaymentFailed)
+	s.bus.Subscribe(event.OrderPaymentExpired, s.onOrderPaymentExpired)
+	s.bus.Subscribe(event.OrderFailed, s.onOrderFailed)
 }
 
-// ---- handlers --------------------------------------------------------------
+// ---- per-user client lifecycle handlers ------------------------------------
 
 func (s *Service) onExpired(e event.Event) {
-	// Two source shapes converge on this event:
-	//   - job.ExpiredPayload — emitted by the DB-side ExpiryJob
-	//     (we have UserID + OwnershipID directly)
-	//   - traffic.ClientExpiredPayload — emitted by traffic.evaluateRules
-	//     from the panel's reported ExpiryTime (no UserID; lookup needed)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	var ownership *model.ClientOwnership
 	var expiredAt time.Time
-
 	switch p := e.Data.(type) {
 	case jobpkg.ExpiredPayload:
 		ownership = &model.ClientOwnership{
@@ -116,25 +121,26 @@ func (s *Service) onExpired(e event.Event) {
 		return
 	}
 
-	s.dispatch(ctx, kindExpired, ownership, func(toEmail string) (string, string) {
-		subject := "【3xui Central】您的服务已到期"
-		body := fmt.Sprintf(
-			"您订阅的客户端已到期，已自动停用：\n\n"+
-				"  节点：#%d\n"+
-				"  入站：%s\n"+
-				"  客户端：%s\n"+
-				"  到期时间：%s\n\n"+
-				"如需继续使用，请登录控制台购买新套餐。\n",
-			ownership.NodeID, ownership.InboundTag, ownership.ClientEmail, expiredAt.Format(time.RFC3339),
-		)
-		return subject, body
+	s.dispatchClientEvent(ctx, event.ClientExpired, "expired", ownership, Message{
+		Level: LevelError,
+		Title: "您的服务已到期",
+		Body: fmt.Sprintf(
+			"您订阅的客户端已到期，已自动停用。\n如需继续使用，请登录控制台购买新套餐。",
+		),
+		Fields: []Field{
+			{Key: "节点", Value: fmt.Sprintf("#%d", ownership.NodeID)},
+			{Key: "入站", Value: ownership.InboundTag},
+			{Key: "客户端", Value: ownership.ClientEmail},
+			{Key: "到期时间", Value: expiredAt.Format(time.RFC3339)},
+		},
+		EventType:   event.ClientExpired,
+		OwnershipID: ownership.ID,
 	})
 }
 
 func (s *Service) onExpiringSoon(e event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	p, ok := e.Data.(jobpkg.ExpiringSoonPayload)
 	if !ok {
 		s.log.Warn("client.expiring_soon with unknown payload type", "type", fmt.Sprintf("%T", e.Data))
@@ -144,25 +150,24 @@ func (s *Service) onExpiringSoon(e event.Event) {
 		ID: p.OwnershipID, UserID: p.UserID,
 		NodeID: p.NodeID, InboundTag: p.InboundTag, ClientEmail: p.ClientEmail,
 	}
-	s.dispatch(ctx, kindExpiringSoon, ownership, func(toEmail string) (string, string) {
-		subject := "【3xui Central】您的服务即将到期"
-		body := fmt.Sprintf(
-			"您订阅的客户端将在 %d 天后到期：\n\n"+
-				"  节点：#%d\n"+
-				"  入站：%s\n"+
-				"  客户端：%s\n"+
-				"  到期时间：%s\n\n"+
-				"为避免服务中断，请提前登录控制台续费。\n",
-			p.DaysRemaining, ownership.NodeID, ownership.InboundTag, ownership.ClientEmail, p.ExpiresAt.Format(time.RFC3339),
-		)
-		return subject, body
+	s.dispatchClientEvent(ctx, event.ClientExpiringSoon, "expiring_soon", ownership, Message{
+		Level: LevelWarn,
+		Title: "您的服务即将到期",
+		Body:  fmt.Sprintf("您订阅的客户端将在 %d 天后到期，请提前续费。", p.DaysRemaining),
+		Fields: []Field{
+			{Key: "节点", Value: fmt.Sprintf("#%d", ownership.NodeID)},
+			{Key: "入站", Value: ownership.InboundTag},
+			{Key: "客户端", Value: ownership.ClientEmail},
+			{Key: "到期时间", Value: p.ExpiresAt.Format(time.RFC3339)},
+		},
+		EventType:   event.ClientExpiringSoon,
+		OwnershipID: ownership.ID,
 	})
 }
 
 func (s *Service) onOverLimit(e event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	p, ok := e.Data.(traffic.ClientThresholdPayload)
 	if !ok {
 		s.log.Warn("client.over_limit with unknown payload type", "type", fmt.Sprintf("%T", e.Data))
@@ -173,35 +178,31 @@ func (s *Service) onOverLimit(e event.Event) {
 		s.log.Warn("client.over_limit without resolvable ownership", "node_id", p.NodeID, "client_email", p.ClientEmail, "err", err)
 		return
 	}
-	s.dispatch(ctx, kindOverLimit, o, func(toEmail string) (string, string) {
-		subject := "【3xui Central】流量已用尽"
-		body := fmt.Sprintf(
-			"您订阅的客户端流量已用尽，连接将受限：\n\n"+
-				"  节点：%s（#%d）\n"+
-				"  入站：%s\n"+
-				"  客户端：%s\n"+
-				"  上行 / 下行：%d / %d 字节\n"+
-				"  上限：%d 字节\n\n"+
-				"如需继续使用，请登录控制台续费或购买流量包。\n",
-			p.NodeName, p.NodeID, p.InboundTag, p.ClientEmail, p.Up, p.Down, p.Limit,
-		)
-		return subject, body
+	s.dispatchClientEvent(ctx, event.ClientOverLimit, "over_limit", o, Message{
+		Level: LevelError,
+		Title: "流量已用尽",
+		Body:  "您订阅的客户端流量已用尽，连接将受限。",
+		Fields: []Field{
+			{Key: "节点", Value: fmt.Sprintf("%s (#%d)", p.NodeName, p.NodeID)},
+			{Key: "入站", Value: p.InboundTag},
+			{Key: "客户端", Value: p.ClientEmail},
+			{Key: "上行 / 下行", Value: fmt.Sprintf("%d / %d 字节", p.Up, p.Down)},
+			{Key: "上限", Value: fmt.Sprintf("%d 字节", p.Limit)},
+		},
+		EventType:   event.ClientOverLimit,
+		OwnershipID: o.ID,
 	})
 }
 
-// ---- helpers ---------------------------------------------------------------
-
-// dispatch is the shared path: dedup via notification_log, fetch user
-// email, build body, send via mailer. The builder closure is what
-// makes the body per-kind.
-func (s *Service) dispatch(
-	ctx context.Context,
-	k kind,
-	o *model.ClientOwnership,
-	build func(toEmail string) (subject, body string),
-) {
+// dispatchClientEvent resolves the user email, then walks the
+// routed channels. Email channel gets Recipient = user.email; other
+// channels ignore Recipient and use their configured target.
+//
+// Dedup is per-channel: the kind suffix uses the channel name so a
+// failed telegram send doesn't block the email send.
+func (s *Service) dispatchClientEvent(ctx context.Context, eventType, baseKind string, o *model.ClientOwnership, msg Message) {
 	if o == nil || o.UserID == 0 || o.ID == 0 {
-		s.log.Warn("notify.dispatch missing ownership identity", "kind", k)
+		s.log.Warn("notify.dispatch missing ownership identity", "event", eventType)
 		return
 	}
 	user, err := s.users.Get(ctx, o.UserID)
@@ -209,34 +210,155 @@ func (s *Service) dispatch(
 		s.log.Error("user lookup", "user_id", o.UserID, "err", err)
 		return
 	}
-	if user == nil || user.Email == nil || *user.Email == "" {
-		// No email to send to. Still log to dedup table so we don't
-		// re-check on every cron tick.
-		_ = s.logs.MarkSent(ctx, string(k), o.ID, "")
-		s.log.Info("notify skipped — no email", "kind", k, "user_id", o.UserID)
-		return
+	recipient := ""
+	if user != nil && user.Email != nil {
+		recipient = *user.Email
 	}
+	msg.Recipient = recipient
 
-	already, err := s.logs.AlreadySent(ctx, string(k), o.ID)
+	for _, chanName := range s.router.Channels(eventType) {
+		ch, ok := s.channels[chanName]
+		if !ok || !ch.Enabled() {
+			continue
+		}
+		// Email needs a recipient — if user has no email, skip the
+		// email channel entirely but still log dedup so we don't
+		// re-check every tick.
+		if chanName == "email" && recipient == "" {
+			_ = s.logs.MarkSent(ctx, baseKind+"_"+chanName, o.ID, "")
+			continue
+		}
+		s.dispatchOnce(ctx, ch, baseKind+"_"+chanName, o.ID, recipient, msg)
+	}
+}
+
+// dispatchOnce runs the dedup check + send + mark for one channel.
+// kind is the channel-specific log key suffix.
+func (s *Service) dispatchOnce(ctx context.Context, ch Channel, kind string, dedupID int64, recipient string, msg Message) {
+	already, err := s.logs.AlreadySent(ctx, kind, dedupID)
 	if err != nil {
-		s.log.Error("dedup check failed", "kind", k, "err", err)
-		// fall through — we'd rather risk a duplicate email than skip
-		// a critical notice
+		s.log.Error("dedup check failed", "kind", kind, "err", err)
+		// Fall through — better to risk a dup than miss a critical notice
 	}
 	if already {
 		return
 	}
-
-	subject, body := build(*user.Email)
-	if err := s.mailer.Send(*user.Email, subject, body); err != nil {
-		// Don't mark sent — let the next tick retry.
-		s.log.Error("mailer.Send failed", "kind", k, "to", *user.Email, "err", err)
+	if err := ch.Send(ctx, msg); err != nil {
+		s.log.Error("channel send failed",
+			"channel", ch.Name(), "kind", kind, "err", err)
 		return
 	}
-	if err := s.logs.MarkSent(ctx, string(k), o.ID, *user.Email); err != nil {
-		s.log.Warn("MarkSent failed (email already delivered)", "kind", k, "err", err)
+	if err := s.logs.MarkSent(ctx, kind, dedupID, recipient); err != nil {
+		s.log.Warn("MarkSent failed (delivery already done)", "kind", kind, "err", err)
 	}
-	s.log.Info("notify delivered", "kind", k, "to", *user.Email, "ownership_id", o.ID)
+	s.log.Info("notify delivered", "channel", ch.Name(), "kind", kind, "to", recipient)
+}
+
+// ---- ops event handlers ----------------------------------------------------
+
+func (s *Service) onNodeOffline(e event.Event) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	nodeID, nodeName := nodePayloadFields(e.Data)
+	s.dispatchOpsEvent(ctx, event.NodeOffline, fmt.Sprintf("node_offline_%d", nodeID), Message{
+		Level: LevelError,
+		Title: fmt.Sprintf("节点离线：%s", nonEmpty(nodeName, fmt.Sprintf("#%d", nodeID))),
+		Body:  "节点连续两次探测失败，已标记为 offline。",
+		Fields: []Field{
+			{Key: "Node ID", Value: strconv.FormatInt(nodeID, 10)},
+			{Key: "Time", Value: e.Time.Format(time.RFC3339)},
+		},
+		EventType: event.NodeOffline,
+		DedupKey:  fmt.Sprintf("node_offline_%d_%d", nodeID, e.Time.Unix()),
+	})
+}
+
+func (s *Service) onNodeRecovered(e event.Event) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	nodeID, nodeName := nodePayloadFields(e.Data)
+	s.dispatchOpsEvent(ctx, event.NodeRecovered, fmt.Sprintf("node_recovered_%d", nodeID), Message{
+		Level: LevelInfo,
+		Title: fmt.Sprintf("节点恢复：%s", nonEmpty(nodeName, fmt.Sprintf("#%d", nodeID))),
+		Body:  "节点已恢复在线状态。",
+		Fields: []Field{
+			{Key: "Node ID", Value: strconv.FormatInt(nodeID, 10)},
+			{Key: "Time", Value: e.Time.Format(time.RFC3339)},
+		},
+		EventType: event.NodeRecovered,
+		DedupKey:  fmt.Sprintf("node_recovered_%d_%d", nodeID, e.Time.Unix()),
+	})
+}
+
+func (s *Service) onOrderPaymentConfirmed(e event.Event) {
+	s.opsOrderEvent(e, event.OrderPaymentConfirmed, LevelInfo, "订单已支付")
+}
+func (s *Service) onOrderPaymentFailed(e event.Event) {
+	s.opsOrderEvent(e, event.OrderPaymentFailed, LevelWarn, "订单支付失败")
+}
+func (s *Service) onOrderPaymentExpired(e event.Event) {
+	s.opsOrderEvent(e, event.OrderPaymentExpired, LevelWarn, "订单支付超时")
+}
+func (s *Service) onOrderFailed(e event.Event) {
+	s.opsOrderEvent(e, event.OrderFailed, LevelError, "订单失败")
+}
+
+func (s *Service) opsOrderEvent(e event.Event, eventType string, lvl Level, title string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	orderID, userID, planID, priceCents, reason := orderPayloadFields(e.Data)
+	msg := Message{
+		Level: lvl,
+		Title: title,
+		Fields: []Field{
+			{Key: "Order ID", Value: strconv.FormatInt(orderID, 10)},
+			{Key: "User ID", Value: strconv.FormatInt(userID, 10)},
+			{Key: "Plan ID", Value: strconv.FormatInt(planID, 10)},
+			{Key: "Amount", Value: fmt.Sprintf("%.2f", float64(priceCents)/100)},
+		},
+		EventType: eventType,
+		DedupKey:  fmt.Sprintf("%s_%d", eventType, orderID),
+	}
+	if reason != "" {
+		msg.Fields = append(msg.Fields, Field{Key: "Reason", Value: reason})
+	}
+	s.dispatchOpsEvent(ctx, eventType, msg.DedupKey, msg)
+}
+
+// dispatchOpsEvent fans out to webhook-style channels (telegram /
+// discord / feishu). Email also runs IF email is routed — in that
+// case it sends to the channel's `opsRecipient` (since msg.Recipient
+// stays empty for ops events).
+//
+// Ops dedup uses DedupKey (string) instead of OwnershipID. We hash
+// the key onto a stable int64 so the existing notification_log table
+// (typed BIGINT) still works without a schema change.
+func (s *Service) dispatchOpsEvent(ctx context.Context, eventType, dedupKey string, msg Message) {
+	dedupID := hashDedupKey(dedupKey)
+	for _, chanName := range s.router.Channels(eventType) {
+		ch, ok := s.channels[chanName]
+		if !ok || !ch.Enabled() {
+			continue
+		}
+		kind := strings.ReplaceAll(eventType, ".", "_") + "_" + chanName
+		s.dispatchOnce(ctx, ch, kind, dedupID, "", msg)
+	}
+}
+
+// ---- helpers --------------------------------------------------------------
+
+// hashDedupKey turns a string dedup key into a stable int64 for the
+// notification_log.ownership_id column. FNV-1a 64-bit — no
+// collisions in practice for the per-event ID space we generate.
+func hashDedupKey(s string) int64 {
+	var h uint64 = 14695981039346656037
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	// notification_log uses BIGINT; cast may produce negatives but
+	// that's fine — we're using it as an opaque ID.
+	return int64(h)
 }
 
 // lookupOwnership resolves a (nodeID, inboundTag, email) triple to
@@ -250,4 +372,41 @@ func (s *Service) lookupOwnership(ctx context.Context, nodeID int64, inboundTag,
 		return nil, err
 	}
 	return o, nil
+}
+
+// nodePayloadFields extracts NodeID + Name from one of the several
+// node-event payload shapes the bus carries. Returns zero values
+// when unrecognized — the channel still gets a message; just less
+// pretty.
+func nodePayloadFields(data any) (int64, string) {
+	type withNode interface {
+		nodeFields() (int64, string)
+	}
+	if v, ok := data.(withNode); ok {
+		return v.nodeFields()
+	}
+	// Fall through to a couple of well-known concrete shapes. We
+	// don't import the publisher's packages here to avoid a circular
+	// import — instead reflect on the struct's first int64 field
+	// named NodeID and string field named NodeName. Simple but loose.
+	return reflectNodeID(data), reflectNodeName(data)
+}
+
+// orderPayloadFields extracts the fields from billing.OrderEventPayload
+// without importing the billing package (circular). Falls back to
+// zeros on unrecognized shapes.
+func orderPayloadFields(data any) (orderID, userID, planID, priceCents int64, reason string) {
+	orderID = reflectInt64(data, "OrderID")
+	userID = reflectInt64(data, "UserID")
+	planID = reflectInt64(data, "PlanID")
+	priceCents = reflectInt64(data, "PriceCents")
+	reason = reflectString(data, "Reason")
+	return
+}
+
+func nonEmpty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }

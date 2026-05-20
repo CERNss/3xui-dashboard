@@ -30,6 +30,10 @@ const (
 	NodeOnline       = "node.online"
 	NodeOffline      = "node.offline"
 	NodeProbeFailed  = "node.probe_failed"
+	// NodeRecovered fires on the FIRST online tick after one or
+	// more offline ticks — distinct from NodeOnline (which fires
+	// on every healthy tick and would spam ops channels).
+	NodeRecovered    = "node.recovered"
 	UserRegistered   = "user.registered"
 	OrderCreated     = "order.created"
 	OrderCompleted   = "order.completed"

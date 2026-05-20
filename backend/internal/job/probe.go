@@ -100,6 +100,15 @@ func (j *ProbeJob) probeOne(ctx context.Context, n model.Node) {
 		j.bus.PublishType(event.NodeOnline, NodeStatusChangedPayload{
 			NodeID: n.ID, Name: n.Name, Prior: n.Status, Now: model.NodeStatusOnline,
 		})
+		// NodeRecovered specifically marks the offline → online
+		// transition (not the unknown → online "first probe" case).
+		// Distinct from NodeOnline so ops channels can subscribe to
+		// just genuine recoveries and skip startup chatter.
+		if n.Status == model.NodeStatusOffline {
+			j.bus.PublishType(event.NodeRecovered, NodeStatusChangedPayload{
+				NodeID: n.ID, Name: n.Name, Prior: n.Status, Now: model.NodeStatusOnline,
+			})
+		}
 	}
 	_ = res
 }
