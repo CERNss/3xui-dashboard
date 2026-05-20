@@ -54,17 +54,27 @@ async function load() {
   }
 }
 
+// Monotonic token so an in-flight generate that finishes after a
+// newer click can't overwrite the current QR. Each invocation
+// captures its own token; only the latest writes.
+let qrToken = 0
+
 async function regenerateQR() {
   if (!subURL.value) return
+  const my = ++qrToken
+  // Clear immediately so the user sees the placeholder during regen
+  // instead of a stale QR with the wrong format label below it.
+  qrDataURL.value = ''
   try {
-    qrDataURL.value = await QRCode.toDataURL(subURL.value, {
+    const url = await QRCode.toDataURL(subURL.value, {
       width: 260,
       margin: 1,
       errorCorrectionLevel: 'M',
       color: { dark: '#0c0e12', light: '#ffffff' },
     })
+    if (my === qrToken) qrDataURL.value = url
   } catch {
-    qrDataURL.value = ''
+    if (my === qrToken) qrDataURL.value = ''
   }
 }
 

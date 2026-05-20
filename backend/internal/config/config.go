@@ -36,6 +36,13 @@ type Server struct {
 	ShutdownTimeout time.Duration
 	LogLevel        string // debug|info|warn|error
 	LogFormat       string // json|text
+
+	// AllowedOrigins gates CORS. Empty list (the default) means
+	// "permissive" — echo the request's Origin back, no credentials.
+	// A comma-separated list of exact origins narrows to a closed
+	// set and enables Access-Control-Allow-Credentials. The literal
+	// "*" anywhere in the list also means "permissive".
+	AllowedOrigins []string
 }
 
 type DB struct {
@@ -144,6 +151,7 @@ func Load(envFile string) (*Config, error) {
 			ShutdownTimeout: v.GetDuration("SHUTDOWN_TIMEOUT"),
 			LogLevel:        v.GetString("LOG_LEVEL"),
 			LogFormat:       v.GetString("LOG_FORMAT"),
+			AllowedOrigins:  splitCSV(v.GetString("ALLOWED_ORIGINS")),
 		},
 		DB: DB{
 			URL:           v.GetString("DATABASE_URL"),

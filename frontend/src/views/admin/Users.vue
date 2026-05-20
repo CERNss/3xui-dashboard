@@ -4,7 +4,11 @@ import { computed, onMounted, ref } from 'vue'
 import { adminUsersApi, type AdminUser } from '@/api/admin/users'
 import Skeleton from '@/components/common/Skeleton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
+
+const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
 
 const users = ref<AdminUser[]>([])
 const loading = ref(true)
@@ -43,7 +47,13 @@ async function reload() {
 
 async function toggleSuspend(u: AdminUser) {
   const verb = u.status === 'suspended' ? '解封' : '封停'
-  if (!confirm(`确认${verb}用户「${u.email || '#' + u.id}」？`)) return
+  const ok = await askConfirm({
+    title: `${verb}用户`,
+    message: `用户「${u.email || '#' + u.id}」将被${verb}。`,
+    variant: u.status === 'suspended' ? 'default' : 'danger',
+    confirmLabel: verb,
+  })
+  if (!ok) return
   try {
     if (u.status === 'suspended') {
       await adminUsersApi.unsuspend(u.id)
@@ -57,7 +67,13 @@ async function toggleSuspend(u: AdminUser) {
 }
 
 async function destroy(u: AdminUser) {
-  if (!confirm(`确认删除用户「${u.email || '#' + u.id}」？\n关联的 client_ownerships 会被级联删除。`)) return
+  const ok = await askConfirm({
+    title: '删除用户',
+    message: `用户「${u.email || '#' + u.id}」及其关联的 client_ownerships 会被级联删除，无法恢复。`,
+    variant: 'danger',
+    confirmLabel: '删除',
+  })
+  if (!ok) return
   try {
     await adminUsersApi.remove(u.id)
     await reload()
@@ -91,7 +107,9 @@ async function submitBalance() {
   m.busy = true
   m.err = null
   try {
-    await adminUsersApi.adjustBalance(m.user.id, m.delta, m.reason.trim())
+    // delta is bound to a number input as integer cents; Math.round
+    // guards against fractional input (paste / arrow-key float math).
+    await adminUsersApi.adjustBalance(m.user.id, Math.round(m.delta), m.reason.trim())
     m.open = false
     await reload()
   } catch (e: any) {
@@ -266,5 +284,18 @@ onMounted(reload)
         </form>
       </div>
     </div>
+
+    <ConfirmModal
+      v-if="confirmState"
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :variant="confirmState.variant"
+      :confirm-label="confirmState.confirmLabel"
+      :cancel-label="confirmState.cancelLabel"
+      :busy="confirmState.busy"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
+    />
   </div>
 </template>

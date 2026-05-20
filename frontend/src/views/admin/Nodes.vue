@@ -5,6 +5,10 @@ import { formatError, nodeStatusLabel } from '@/utils/format'
 import { nodesApi, type Node, type NodeInput } from '@/api/admin/nodes'
 import Skeleton from '@/components/common/Skeleton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { useConfirm } from '@/composables/useConfirm'
+
+const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
 
 const nodes = ref<Node[]>([])
 const loading = ref(true)
@@ -55,7 +59,13 @@ async function toggleEnable(n: Node) {
 }
 
 async function destroy(n: Node) {
-  if (!confirm(`确认删除节点 "${n.name}"？\n所有附属的 client_ownerships 会被级联删除。`)) return
+  const ok = await askConfirm({
+    title: '删除节点',
+    message: `节点 "${n.name}" 及附属的 client_ownerships 将被级联删除，无法恢复。`,
+    variant: 'danger',
+    confirmLabel: '删除',
+  })
+  if (!ok) return
   try {
     await nodesApi.remove(n.id)
     await reload()
@@ -251,5 +261,18 @@ onMounted(reload)
         </form>
       </div>
     </div>
+
+    <ConfirmModal
+      v-if="confirmState"
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :variant="confirmState.variant"
+      :confirm-label="confirmState.confirmLabel"
+      :cancel-label="confirmState.cancelLabel"
+      :busy="confirmState.busy"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
+    />
   </div>
 </template>

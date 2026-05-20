@@ -242,6 +242,7 @@ admin moderation of users/plans/orders.
 | `add-portal-views` | 2026-05-20 | Portal 5 页（dashboard 重写 + subscription + plans + orders + profile）+ billing API client + nav 扩展（用户界面 50% → 75%） |
 | `add-admin-business-views` | 2026-05-20 | Admin 4 页（users + plans + orders + stats）+ 3 API clients + sidebar 重组为 4 段（运维 60%→75%, UI 75%→90%） |
 | `add-billing-cron-jobs`（部分） | 2026-05-20 | ExpiryJob 接通：DB-side 到期处理 + 警告事件 publisher（client.expired / client.expiring_soon），@every 5m。Traffic-reset + 自动续费推到 #5（运维 75%→85%, 通知 40%→50%） |
+| `tech-debt-cleanup` | 2026-05-20 | P0-P2 一波清债：notify bridge（event→mailer 自动发邮件）+ 持久化 dedup（notification_log 表 + bus/mailer 两层独立 kind）+ ExpiryJob 节点侧 aggressive disable + ConfirmModal 替代 native confirm() + Plans 价格精度（Math.round 全路径）+ Subscription QR 防闪（monotonic token）+ Vitest 前端测试栈（20 个测试通过）+ Stats 服务端聚合（单次 /api/admin/stats vs 3 × list(limit=1000)）+ CORS 中间件 + 登录 rate limit + Prometheus /metrics（http_requests_total + duration histogram，route-template 标签防 cardinality 爆炸） |
 
 ---
 

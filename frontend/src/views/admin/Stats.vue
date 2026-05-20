@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 
-import { adminOrdersApi, type AdminOrder } from '@/api/admin/orders'
-import { adminUsersApi, type AdminUser } from '@/api/admin/users'
 import { adminPlansApi, type AdminPlan } from '@/api/admin/plans'
+import { adminStatsApi, type AdminStats } from '@/api/admin/stats'
 import Skeleton from '@/components/common/Skeleton.vue'
 import { formatError } from '@/utils/format'
 
-const orders = ref<AdminOrder[]>([])
-const users = ref<AdminUser[]>([])
+// Stats is now a single-shot aggregate fetch. The previous version
+// pulled list({ limit: 1000 }) for users + orders + plans and folded
+// them client-side — which capped at the limit, hid the truth past
+// 1000 rows, and shipped ~1MB of JSON per page load on a busy fleet.
+// The /api/admin/stats endpoint returns just the KPI numbers + the
+// 5 most-recent orders pre-joined with email + plan name.
+//
+// We still hit /plans separately because the plans-list panel below
+// renders every row (≤dozens in practice — bounded by admin), and
+// stuffing the full list into the stats payload would bloat it for
+// the common case where the page just needs the counts.
+const stats = ref<AdminStats | null>(null)
 const plans = ref<AdminPlan[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -17,13 +26,11 @@ async function reload() {
   loading.value = true
   error.value = null
   try {
-    const [o, u, p] = await Promise.all([
-      adminOrdersApi.list({ limit: 1000 }),
-      adminUsersApi.list({ limit: 1000 }),
+    const [s, p] = await Promise.all([
+      adminStatsApi.get(),
       adminPlansApi.list(),
     ])
-    orders.value = o.orders
-    users.value = u.users
+    stats.value = s
     plans.value = p
   } catch (e: any) {
     error.value = formatError(e, '加载失败')
@@ -35,58 +42,6 @@ async function reload() {
 function formatYuan(cents: number): string {
   return '¥' + (cents / 100).toFixed(2)
 }
-
-// KPI computations — done client-side from the bulk lists.
-// Backend doesn't ship a dedicated /stats endpoint yet (#future).
-
-const userStats = computed(() => {
-  const active = users.value.filter(u => u.status === 'active').length
-  const suspended = users.value.filter(u => u.status === 'suspended').length
-  return { total: users.value.length, active, suspended }
-})
-
-const planStats = computed(() => {
-  const enabled = plans.value.filter(p => p.enabled).length
-  return { total: plans.value.length, enabled, disabled: plans.value.length - enabled }
-})
-
-const orderStats = computed(() => {
-  const completed = orders.value.filter(o => o.status === 'completed' || o.status === 'paid')
-  const failed = orders.value.filter(o => o.status === 'failed').length
-  const refunded = orders.value.filter(o => o.status === 'refunded').length
-  const revenue = completed.reduce((s, o) => s + o.price_cents, 0)
-
-  // This month's completed orders + revenue
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
-  const monthCompleted = completed.filter(o => new Date(o.created_at).getTime() >= monthStart)
-  const monthRevenue = monthCompleted.reduce((s, o) => s + o.price_cents, 0)
-
-  return {
-    total: orders.value.length,
-    completed: completed.length,
-    failed,
-    refunded,
-    revenue,
-    monthCount: monthCompleted.length,
-    monthRevenue,
-  }
-})
-
-const balanceStats = computed(() => {
-  const totalBalance = users.value.reduce((s, u) => s + u.balance_cents, 0)
-  const avg = users.value.length > 0 ? totalBalance / users.value.length : 0
-  return { total: totalBalance, avg }
-})
-
-// Recent activity — last 5 orders for the activity feed
-const recentOrders = computed(() =>
-  [...orders.value]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5),
-)
-const planNameById = computed(() => new Map(plans.value.map(p => [p.id, p.name])))
-const userEmailById = computed(() => new Map(users.value.map(u => [u.id, u.email ?? `User #${u.id}`])))
 
 onMounted(reload)
 </script>
@@ -107,7 +62,7 @@ onMounted(reload)
 
     <Skeleton v-if="loading" variant="kpi" :rows="4" />
 
-    <section v-else class="space-y-6">
+    <section v-else-if="stats" class="space-y-6">
       <!-- KPI strip -->
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
@@ -117,13 +72,13 @@ onMounted(reload)
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0" /></svg>
             </div>
           </div>
-          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ userStats.total }}</div>
+          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.users.total }}</div>
           <div class="mt-4 flex flex-wrap gap-1.5 text-2xs">
             <span class="inline-flex items-center gap-1 rounded-full bg-accent-50 px-2 py-0.5 font-medium text-accent-700 dark:bg-accent-950/40 dark:text-accent-300">
-              <span class="h-1.5 w-1.5 rounded-full bg-accent-500" /> {{ userStats.active }} 正常
+              <span class="h-1.5 w-1.5 rounded-full bg-accent-500" /> {{ stats.users.active }} 正常
             </span>
-            <span v-if="userStats.suspended" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600 dark:bg-red-950/40 dark:text-red-300">
-              <span class="h-1.5 w-1.5 rounded-full bg-red-500" /> {{ userStats.suspended }} 封停
+            <span v-if="stats.users.suspended" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600 dark:bg-red-950/40 dark:text-red-300">
+              <span class="h-1.5 w-1.5 rounded-full bg-red-500" /> {{ stats.users.suspended }} 封停
             </span>
           </div>
         </div>
@@ -135,8 +90,8 @@ onMounted(reload)
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg>
             </div>
           </div>
-          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatYuan(orderStats.monthRevenue) }}</div>
-          <div class="mt-4 text-2xs text-surface-500">{{ orderStats.monthCount }} 笔已完成 · 累计 {{ formatYuan(orderStats.revenue) }}</div>
+          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatYuan(stats.orders.month_revenue_cents) }}</div>
+          <div class="mt-4 text-2xs text-surface-500">{{ stats.orders.month_count }} 笔已完成 · 累计 {{ formatYuan(stats.orders.revenue_cents) }}</div>
         </div>
 
         <div class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
@@ -146,11 +101,11 @@ onMounted(reload)
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M16 10a4 4 0 0 1-8 0" /></svg>
             </div>
           </div>
-          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ orderStats.total }}</div>
+          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.orders.total }}</div>
           <div class="mt-4 flex flex-wrap gap-1.5 text-2xs text-surface-500">
-            <span>✓ {{ orderStats.completed }}</span>
-            <span v-if="orderStats.failed">⚠ {{ orderStats.failed }}</span>
-            <span v-if="orderStats.refunded">↺ {{ orderStats.refunded }}</span>
+            <span>✓ {{ stats.orders.completed }}</span>
+            <span v-if="stats.orders.failed">⚠ {{ stats.orders.failed }}</span>
+            <span v-if="stats.orders.refunded">↺ {{ stats.orders.refunded }}</span>
           </div>
         </div>
 
@@ -161,8 +116,8 @@ onMounted(reload)
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 6v2M12 16v2" /></svg>
             </div>
           </div>
-          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatYuan(balanceStats.total) }}</div>
-          <div class="mt-4 text-2xs text-surface-500">平均 {{ formatYuan(balanceStats.avg) }} / 用户</div>
+          <div class="mt-3 text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatYuan(stats.users.total_balance_cents) }}</div>
+          <div class="mt-4 text-2xs text-surface-500">平均 {{ formatYuan(stats.users.avg_balance_cents) }} / 用户</div>
         </div>
       </div>
 
@@ -170,7 +125,7 @@ onMounted(reload)
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
           <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">套餐</h2>
-          <p class="mt-1 text-xs text-surface-500">{{ planStats.enabled }} 启用 · {{ planStats.disabled }} 禁用</p>
+          <p class="mt-1 text-xs text-surface-500">{{ stats.plans.enabled }} 启用 · {{ stats.plans.disabled }} 禁用</p>
           <ul class="mt-4 space-y-2">
             <li v-for="p in plans" :key="p.id" class="flex items-center justify-between gap-3 rounded-lg border border-surface-100 px-3 py-2 dark:border-surface-800" :class="!p.enabled ? 'opacity-50' : ''">
               <div class="min-w-0 flex-1">
@@ -187,9 +142,9 @@ onMounted(reload)
           <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">近期订单</h2>
           <p class="mt-1 text-xs text-surface-500">最近 5 单</p>
           <ul class="mt-4 space-y-2">
-            <li v-for="o in recentOrders" :key="o.id" class="flex items-center justify-between gap-3 rounded-lg border border-surface-100 px-3 py-2 text-sm dark:border-surface-800">
+            <li v-for="o in stats.recent_orders" :key="o.id" class="flex items-center justify-between gap-3 rounded-lg border border-surface-100 px-3 py-2 text-sm dark:border-surface-800">
               <div class="min-w-0 flex-1">
-                <div class="truncate text-ink-900 dark:text-surface-50">{{ userEmailById.get(o.user_id) }} → {{ planNameById.get(o.plan_id) ?? `Plan #${o.plan_id}` }}</div>
+                <div class="truncate text-ink-900 dark:text-surface-50">{{ o.user_email || `User #${o.user_id}` }} → {{ o.plan_name || `Plan #${o.plan_id}` }}</div>
                 <div class="mt-0.5 text-2xs text-surface-500">{{ new Date(o.created_at).toLocaleString() }}</div>
               </div>
               <div class="flex items-center gap-2">
@@ -204,7 +159,7 @@ onMounted(reload)
                 </span>
               </div>
             </li>
-            <li v-if="recentOrders.length === 0" class="text-xs text-surface-500">还没有订单</li>
+            <li v-if="stats.recent_orders.length === 0" class="text-xs text-surface-500">还没有订单</li>
           </ul>
         </div>
       </div>

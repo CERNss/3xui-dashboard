@@ -27,6 +27,7 @@ import (
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/mailer"
+	"github.com/cern/3xui-dashboard/internal/metrics"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/notify"
@@ -63,6 +64,19 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
+	// CORS — empty AllowedOrigins means "permissive (echo Origin,
+	// no creds)" which is what dev wants. In prod the operator
+	// pins this to the panel's public origin.
+	engine.Use(middleware.CORS(cfg.Server.AllowedOrigins))
+	// Prometheus instrumentation — runs after Recovery so panics
+	// still get counted (with their 500 status) but before route
+	// handlers so duration includes the handler body.
+	engine.Use(metrics.Middleware())
+
+	// /metrics scrape endpoint. Mounted at the root for compatibility
+	// with default Prometheus discovery. No auth — the operator
+	// should firewall it off if their scraper isn't trusted.
+	engine.GET("/metrics", metrics.Handler())
 
 	// Probes — fast, dep-free / db-ping.
 	engine.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
@@ -84,10 +98,15 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Auth + middleware.
 	authSvc := auth.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL, cfg.Admin.Username, cfg.Admin.Password)
 	adminAuth := adminhandler.NewAuthHandler(authSvc)
-	apiAdmin := engine.Group("/api/admin")
+	// Login endpoints get a per-IP rate limit so a password-spray
+	// attacker can't brute-force from a single source. Defaults:
+	// 10 attempts/min/IP. Other routes are unthrottled; auth
+	// failures past the limit return 429 with Retry-After.
+	loginLimiter := middleware.LoginRateLimiter(10, 10, time.Minute)
+	apiAdmin := engine.Group("/api/admin", loginLimiter)
 	adminAuth.RegisterRoutes(apiAdmin)
 	apiAdminAuthed := engine.Group("/api/admin", middleware.RequireAdmin(authSvc))
-	apiUser := engine.Group("/api/user")
+	apiUser := engine.Group("/api/user", loginLimiter)
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireUser(authSvc))
 
 	// Event bus.
@@ -139,6 +158,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
 	userhandler.NewInboundHandler(inboundService).RegisterRoutes(apiUserAuthed)
+
+	// Admin stats overview — server-side aggregates so the page
+	// doesn't pull thousands of rows just to render 4 KPI cards.
+	statsRepo := repository.NewStatsRepo(db)
+	adminhandler.NewStatsHandler(statsRepo).RegisterRoutes(apiAdminAuthed)
 
 	// Webhooks.
 	webhookRepo := repository.NewWebhookRepo(db)

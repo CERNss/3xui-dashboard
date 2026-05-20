@@ -4,7 +4,11 @@ import { useRouter } from 'vue-router'
 
 import { portalBillingApi, type Plan, type PortalInbound } from '@/api/portal/billing'
 import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
+
+const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
 
 const router = useRouter()
 
@@ -85,7 +89,12 @@ async function buy(plan: Plan) {
   const chosen = inbounds.value.find(ib => ib.node_id === nodeID && ib.inbound_tag === inboundTag)
   const where = chosen ? `${chosen.node_name} · ${chosen.remark || chosen.inbound_tag}` : '所选节点'
 
-  if (!confirm(`确认购买「${plan.name}」？\n开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`)) return
+  const ok = await askConfirm({
+    title: `购买「${plan.name}」`,
+    message: `开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`,
+    confirmLabel: `支付 ${formatYuan(plan.price_cents)}`,
+  })
+  if (!ok) return
   buying.value = plan.id
   flash.value = null
   try {
@@ -243,6 +252,19 @@ onMounted(load)
       <h3 class="mt-3 text-sm font-semibold text-surface-700 dark:text-surface-200">还没有上架套餐</h3>
       <p class="mt-1 text-xs text-surface-500">管理员还没创建任何套餐，稍候再来看看</p>
     </div>
+
+    <ConfirmModal
+      v-if="confirmState"
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :variant="confirmState.variant"
+      :confirm-label="confirmState.confirmLabel"
+      :cancel-label="confirmState.cancelLabel"
+      :busy="confirmState.busy"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
+    />
   </div>
 </template>
 

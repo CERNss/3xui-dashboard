@@ -4,7 +4,11 @@ import { computed, onMounted, ref } from 'vue'
 import { adminPlansApi, type AdminPlan, type CreatePlanInput } from '@/api/admin/plans'
 import Skeleton from '@/components/common/Skeleton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
+
+const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
 
 const plans = ref<AdminPlan[]>([])
 const loading = ref(true)
@@ -38,11 +42,17 @@ function blankForm(): CreatePlanInput {
   }
 }
 
-// Convenience UI fields: traffic in GB (with 0 = unlimited)
+// Convenience UI fields: traffic in GB (with 0 = unlimited).
+// Both sides Math.round so a user typing "100.5" can't ship a fractional-byte
+// value to the backend (GORM int64 would coerce, losing precision).
 const trafficGB = computed({
   get: () => Math.round(modal.value.form.traffic_limit_bytes / (1024 * 1024 * 1024)),
-  set: (v: number) => (modal.value.form.traffic_limit_bytes = v * 1024 * 1024 * 1024),
+  set: (v: number) => (modal.value.form.traffic_limit_bytes = Math.round(v) * 1024 * 1024 * 1024),
 })
+// price_cents is canonical (integer cents). On set we Math.round both the
+// multiplication (handles 0.1*100 = 10.000000000000002) and the result.
+// On get we return the raw division — for integer cents under ~$1B the
+// quotient is representable cleanly; v-model.number will read it back.
 const priceYuan = computed({
   get: () => modal.value.form.price_cents / 100,
   set: (v: number) => (modal.value.form.price_cents = Math.round(v * 100)),
@@ -93,11 +103,22 @@ function openEdit(p: AdminPlan) {
 async function submit() {
   modal.value.busy = true
   modal.value.err = null
+  // Final integer-coerce of any field the backend expects as int64.
+  // The computed setters already round, but a user could paste e.g.
+  // "30.5" directly into duration_days which is bound raw.
+  const f = modal.value.form
+  const payload: CreatePlanInput = {
+    ...f,
+    duration_days: Math.max(1, Math.round(f.duration_days)),
+    traffic_limit_bytes: Math.max(0, Math.round(f.traffic_limit_bytes)),
+    price_cents: Math.max(0, Math.round(f.price_cents)),
+    ip_limit: Math.max(0, Math.round(f.ip_limit ?? 0)),
+  }
   try {
     if (modal.value.mode === 'create') {
-      await adminPlansApi.create(modal.value.form)
+      await adminPlansApi.create(payload)
     } else if (modal.value.id) {
-      await adminPlansApi.update(modal.value.id, modal.value.form)
+      await adminPlansApi.update(modal.value.id, payload)
     }
     modal.value.open = false
     await reload()
@@ -109,7 +130,13 @@ async function submit() {
 }
 
 async function destroy(p: AdminPlan) {
-  if (!confirm(`确认删除套餐「${p.name}」？\n关联订单不会被删除（保留审计）。`)) return
+  const ok = await askConfirm({
+    title: '删除套餐',
+    message: `套餐「${p.name}」将被删除。关联订单保留以便审计，已开通的 ownership 不受影响。`,
+    variant: 'danger',
+    confirmLabel: '删除',
+  })
+  if (!ok) return
   try {
     await adminPlansApi.remove(p.id)
     await reload()
@@ -287,5 +314,18 @@ onMounted(reload)
         </form>
       </div>
     </div>
+
+    <ConfirmModal
+      v-if="confirmState"
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :message="confirmState.message"
+      :variant="confirmState.variant"
+      :confirm-label="confirmState.confirmLabel"
+      :cancel-label="confirmState.cancelLabel"
+      :busy="confirmState.busy"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
+    />
   </div>
 </template>
