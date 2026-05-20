@@ -277,24 +277,21 @@ func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentI
 		return nil, ErrUserNotFound
 	}
 
-	// We persist the node + inbound tag onto the order so the
-	// confirmation path can provision without needing to ask the
-	// caller again. The current Order model doesn't have these
-	// columns — we encode them into IdempotencyKey-derived state
-	// via the order_provisioning_targets cache instead.
-	//
-	// Simpler approach: the same order ID is used as alipay's
-	// out_trade_no, and provisioning_targets is looked up by order
-	// ID in ConfirmPayment. For now, encode target in error_message
-	// as a JSON blob — quick + reversible, no new table needed.
+	// Capture the provisioning target on the order so the
+	// confirmation path can create the client without asking the
+	// caller again. Dedicated columns (migration 0007) — earlier
+	// versions stuffed this into ErrorMessage but that overloaded
+	// the column.
+	nodeID := in.NodeID
 	order := &model.Order{
-		UserID:         user.ID,
-		PlanID:         plan.ID,
-		IdempotencyKey: in.IdempotencyKey,
-		PriceCents:     plan.PriceCents,
-		Status:         model.OrderStatusPaymentPending,
-		PaymentMethod:  in.Provider,
-		ErrorMessage:   encodeProvisioningTarget(in.NodeID, in.InboundTag),
+		UserID:                 user.ID,
+		PlanID:                 plan.ID,
+		IdempotencyKey:         in.IdempotencyKey,
+		PriceCents:             plan.PriceCents,
+		Status:                 model.OrderStatusPaymentPending,
+		PaymentMethod:          in.Provider,
+		ProvisioningNodeID:     &nodeID,
+		ProvisioningInboundTag: in.InboundTag,
 	}
 	if err := s.orders.Create(ctx, order); err != nil {
 		if isUniqueViolation(err) {
@@ -375,14 +372,12 @@ func (s *Service) ConfirmPayment(ctx context.Context, providerOrderID string) (*
 		return order, ErrPlanNotFound
 	}
 
-	nodeID, inboundTag, decodeErr := decodeProvisioningTarget(order.ErrorMessage)
-	if decodeErr != nil {
-		_ = s.orders.MarkRefunded(ctx, order.ID, "corrupt provisioning target")
-		return order, fmt.Errorf("billing.ConfirmPayment: decode target: %w", decodeErr)
+	if order.ProvisioningNodeID == nil {
+		_ = s.orders.MarkRefunded(ctx, order.ID, "missing provisioning target")
+		return order, fmt.Errorf("billing.ConfirmPayment: order has no provisioning_node_id")
 	}
-
 	planID := plan.ID
-	ownership, err := s.client.ProvisionClient(ctx, order.UserID, nodeID, inboundTag, client.PlanParams{
+	ownership, err := s.client.ProvisionClient(ctx, order.UserID, *order.ProvisioningNodeID, order.ProvisioningInboundTag, client.PlanParams{
 		PlanID:            &planID,
 		DurationDays:      plan.DurationDays,
 		TrafficLimitBytes: plan.TrafficLimitBytes,
@@ -513,40 +508,6 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(msg, "SQLSTATE 23505") || strings.Contains(msg, "duplicate key value")
 }
 
-// encodeProvisioningTarget stashes the (node, inbound) provisioning
-// target into the existing error_message column. We could add two
-// new columns, but provisioning target is only meaningful for
-// payment_pending orders — temporary state, not a permanent fact
-// about the order — and reusing error_message keeps the schema
-// changes for this commit minimal. On confirmation we overwrite
-// error_message back to empty.
-//
-// Format: `target:<nodeID>:<tag>` — `:` is safe in inbound tags
-// per our existing validation. decodeProvisioningTarget tolerates
-// the empty string (returns 0, "", nil) so legacy orders don't
-// crash the decode path.
-func encodeProvisioningTarget(nodeID int64, inboundTag string) string {
-	return fmt.Sprintf("target:%d:%s", nodeID, inboundTag)
-}
-
-func decodeProvisioningTarget(s string) (int64, string, error) {
-	if s == "" {
-		return 0, "", nil
-	}
-	if !strings.HasPrefix(s, "target:") {
-		return 0, "", fmt.Errorf("not a provisioning-target prefix")
-	}
-	rest := strings.TrimPrefix(s, "target:")
-	colon := strings.IndexByte(rest, ':')
-	if colon < 0 {
-		return 0, "", fmt.Errorf("missing tag separator")
-	}
-	var nodeID int64
-	if _, err := fmt.Sscanf(rest[:colon], "%d", &nodeID); err != nil {
-		return 0, "", fmt.Errorf("bad node id: %w", err)
-	}
-	return nodeID, rest[colon+1:], nil
-}
 
 // OrderEventPayload is the per-event shape on event.OrderCreated /
 // .OrderCompleted / .OrderFailed.

@@ -25,6 +25,14 @@ type Order struct {
 	PaymentProviderOrderID string     `gorm:"column:payment_provider_order_id;not null;default:''" json:"payment_provider_order_id,omitempty"`
 	PaymentQRURL           string     `gorm:"column:payment_qr_url;not null;default:''"       json:"payment_qr_url,omitempty"`
 	PaymentExpiresAt       *time.Time `gorm:"column:payment_expires_at"                       json:"payment_expires_at,omitempty"`
+
+	// Provisioning target. Captured at PurchaseViaPayment time so the
+	// confirmation path knows where to create the client without
+	// asking the caller again. Migration 0007 added these; #5 used
+	// to stuff the encoded form into ErrorMessage but that
+	// overloaded the column.
+	ProvisioningNodeID     *int64 `gorm:"column:provisioning_node_id"                json:"provisioning_node_id,omitempty"`
+	ProvisioningInboundTag string `gorm:"column:provisioning_inbound_tag;not null;default:''" json:"provisioning_inbound_tag,omitempty"`
 }
 
 func (Order) TableName() string { return "orders" }
