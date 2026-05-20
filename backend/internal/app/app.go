@@ -55,6 +55,7 @@ type App struct {
 	BillingService *billing.Service
 	WebhookService *webhook.Service
 	RuntimeManager *runtime.Manager // exposed for tests to swap http client
+	PaymentPollJob *job.PaymentPollJob // exposed for tests to trigger RunOnce
 
 	cfg *config.Config
 	log *slog.Logger
@@ -269,6 +270,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 		BillingService: billingService,
 		WebhookService: webhookService,
 		RuntimeManager: rtManager,
+		PaymentPollJob: paymentPollJob,
 		cfg:            cfg,
 		log:            logger,
 	}
