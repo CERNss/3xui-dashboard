@@ -190,7 +190,7 @@ admin moderation of users/plans/orders.
 | | (b) Sing-box JSON 输出 | ✅ #1 |
 | | (c) SIP008 输出 | ✅ #1 |
 | | (d) User-Agent 自动选格式 | ✅ #1 |
-| | (e) WireGuard 节点侧 runtime + links + 订阅渲染 | 🚧 #8 spec v2 ready (fork 实测支持) |
+| | (e) WireGuard 节点侧 runtime + links + 订阅渲染 | ✅ #8 partial shipped (2026-05-20) — migration + wgcrypto + RMW provisioning + .conf/Clash/sing-box 渲染 + 前端编辑器 + 文档；ExpiryJob WG 分支 + portal 套餐购买分支待 #8.1 |
 | | (f) Hysteria 协议 | 🚧 #10 spec ready (T0 顺带发现) |
 | | (g) Runtime XrayClient path realign vs fork 真实路由 | ✅ #11 shipped (2026-05-20)：remote.go + mock_panel_test.go 全部对齐 `/clients/*`，新增 2 个回归测试 |
 | **3. 支付** | (a) 支付宝当面付（含回调验签） | #5 `add-payment-alipay` |
@@ -227,7 +227,7 @@ admin moderation of users/plans/orders.
 | 5 | `add-payment-alipay` | 支付 | 20% → 45%（实际达成） | ✅ shipped (2026-05-20)：alipay 当面付 QR + 异步 notify + RSA2 sign/verify（纯 stdlib 无 SDK 依赖）+ payment-poll 30s 兜底 + payment_pending/paid/payment_failed/payment_expired 状态机。Auto-renewal 拆到独立 change |
 | 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。Subscriptions 拆到 add-billing-auto-renewal |
 | 7 | `add-notification-channels` | 通知 | 50% → 80%（实际达成） | ✅ shipped (2026-05-20)：Channel 接口 + Router（env-var 配置化路由）+ 4 个 channel（email 复用 mailer / Telegram bot / Discord webhook / 飞书 interactive card）+ NodeRecovered 事件区分启动首次上线 vs 故障恢复 + 每 channel 独立 dedup key（kind 后缀）+ 通用 PostJSON 含 retry/Retry-After。Per-user channel routing 拆到 add-user-notification-prefs |
-| 8 | `add-protocol-wireguard` | 多协议 | 节点 4 → 5 | 🚧 spec v2 ready (2026-05-20)：T0 第二轮实测推翻先前结论——deployed fork 是非 canonical，支持 10 协议，WG 走统一 `/panel/api/inbounds/*`。spec/design/tasks 已 rewrite，等实现。详见 `notes/3xui-wg-api.md` |
+| 8 | `add-protocol-wireguard` | 多协议 | 节点 4 → 5 | ✅ partial shipped (2026-05-20)：migration 0007_wg_peers + `internal/service/wgcrypto` (curve25519 + AES-256-GCM, 11 tests) + `WGProvisioner` 含 `pg_advisory_xact_lock` RMW + 漂移容忍的 IP 分配器 + `/sub/wireguard/:subId` 等 5 个渲染目标 + 前端协议下拉/Tab 隐藏/portal 下载按钮 + `WG_MASTER_KEY` env + docs/operator/wireguard-setup.md。**Deferred**: 4.3/4.4 (billing → ProvisionPeer branch + ExpiryJob WG 分支) → #8.1 |
 | 10 | `add-protocol-hysteria` | 多协议 | 节点 5 → 6 | 🚧 spec ready (2026-05-20)：T0 顺带发现 Hysteria 也在 fork 协议下拉里，且适配 unified `/clients/add` 流程，diff 小于 #8。spec scaffold 落地 |
 | 11 | `audit-xrayclient-vs-fork` | 运维质量 | 修正 path drift | ✅ shipped (2026-05-20)：`remote.go` AddClient/UpdateClient/DeleteClientByEmail/GetClientTraffic/FetchTrafficSnapshot/ResetClientTraffic/ResetAllClientTraffics 全部迁到 `/clients/*` + body 改为 `{client, inboundIds}` / 原生 `model.Client`；`mock_panel_test.go` 同步重写；2 个新增 runtime 测试覆盖路径 + 404 surface（不再 silent fallback）；`docs/operator/3xui-fork-compat.md` 写明 fork 要求 |
 | 9 | `add-mobile-responsive` | 用户界面 | 90% → 95%（实际达成） | ✅ shipped (2026-05-20)：AdminLayout 改 off-canvas drawer + 移动 top bar；PortalLayout 水平滚动 nav + 移动端 logout icon-only；admin 表格全部包 overflow-x-auto；7 个页面 header 改 flex-col → sm:flex-row；padding 阶梯式（px-4 / sm:px-6 / lg:px-8）|
@@ -263,10 +263,10 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前状态**：v1 全部 shipped + T0 真实节点探测改变了 #8 走向。#11 P0 阻塞已清。
+> **当前状态**：v1 全部 shipped + T0 真实节点探测改变了 #8 走向。#11 P0 阻塞已清。#8 主体已 ship。
 >
 > - `#11 audit-xrayclient-vs-fork` ✅ shipped (2026-05-20) — `/clients/*` path drift 修完，silent failure 防御回归测试就位
-> - `#8 add-protocol-wireguard` (v2 spec ready) — fork 实测支持 WG，统一 inbound API，RMW peers[]
+> - `#8 add-protocol-wireguard` ✅ partial shipped (2026-05-20) — wgcrypto + RMW provisioning + 5 个渲染目标 + 前端 + 文档全部落地；ExpiryJob/billing 的 WG 分支留给 #8.1
 > - `#10 add-protocol-hysteria` (spec ready) — T0 顺手发现，适配 unified `/clients/*` 流程
 >
-> 推进顺序: #11 ✅ → #8 → #10。#11 落地后节点客户端 mutation 终于走对路；#8/#10 做完节点支持 4 → 6 协议，多协议维度 85% → ~95%。
+> 推进顺序: #11 ✅ → #8 ✅ → #10。#11+#8 落地后节点客户端 mutation 走对路 + WG 渲染完整；#10 做完节点支持 4 → 6 协议，多协议维度 85% → ~95%。
