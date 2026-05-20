@@ -58,11 +58,27 @@ const (
 )
 
 // Order lifecycle values.
+//
+// Balance-based flow: pending → completed | failed | refunded.
+// Payment-gateway flow: payment_pending → paid → completed,
+// or payment_pending → payment_failed | payment_expired (terminals).
+// The `paid` state is transient — only visible during the brief
+// window between payment confirmation and provisioning success.
 const (
-	OrderStatusPending   = "pending"
-	OrderStatusCompleted = "completed"
-	OrderStatusFailed    = "failed"
-	OrderStatusRefunded  = "refunded"
+	OrderStatusPending         = "pending"
+	OrderStatusCompleted       = "completed"
+	OrderStatusFailed          = "failed"
+	OrderStatusRefunded        = "refunded"
+	OrderStatusPaymentPending  = "payment_pending"
+	OrderStatusPaid            = "paid"
+	OrderStatusPaymentFailed   = "payment_failed"
+	OrderStatusPaymentExpired  = "payment_expired"
+)
+
+// Payment method values stored in orders.payment_method.
+const (
+	PaymentMethodBalance = "balance"
+	PaymentMethodAlipay  = "alipay"
 )
 
 // BalanceLog reason values.

@@ -24,6 +24,7 @@ type Config struct {
 	Admin  Admin
 	OIDC   OIDC
 	SMTP   SMTP
+	Alipay Alipay
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
@@ -103,6 +104,27 @@ func (s SMTP) Enabled() bool {
 	return s.Host != "" && s.From != ""
 }
 
+// Alipay configures the 当面付 gateway. PrivateKey + AlipayPublicKey
+// are PEM blocks the operator pastes from the alipay open-platform
+// console (RSA2 keypair: we sign with PrivateKey, verify alipay's
+// signatures with AlipayPublicKey).
+type Alipay struct {
+	AppID           string
+	PrivateKey      string // PEM, our RSA2 private key
+	AlipayPublicKey string // PEM, alipay's platform public key
+	Gateway         string // defaults to https://openapi.alipay.com/gateway.do
+	NotifyURL       string // public URL alipay POSTs to; e.g. https://panel.example.com/api/public/payment/alipay/notify
+	ReturnURL       string // optional; only used by the WAP flow which we don't implement (#future)
+}
+
+// Enabled reports whether the alipay gateway is fully configured.
+// Notify URL is technically optional (the poll job covers the gap)
+// but strongly recommended — without it the user waits up to 30s for
+// the success flip even on a clean payment.
+func (a Alipay) Enabled() bool {
+	return a.AppID != "" && a.PrivateKey != "" && a.AlipayPublicKey != ""
+}
+
 // Load reads configuration. If envFile is non-empty it is loaded as a
 // dotenv-format file; values still get overridden by real environment
 // variables (process env wins). Missing required keys produce a single
@@ -129,6 +151,7 @@ func Load(envFile string) (*Config, error) {
 	v.SetDefault("SMTP_USE_TLS", true)
 	v.SetDefault("PUBLIC_REGISTRATION", false)
 	v.SetDefault("EMAIL_DOMAIN_ALLOWLIST", "")
+	v.SetDefault("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
 
 	if envFile != "" {
 		v.SetConfigFile(envFile)
@@ -187,6 +210,14 @@ func Load(envFile string) (*Config, error) {
 			Password: v.GetString("SMTP_PASSWORD"),
 			From:     v.GetString("SMTP_FROM"),
 			UseTLS:   v.GetBool("SMTP_USE_TLS"),
+		},
+		Alipay: Alipay{
+			AppID:           v.GetString("ALIPAY_APP_ID"),
+			PrivateKey:      v.GetString("ALIPAY_PRIVATE_KEY"),
+			AlipayPublicKey: v.GetString("ALIPAY_PUBLIC_KEY"),
+			Gateway:         v.GetString("ALIPAY_GATEWAY"),
+			NotifyURL:       v.GetString("ALIPAY_NOTIFY_URL"),
+			ReturnURL:       v.GetString("ALIPAY_RETURN_URL"),
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),
 		EmailDomainAllowlist: splitCSV(v.GetString("EMAIL_DOMAIN_ALLOWLIST")),

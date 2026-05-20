@@ -10,11 +10,15 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/service/payment"
 )
 
 // Errors callers branch on.
@@ -24,29 +28,38 @@ var (
 	ErrPlanNotFound        = errors.New("billing: plan not found")
 	ErrPlanDisabled        = errors.New("billing: plan disabled")
 	ErrInvalidInput        = errors.New("billing: invalid input")
+	ErrOrderNotFound       = errors.New("billing: order not found")
 )
 
 // Service composes the repos + the client provisioning service.
 type Service struct {
-	plans    *repository.PlanRepo
-	orders   *repository.OrderRepo
-	users    *repository.UserRepo
-	client   *client.Service
-	bus      *event.Bus
-	log      *slog.Logger
+	plans     *repository.PlanRepo
+	orders    *repository.OrderRepo
+	users     *repository.UserRepo
+	client    *client.Service
+	bus       *event.Bus
+	gateways  *payment.Registry
+	log       *slog.Logger
 }
 
-// New constructs the service.
-func New(plans *repository.PlanRepo, orders *repository.OrderRepo, users *repository.UserRepo, client *client.Service, bus *event.Bus, lg *slog.Logger) *Service {
+// New constructs the service. `gateways` MAY be nil — in that case
+// the payment-via-gateway endpoints reject with ErrUnknownProvider,
+// but balance-pay still works.
+func New(plans *repository.PlanRepo, orders *repository.OrderRepo, users *repository.UserRepo, client *client.Service, bus *event.Bus, gateways *payment.Registry, lg *slog.Logger) *Service {
 	return &Service{
-		plans:  plans,
-		orders: orders,
-		users:  users,
-		client: client,
-		bus:    bus,
-		log:    lg.With(slog.String("component", "service.billing")),
+		plans:    plans,
+		orders:   orders,
+		users:    users,
+		client:   client,
+		bus:      bus,
+		gateways: gateways,
+		log:      lg.With(slog.String("component", "service.billing")),
 	}
 }
+
+// Gateways exposes the registry so handlers can call EnabledProviders
+// for /payment-methods. Returns nil if no providers were configured.
+func (s *Service) Gateways() *payment.Registry { return s.gateways }
 
 // ---- Plan admin -----------------------------------------------------------
 
@@ -207,7 +220,263 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 	return order, nil
 }
 
+// ---- Payment-gateway purchase ---------------------------------------------
+
+// PurchaseViaPaymentInput is the same shape as PurchaseInput plus
+// the chosen Provider. The balance is NOT debited; the order is
+// held at payment_pending until the gateway confirms.
+type PurchaseViaPaymentInput struct {
+	UserID         int64
+	PlanID         int64
+	IdempotencyKey string
+	NodeID         int64
+	InboundTag     string
+	Provider       string // "alipay", "stripe", ...
+}
+
+// PurchaseViaPayment creates a payment_pending order and asks the
+// chosen gateway to create a payment session. Returns the order
+// with PaymentQRURL + PaymentExpiresAt populated so the handler can
+// hand the QR back to the portal.
+func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentInput) (*model.Order, error) {
+	if in.IdempotencyKey == "" {
+		return nil, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)
+	}
+	if s.gateways == nil {
+		return nil, payment.ErrUnknownProvider
+	}
+	gw, err := s.gateways.Get(in.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	// Idempotency short-circuit — return the existing order so a
+	// retried POST gets back the same QR.
+	if existing, err := s.orders.GetByIdempotencyKey(ctx, in.IdempotencyKey); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	plan, err := s.plans.Get(ctx, in.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, ErrPlanNotFound
+	}
+	if !plan.Enabled {
+		return nil, ErrPlanDisabled
+	}
+
+	user, err := s.users.Get(ctx, in.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+
+	// We persist the node + inbound tag onto the order so the
+	// confirmation path can provision without needing to ask the
+	// caller again. The current Order model doesn't have these
+	// columns — we encode them into IdempotencyKey-derived state
+	// via the order_provisioning_targets cache instead.
+	//
+	// Simpler approach: the same order ID is used as alipay's
+	// out_trade_no, and provisioning_targets is looked up by order
+	// ID in ConfirmPayment. For now, encode target in error_message
+	// as a JSON blob — quick + reversible, no new table needed.
+	order := &model.Order{
+		UserID:         user.ID,
+		PlanID:         plan.ID,
+		IdempotencyKey: in.IdempotencyKey,
+		PriceCents:     plan.PriceCents,
+		Status:         model.OrderStatusPaymentPending,
+		PaymentMethod:  in.Provider,
+		ErrorMessage:   encodeProvisioningTarget(in.NodeID, in.InboundTag),
+	}
+	if err := s.orders.Create(ctx, order); err != nil {
+		if isUniqueViolation(err) {
+			if existing, gErr := s.orders.GetByIdempotencyKey(ctx, in.IdempotencyKey); gErr == nil && existing != nil {
+				return existing, nil
+			}
+		}
+		return nil, err
+	}
+	s.bus.PublishType(event.OrderCreated, OrderEventPayload{
+		OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
+	})
+
+	// Ask the gateway for a QR.
+	res, err := gw.CreatePayment(ctx, order, plan.Name)
+	if err != nil {
+		// Couldn't reach the gateway — mark the order failed so the
+		// user can retry (the idempotency_key has been consumed).
+		_ = s.orders.AdvanceStatusGuarded(ctx, order.ID, model.OrderStatusPaymentPending, model.OrderStatusPaymentFailed)
+		s.bus.PublishType(event.OrderPaymentFailed, OrderEventPayload{
+			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
+			Reason: "gateway_create_failed: " + err.Error(),
+		})
+		return order, fmt.Errorf("billing.PurchaseViaPayment: %w", err)
+	}
+
+	if err := s.orders.SetPaymentMetadata(ctx, order.ID, res.ProviderOrderID, res.QRURL, res.ExpiresAt); err != nil {
+		return order, fmt.Errorf("billing.PurchaseViaPayment: persist metadata: %w", err)
+	}
+	order.PaymentProviderOrderID = res.ProviderOrderID
+	order.PaymentQRURL = res.QRURL
+	order.PaymentExpiresAt = &res.ExpiresAt
+	return order, nil
+}
+
+// ConfirmPayment is called by the notify endpoint AND the poll job.
+// Idempotent: if the order is already past payment_pending, returns
+// the current order without doing anything. On the winning call,
+// transitions payment_pending → completed via paid + provisions.
+func (s *Service) ConfirmPayment(ctx context.Context, providerOrderID string) (*model.Order, error) {
+	if providerOrderID == "" {
+		return nil, fmt.Errorf("%w: provider_order_id required", ErrInvalidInput)
+	}
+	order, err := s.orders.GetByProviderOrderID(ctx, providerOrderID)
+	if err != nil {
+		return nil, err
+	}
+	if order == nil {
+		return nil, ErrOrderNotFound
+	}
+	if order.Status != model.OrderStatusPaymentPending {
+		// Already advanced — idempotent no-op.
+		return order, nil
+	}
+
+	// Guarded transition: if a concurrent caller already advanced
+	// the order, AdvanceStatusGuarded returns ErrRecordNotFound and
+	// we re-read + return without re-provisioning.
+	if err := s.orders.AdvanceStatusGuarded(ctx, order.ID, model.OrderStatusPaymentPending, model.OrderStatusPaid); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return s.orders.Get(ctx, order.ID)
+		}
+		return nil, fmt.Errorf("billing.ConfirmPayment: advance to paid: %w", err)
+	}
+	s.bus.PublishType(event.OrderPaymentConfirmed, OrderEventPayload{
+		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
+	})
+
+	plan, err := s.plans.Get(ctx, order.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		// Plan deleted between purchase + confirm. Mark refunded so
+		// admin can chase it — provisioning would crash without a
+		// plan to source duration/traffic from.
+		_ = s.orders.MarkRefunded(ctx, order.ID, "plan deleted before confirmation")
+		return order, ErrPlanNotFound
+	}
+
+	nodeID, inboundTag, decodeErr := decodeProvisioningTarget(order.ErrorMessage)
+	if decodeErr != nil {
+		_ = s.orders.MarkRefunded(ctx, order.ID, "corrupt provisioning target")
+		return order, fmt.Errorf("billing.ConfirmPayment: decode target: %w", decodeErr)
+	}
+
+	planID := plan.ID
+	ownership, err := s.client.ProvisionClient(ctx, order.UserID, nodeID, inboundTag, client.PlanParams{
+		PlanID:            &planID,
+		DurationDays:      plan.DurationDays,
+		TrafficLimitBytes: plan.TrafficLimitBytes,
+	})
+	if err != nil {
+		_ = s.orders.MarkRefunded(ctx, order.ID, "provisioning failed: "+err.Error())
+		s.bus.PublishType(event.OrderFailed, OrderEventPayload{
+			OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
+			Reason: "provisioning_failed_after_payment",
+		})
+		return order, fmt.Errorf("billing.ConfirmPayment: provision: %w", err)
+	}
+
+	if err := s.orders.MarkCompleted(ctx, order.ID, ownership.ID); err != nil {
+		s.log.Error("mark completed failed after payment",
+			slog.Int64("order_id", order.ID), slog.String("error", err.Error()))
+	}
+	s.bus.PublishType(event.OrderCompleted, OrderEventPayload{
+		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
+	})
+	return s.orders.Get(ctx, order.ID)
+}
+
+// FailPayment marks a payment_pending order as payment_failed. Used
+// by the poll job when the gateway reports a closed/cancelled trade.
+func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason string) error {
+	order, err := s.orders.GetByProviderOrderID(ctx, providerOrderID)
+	if err != nil {
+		return err
+	}
+	if order == nil {
+		return ErrOrderNotFound
+	}
+	if order.Status != model.OrderStatusPaymentPending {
+		return nil
+	}
+	if err := s.orders.AdvanceStatusGuarded(ctx, order.ID, model.OrderStatusPaymentPending, model.OrderStatusPaymentFailed); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	s.bus.PublishType(event.OrderPaymentFailed, OrderEventPayload{
+		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents, Reason: reason,
+	})
+	return nil
+}
+
+// ExpirePayment marks a payment_pending order as payment_expired.
+// Same guard as FailPayment so a concurrent ConfirmPayment can't be
+// clobbered.
+func (s *Service) ExpirePayment(ctx context.Context, orderID int64) error {
+	if err := s.orders.AdvanceStatusGuarded(ctx, orderID, model.OrderStatusPaymentPending, model.OrderStatusPaymentExpired); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if order, err := s.orders.Get(ctx, orderID); err == nil && order != nil {
+		s.bus.PublishType(event.OrderPaymentExpired, OrderEventPayload{
+			OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
+		})
+	}
+	return nil
+}
+
+// ListPendingPayments exposes the open payment_pending orders to
+// the payment-poll job. maxAge filters out orders past expiry so
+// the job doesn't keep poking abandoned QRs.
+func (s *Service) ListPendingPayments(ctx context.Context, maxAge time.Duration) ([]model.Order, error) {
+	return s.orders.ListPaymentPending(ctx, maxAge)
+}
+
+// ListExpiredPendingPayments returns payment_pending orders past
+// `cutoff` so the poll job can mark them payment_expired.
+func (s *Service) ListExpiredPendingPayments(ctx context.Context, cutoff time.Time) ([]model.Order, error) {
+	return s.orders.ListExpiredPending(ctx, cutoff)
+}
+
 // ---- Order listing --------------------------------------------------------
+
+// GetOrderForUser returns one order, refusing to return another
+// user's order. Used by the portal poll endpoint that flips the
+// alipay QR modal to "支付成功" when status advances to completed.
+func (s *Service) GetOrderForUser(ctx context.Context, userID, orderID int64) (*model.Order, error) {
+	order, err := s.orders.Get(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if order == nil || order.UserID != userID {
+		return nil, ErrOrderNotFound
+	}
+	return order, nil
+}
 
 func (s *Service) ListOrdersByUser(ctx context.Context, userID int64, limit, offset int) ([]model.Order, error) {
 	return s.orders.ListByUser(ctx, userID, limit, offset)
@@ -242,6 +511,41 @@ func isUniqueViolation(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "SQLSTATE 23505") || strings.Contains(msg, "duplicate key value")
+}
+
+// encodeProvisioningTarget stashes the (node, inbound) provisioning
+// target into the existing error_message column. We could add two
+// new columns, but provisioning target is only meaningful for
+// payment_pending orders — temporary state, not a permanent fact
+// about the order — and reusing error_message keeps the schema
+// changes for this commit minimal. On confirmation we overwrite
+// error_message back to empty.
+//
+// Format: `target:<nodeID>:<tag>` — `:` is safe in inbound tags
+// per our existing validation. decodeProvisioningTarget tolerates
+// the empty string (returns 0, "", nil) so legacy orders don't
+// crash the decode path.
+func encodeProvisioningTarget(nodeID int64, inboundTag string) string {
+	return fmt.Sprintf("target:%d:%s", nodeID, inboundTag)
+}
+
+func decodeProvisioningTarget(s string) (int64, string, error) {
+	if s == "" {
+		return 0, "", nil
+	}
+	if !strings.HasPrefix(s, "target:") {
+		return 0, "", fmt.Errorf("not a provisioning-target prefix")
+	}
+	rest := strings.TrimPrefix(s, "target:")
+	colon := strings.IndexByte(rest, ':')
+	if colon < 0 {
+		return 0, "", fmt.Errorf("missing tag separator")
+	}
+	var nodeID int64
+	if _, err := fmt.Sscanf(rest[:colon], "%d", &nodeID); err != nil {
+		return 0, "", fmt.Errorf("bad node id: %w", err)
+	}
+	return nodeID, rest[colon+1:], nil
 }
 
 // OrderEventPayload is the per-event shape on event.OrderCreated /

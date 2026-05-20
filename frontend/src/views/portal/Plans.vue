@@ -2,9 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { portalBillingApi, type Plan, type PortalInbound } from '@/api/portal/billing'
+import { portalBillingApi, type Plan, type PortalInbound, type PaymentMethod, type Order } from '@/api/portal/billing'
 import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import AlipayPayModal from '@/components/portal/AlipayPayModal.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
 
@@ -26,18 +27,38 @@ const flash = ref<{ kind: 'ok' | 'err'; text: string } | null>(null)
 // it stays auto-selected. We expose a key encoded as "nodeId|tag".
 const selectedInbound = ref<string>('')
 
+// Available payment methods from the backend. Always includes "balance";
+// "alipay" only appears when the operator configured ALIPAY_APP_ID etc.
+const paymentMethods = ref<PaymentMethod[]>(['balance'])
+const selectedMethod = ref<PaymentMethod>('balance')
+
+// Alipay QR modal state. order is the payment_pending order we just
+// created — the modal polls /orders/:id and flips to "支付成功" when
+// notify advances it to completed.
+const alipayModal = ref<{ open: boolean; order: Order | null }>({
+  open: false,
+  order: null,
+})
+
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const [p, prof, ib] = await Promise.all([
+    const [p, prof, ib, methods] = await Promise.all([
       portalBillingApi.listPlans(),
       portalProfileApi.get(),
       portalBillingApi.listInbounds(),
+      portalBillingApi.paymentMethods(),
     ])
     plans.value = p
     profile.value = prof
     inbounds.value = ib
+    paymentMethods.value = methods.length > 0 ? methods : ['balance']
+    // Default to whichever method the user picked last; otherwise the
+    // first method the backend returned (balance, then alipay).
+    if (!paymentMethods.value.includes(selectedMethod.value)) {
+      selectedMethod.value = paymentMethods.value[0]
+    }
     if (ib.length > 0 && !selectedInbound.value) {
       // Auto-pick the first option so single-inbound deployments don't
       // require the user to click anything.
@@ -89,21 +110,31 @@ async function buy(plan: Plan) {
   const chosen = inbounds.value.find(ib => ib.node_id === nodeID && ib.inbound_tag === inboundTag)
   const where = chosen ? `${chosen.node_name} · ${chosen.remark || chosen.inbound_tag}` : '所选节点'
 
+  const methodLabel = selectedMethod.value === 'alipay' ? '支付宝' : '余额'
+  const messageBody = selectedMethod.value === 'alipay'
+    ? `开通在「${where}」\n通过${methodLabel}支付 ${formatYuan(plan.price_cents)}。`
+    : `开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`
   const ok = await askConfirm({
     title: `购买「${plan.name}」`,
-    message: `开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`,
-    confirmLabel: `支付 ${formatYuan(plan.price_cents)}`,
+    message: messageBody,
+    confirmLabel: `${methodLabel}支付 ${formatYuan(plan.price_cents)}`,
   })
   if (!ok) return
   buying.value = plan.id
   flash.value = null
   try {
-    const order = await portalBillingApi.purchase({
+    const input = {
       plan_id: plan.id,
       idempotency_key: uuid(),
       node_id: nodeID,
       inbound_tag: inboundTag,
-    })
+    }
+    if (selectedMethod.value === 'alipay') {
+      const order = await portalBillingApi.purchaseViaPayment('alipay', input)
+      alipayModal.value = { open: true, order }
+      return
+    }
+    const order = await portalBillingApi.purchase(input)
     flash.value = { kind: 'ok', text: `订单 #${order.id} 已创建` }
     await load() // refresh balance
     setTimeout(() => router.push('/portal/orders'), 800)
@@ -112,6 +143,18 @@ async function buy(plan: Plan) {
   } finally {
     buying.value = null
   }
+}
+
+function onAlipaySuccess(order: Order) {
+  flash.value = { kind: 'ok', text: `订单 #${order.id} 已支付` }
+  // Close the modal after a brief success indicator, then refresh
+  // balance + route to /portal/orders. The modal itself shows the
+  // success state for ~800ms before we close it.
+  setTimeout(() => {
+    alipayModal.value = { open: false, order: null }
+    void load()
+    router.push('/portal/orders')
+  }, 1000)
 }
 
 const sortedPlans = computed(() =>
@@ -202,6 +245,37 @@ onMounted(load)
       ⚠️ 当前没有可用的节点入站，请联系管理员先配置节点
     </div>
 
+    <!-- Payment method picker — hidden when only "balance" is configured -->
+    <div
+      v-if="!loading && inbounds.length > 0 && paymentMethods.length > 1"
+      class="mb-5 rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900"
+    >
+      <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">支付方式</h2>
+      <p class="mt-1 text-xs text-surface-500">选择如何为本次订单付款</p>
+      <div class="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3">
+        <label
+          v-for="m in paymentMethods"
+          :key="m"
+          class="flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 transition-all duration-150 ease-brand"
+          :class="selectedMethod === m
+            ? 'border-accent-300 bg-accent-50 dark:border-accent-700 dark:bg-accent-950/40'
+            : 'border-surface-200 bg-surface-0 hover:border-surface-300 hover:bg-surface-50 dark:border-surface-700 dark:bg-surface-900 dark:hover:bg-surface-800'"
+        >
+          <input
+            type="radio"
+            :value="m"
+            v-model="selectedMethod"
+            class="h-4 w-4 border-surface-300 text-accent-600 focus:ring-accent-500/30"
+          />
+          <span class="text-sm font-medium" :class="selectedMethod === m ? 'text-accent-700 dark:text-accent-300' : 'text-ink-900 dark:text-surface-50'">
+            <template v-if="m === 'alipay'">支付宝</template>
+            <template v-else-if="m === 'balance'">余额</template>
+            <template v-else>{{ m }}</template>
+          </span>
+        </label>
+      </div>
+    </div>
+
     <section v-if="!loading && inbounds.length > 0 && sortedPlans.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       <div
         v-for="plan in sortedPlans"
@@ -264,6 +338,13 @@ onMounted(load)
       :busy="confirmState.busy"
       @confirm="settleConfirm(true)"
       @cancel="settleConfirm(false)"
+    />
+
+    <AlipayPayModal
+      :open="alipayModal.open"
+      :order="alipayModal.order"
+      @update:open="(v: boolean) => (alipayModal.open = v)"
+      @success="onAlipaySuccess"
     />
   </div>
 </template>

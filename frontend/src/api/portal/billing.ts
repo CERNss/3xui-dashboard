@@ -13,7 +13,17 @@ export interface Plan {
   created_at?: string
 }
 
-export type OrderStatus = 'created' | 'paid' | 'completed' | 'failed' | 'refunded'
+export type OrderStatus =
+  | 'pending'
+  | 'completed'
+  | 'failed'
+  | 'refunded'
+  | 'payment_pending'
+  | 'paid'
+  | 'payment_failed'
+  | 'payment_expired'
+
+export type PaymentMethod = 'balance' | 'alipay'
 
 export interface Order {
   id: number
@@ -26,6 +36,10 @@ export interface Order {
   error_message?: string
   created_at: string
   completed_at?: string | null
+  payment_method: PaymentMethod
+  payment_provider_order_id?: string
+  payment_qr_url?: string
+  payment_expires_at?: string | null
 }
 
 export interface PurchaseInput {
@@ -71,4 +85,20 @@ export const portalBillingApi = {
   /** List inbounds the user may purchase a plan onto. */
   listInbounds: () =>
     portalClient.get<{ inbounds: PortalInbound[] }>('/inbounds').then((r) => r.data.inbounds),
+
+  /** Configured payment methods. Always includes "balance"; alipay
+   *  appears only when ALIPAY_APP_ID/PRIVATE_KEY/PUBLIC_KEY are set. */
+  paymentMethods: () =>
+    portalClient.get<{ methods: PaymentMethod[] }>('/payment-methods').then((r) => r.data.methods),
+
+  /** Buy via a payment gateway (alipay). Returns the same Order shape
+   *  but with payment_qr_url + payment_expires_at populated; the
+   *  portal renders the QR and polls /orders/:id until completed. */
+  purchaseViaPayment: (provider: PaymentMethod, input: PurchaseInput) =>
+    portalClient.post<Order>(`/purchase/${provider}`, input).then((r) => r.data),
+
+  /** Poll one order — used by the alipay QR modal to flip to "支付成功"
+   *  when the notify endpoint advances the order. */
+  getOrder: (id: number) =>
+    portalClient.get<Order>(`/orders/${id}`).then((r) => r.data),
 }

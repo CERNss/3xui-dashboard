@@ -37,6 +37,52 @@ func TestNormalizePlan_Rejects(t *testing.T) {
 	}
 }
 
+func TestProvisioningTargetRoundtrip(t *testing.T) {
+	cases := []struct {
+		nodeID int64
+		tag    string
+	}{
+		{1, "vless-tcp-tls"},
+		{42, "shadowsocks"},
+		{99999, "vless-reality-vision"},
+		{1, ""}, // empty tag allowed — caller validates separately
+	}
+	for _, c := range cases {
+		encoded := encodeProvisioningTarget(c.nodeID, c.tag)
+		gotID, gotTag, err := decodeProvisioningTarget(encoded)
+		if err != nil {
+			t.Errorf("decode(%q): %v", encoded, err)
+			continue
+		}
+		if gotID != c.nodeID || gotTag != c.tag {
+			t.Errorf("roundtrip(%d, %q) = (%d, %q)", c.nodeID, c.tag, gotID, gotTag)
+		}
+	}
+}
+
+func TestProvisioningTarget_DecodeEmpty(t *testing.T) {
+	id, tag, err := decodeProvisioningTarget("")
+	if err != nil {
+		t.Errorf("empty string should decode to zero values, got err=%v", err)
+	}
+	if id != 0 || tag != "" {
+		t.Errorf("empty decoded to (%d, %q), want (0, \"\")", id, tag)
+	}
+}
+
+func TestProvisioningTarget_DecodeBadInput(t *testing.T) {
+	cases := []string{
+		"not-a-target",
+		"target:notanumber:foo",
+		"target:42-missing-second-colon",
+	}
+	for _, s := range cases {
+		if _, _, err := decodeProvisioningTarget(s); err == nil {
+			t.Errorf("expected error on %q", s)
+		}
+	}
+}
+
 func TestIsUniqueViolation(t *testing.T) {
 	if !isUniqueViolation(errors.New("pq: duplicate key value violates unique constraint")) {
 		t.Error("missed lib/pq style message")

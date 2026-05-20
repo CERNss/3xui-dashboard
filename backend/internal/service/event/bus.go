@@ -34,6 +34,13 @@ const (
 	OrderCreated     = "order.created"
 	OrderCompleted   = "order.completed"
 	OrderFailed      = "order.failed"
+	// Payment-gateway lifecycle (alipay, stripe, …). Distinct from
+	// OrderCompleted so subscribers can react to "user paid" vs
+	// "client provisioned" — the two happen at different instants
+	// and either can fail independently.
+	OrderPaymentConfirmed = "order.payment_confirmed"
+	OrderPaymentFailed    = "order.payment_failed"
+	OrderPaymentExpired   = "order.payment_expired"
 	ClientExpired      = "client.expired"
 	ClientExpiringSoon = "client.expiring_soon"
 	ClientOverLimit    = "client.over_limit"

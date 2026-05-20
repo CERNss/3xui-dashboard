@@ -29,6 +29,8 @@ import (
 	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/metrics"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
+	"github.com/cern/3xui-dashboard/internal/service/payment"
+	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/notify"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
@@ -152,11 +154,17 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg).RegisterRoutes(apiAdminAuthed)
 
-	// Billing.
+	// Billing + payment gateways.
 	orderRepo := repository.NewOrderRepo(db)
-	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, logger)
+	paymentRegistry := payment.NewRegistry()
+	paymentRegistry.Register(alipay.New(cfg.Alipay))
+	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
+	// Public payment notify endpoints — RSA-signed callbacks from
+	// the gateway. Mounted on the engine root, not under /api,
+	// because alipay requires a plain-text "success" response.
+	publichandler.NewPaymentNotifyHandler(billingService, logger).RegisterRoutes(engine)
 	userhandler.NewInboundHandler(inboundService).RegisterRoutes(apiUserAuthed)
 
 	// Admin stats overview — server-side aggregates so the page
@@ -181,6 +189,8 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	notifyLogRepo := repository.NewNotificationLogRepo(db)
 	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, notifyLogRepo, rtManager, bus, logger)
 	_ = scheduler.Add("expiry", "@every 5m", expiryJob.RunOnce)
+	paymentPollJob := job.NewPaymentPollJob(billingService, paymentRegistry, 15*time.Minute, logger)
+	_ = scheduler.Add("payment-poll", "@every 30s", paymentPollJob.RunOnce)
 
 	// Notify service — subscribes to client lifecycle events and
 	// dispatches emails to the owning user via mailer. Wired AFTER
