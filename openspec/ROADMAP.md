@@ -17,9 +17,9 @@ single state. Update this file whenever a change ships.
 2. 多协议     █████████████████░░░  85%   节点 4/5 + 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect 已交付）
 3. 支付系统   ████░░░░░░░░░░░░░░░░  20%   骨架齐 + 0 个真实网关 + 计费模式单一
 4. 通知系统   ████████░░░░░░░░░░░░  40%   webhook/mail 齐 + 0 个 bot + 邮件无队列
-5. 用户界面   ██████████░░░░░░░░░░  50%   admin 50% + portal 0% + 设计系统 95%
+5. 用户界面   ███████████████░░░░░  75%   admin 50% + portal 75% + 设计系统 95%
 ─────────────────────────────────────────
-综合（5 维均值） ██████████░░░░░░░░░░  ~51%
+综合（5 维均值） ███████████░░░░░░░░░  ~56%
 ```
 
 > **协议 scope**：节点能跑什么由 **3x-ui** 上游决定（sspanel 仅借鉴 5 大产品维度，不约束协议）。
@@ -156,11 +156,11 @@ admin moderation of users/plans/orders.
 
 | 页面 | 状态 | 离 100% 差什么 |
 |---|---|---|
-| 仪表盘（流量图 + 套餐状态） | ⚠️ | 94 行 stub，仅文字 |
-| 订阅页（URL + QR + 多格式切换 + 复制按钮） | ❌ | 后端订阅 endpoint 在，前端 0 行 |
-| 套餐对比 + 购买 | ❌ | 后端 plan/purchase API 在 |
-| 订单历史 + 余额显示 | ❌ | 后端 order API 在 |
-| 资料 / 改密 / 绑邮箱 | ❌ | 后端 profile/change-pw/bind-email API 在 |
+| 仪表盘（流量图 + 套餐状态） | ✅ | 4 KPI 卡 + sub URL preview + recent clients 表 |
+| 订阅页（URL + QR + 多格式切换 + 复制按钮） | ✅ | 5-format picker + copy + QR 260px |
+| 套餐对比 + 购买 | ✅ | 3-col 卡片 + crypto.randomUUID idempotency + balance affordability |
+| 订单历史 + 余额显示 | ✅ | 时间倒序表 + 状态 pill + 余额头部 |
+| 资料 / 改密 / 绑邮箱 | ✅ | OIDC-only 检测、邮箱验证状态、改密表单 |
 
 ### 5c. 设计系统 + 通用 UI
 
@@ -203,9 +203,9 @@ admin moderation of users/plans/orders.
 | | (d) 异步邮件队列（DB 持久化 + retry） | #7 |
 | | (e) 多 SMTP 切换 + 失败 fallback | #7 |
 | | (f) 在 cron 里挂到期/流量阈值的事件 publisher | #4（cron 实做时一并） |
-| **5. 用户界面** | (a) Portal 4 页：订阅 / 套餐 / 订单 / 资料 | #2 `add-portal-views` |
-| | (b) Portal 仪表盘扩充（流量图表替换 stub） | #2 |
-| | (c) Admin 4 页：用户 / 套餐 / 订单 / 统计 | #3 `add-admin-business-views` |
+| **5. 用户界面** | (a) Portal 4 页：订阅 / 套餐 / 订单 / 资料 | ✅ #2 (commit `263dbc4`) |
+| | (b) Portal 仪表盘扩充（流量图表替换 stub） | ✅ #2 |
+| | (c) Admin 4 页：用户 / 套餐 / 订单 / 统计 | #3 `add-admin-business-views`（**下一焦点**） |
 | | (d) 移动端响应式（admin + portal） | #9 `add-mobile-responsive` |
 
 合计 25 项明确缺口，由 9 个 change 关联承接。
@@ -219,8 +219,8 @@ admin moderation of users/plans/orders.
 | # | Change | 主要影响维度 | 预期推进 | 状态 |
 |---|---|---|---|---|
 | 1 | `add-subscription-converter` | 多协议 | 67% → 85%（实际达成） | ✅ shipped `8170551` (2026-05-20) |
-| 2 | `add-portal-views` | 用户界面 | 50% → 75% | ❌ 未开（**下一焦点**） |
-| 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75% → 90% / 运维 60% → 75% | ❌ 未开 |
+| 2 | `add-portal-views` | 用户界面 | 50% → 75%（实际达成） | ✅ shipped `263dbc4` (2026-05-20) |
+| 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75% → 90% / 运维 60% → 75% | ❌ 未开（**下一焦点**） |
 | 4 | `add-billing-cron-jobs` | 运维 | 75% → 90% | ❌ 未开 |
 | 5 | `add-payment-alipay` | 支付 | 20% → 45% | ❌ 未开 |
 | 6 | `add-payment-stripe` | 支付 | 45% → 60% | ❌ 未开 |
@@ -239,6 +239,7 @@ admin moderation of users/plans/orders.
 | `bootstrap-central-panel` | 2026-05-18 | 全部 9 个 v1 模块的初次落地 |
 | `add-email-verification-and-oidc-hook` | 2026-05-20 | 邮箱验证码 + OIDC providers stub + ADMIN_PASSWORD 自动生成 |
 | `add-subscription-converter` | 2026-05-20 | 完整 Clash YAML + sing-box JSON + SIP008 + User-Agent 自动选格式 + admin 可覆盖的模板引擎（多协议 67% → 85%） |
+| `add-portal-views` | 2026-05-20 | Portal 5 页（dashboard 重写 + subscription + plans + orders + profile）+ billing API client + nav 扩展（用户界面 50% → 75%） |
 
 ---
 
@@ -252,4 +253,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-portal-views`（# 2）— portal 4 页（订阅 / 套餐 / 订单 / 资料），后端 API 全在，前端待画。
+> **当前焦点**：`add-admin-business-views`（# 3）— admin 4 页（用户 / 套餐 / 订单 / 统计 + 节点 CPU/Mem 时序图）。后端 API 大部分在；UI 需新写。
