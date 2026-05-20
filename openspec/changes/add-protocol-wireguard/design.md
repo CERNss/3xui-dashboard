@@ -175,24 +175,49 @@ The advisory lock is shed at COMMIT — by then the inbound on the
 node is already updated. Lock duration = one round-trip to the
 node, typically <200ms. Acceptable serialization for v1.
 
-## Capability detection
+### Limitation: lock doesn't extend to panel UI
 
-The fork supports more protocols (WG, Hysteria) than canonical
-3x-ui (4 Xray protocols). Different nodes in a fleet may run
-different forks. The dashboard needs to know per-node which
-protocols are available.
+The `pg_advisory_xact_lock` only serializes mutations within the
+dashboard process. **If an operator simultaneously edits the same
+WG inbound through the 3x-ui panel UI (or another dashboard
+instance against the same node), peer updates can still race.**
+The fork's `/inbounds/update/:id` endpoint accepts the full
+inbound JSON wholesale — no optimistic-concurrency check on a
+`version` or `updated_at` field exists in the fork's response
+schema (T0 verified the captured shape: no version field).
 
-Plan:
-- On node probe (existing `ProbeJob`), call `GET /panel/api/inbounds/options`
-- This returns protocol metadata — we cache the list as
-  `nodes.protocols TEXT[]` (postgres array)
-- Inbound editor + provisioning hide WG when target node's
-  protocols array lacks `"wireguard"`
+Documented operator constraint: "while the dashboard is
+provisioning users to a WG inbound, don't simultaneously edit
+that inbound from the 3x-ui UI." Likelihood of harm low (admins
+typically don't co-edit), but the constraint deserves to be in
+docs. v2 may add panel-side optimistic locking — needs an
+upstream change to MHSanaei/3x-ui, out of scope here.
 
-If `/inbounds/options` doesn't enumerate protocols (T0 didn't
-verify the response shape — needs T1 probe), fallback: assume
-canonical 4 + sniff WG by attempting a probe-create then probe-
-delete in startup mode.
+## Capability detection — REMOVED
+
+Original plan: call `GET /panel/api/inbounds/options` to enumerate
+supported protocols per node. **Verified 2026-05-20: this
+endpoint returns 404 with Bearer-token auth.** The controller
+calls `session.GetLoginUser(c)` which only resolves for cookie-
+session callers, not API-token callers (per `web/controller/inbound.go`
+in MHSanaei/3x-ui).
+
+Revised stance: **don't detect, just target.** We declare in spec
++ docs that this dashboard targets MHSanaei/3x-ui (recent commits,
+either branch). That fork has WG + Hysteria built in. There is no
+"canonical 3x-ui without WG" upstream — MHSanaei IS the canonical
+maintainer.
+
+Implications:
+- No `nodes.supported_protocols TEXT[]` column — drop from the
+  schema migration
+- No probe-time capability check
+- If an operator runs a different fork that doesn't speak WG,
+  the inbound add will fail server-side with a protocol-not-
+  supported error; the admin UI surfaces that as a regular error
+  (no special branching)
+- Documented in `docs/operator/3xui-fork-compat.md`: "this dashboard
+  requires MHSanaei/3x-ui; other forks at your own risk"
 
 ## Schema additions (REVISED from v1)
 
@@ -209,9 +234,9 @@ CREATE TABLE wg_peers (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Per-node protocol capability cache, refreshed on each probe.
-ALTER TABLE nodes
-    ADD COLUMN supported_protocols TEXT[] NOT NULL DEFAULT ARRAY['vless','vmess','trojan','shadowsocks'];
+-- (No supported_protocols column — capability detection removed,
+-- per the "Capability detection — REMOVED" section above. Spec
+-- targets MHSanaei/3x-ui as a monolithic surface.)
 ```
 
 Drop the v1 `node_inbound_snapshots.is_wireguard` column — the

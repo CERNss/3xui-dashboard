@@ -22,25 +22,28 @@ per-protocol client interface.
 
 ## ADDED Requirements
 
-### Requirement: Protocol Capability Detection
+### Requirement: Target Fork Declaration
 
-The probe job SHALL populate `nodes.supported_protocols` with the
-set of inbound protocols the node's panel build supports. The
-dashboard SHALL hide protocol-specific UI on nodes that don't
-support that protocol.
+The system SHALL target MHSanaei/3x-ui (any recent commit on
+`main` or `bash` branch — verified 2026-05-20 to be content-
+identical at the controller + model layer) as the canonical
+3x-ui implementation. Since this fork has WG + Hysteria + the 4
+Xray protocols built in, the dashboard SHALL NOT attempt
+per-node capability detection.
 
-#### Scenario: Probe captures supported protocols
+#### Scenario: Operator runs an incompatible fork
 
-- **WHEN** `ProbeJob` runs against a node
-- **AND** the node's `/panel/api/inbounds/options` endpoint returns an enumerable protocol list
-- **THEN** the dashboard SHALL persist that list to `nodes.supported_protocols`
-- **AND** SHALL refresh the cache on every successful probe (cheap; doesn't require change-detection)
+- **WHEN** an operator points the dashboard at a 3x-ui fork that lacks WG support
+- **AND** the dashboard attempts `POST /panel/api/inbounds/add` with `protocol=wireguard`
+- **THEN** the node SHALL respond with a protocol-validation error
+- **AND** the dashboard SHALL surface that error to the admin verbatim
+- **AND** docs SHALL note "MHSanaei/3x-ui required for WG features"
 
-#### Scenario: Fallback when /inbounds/options unavailable
+#### Scenario: /inbounds/options not Bearer-accessible
 
-- **WHEN** the node returns 404 on `/inbounds/options` OR the response shape doesn't enumerate protocols
-- **THEN** the dashboard SHALL default `supported_protocols` to `['vless','vmess','trojan','shadowsocks']` (canonical 3x-ui baseline)
-- **AND** SHALL log a warning identifying the node so the operator can manually flag it as WG-capable if needed
+- **GIVEN** the controller for `/inbounds/options` calls `session.GetLoginUser(c)` which returns nil for API-token callers
+- **THEN** the dashboard SHALL NOT use this endpoint for capability detection
+- **AND** the runtime client SHALL NOT have a method that calls `/inbounds/options`
 
 ### Requirement: WG Inbound Settings Schema
 

@@ -82,12 +82,16 @@ etc.).
 
 ## Assumptions
 
-- The fork's `hysteriaSettings` shape matches the captured T0
-  sample (`{version, auth, udpIdleTimeout}`). T1 should re-verify
-  by creating one Hysteria inbound via API + reading it back.
+- ✅ **Verified 2026-05-20**: API-create a Hysteria inbound via
+  `POST /panel/api/inbounds/add` with the dashboard-constructed
+  payload (Bearer token, id=18 on the probe node), readback via
+  `/inbounds/list` returns identical JSON. The
+  `{network:"hysteria", security:"tls", hysteriaSettings:
+  {version:2, udpIdleTimeout:60}}` shape from T0 IS the expected
+  API shape.
 - The fork registers Hysteria with `model.Client.Auth` field for
-  per-client credentials. Already confirmed via source inspection
-  (`web/service/client.go`).
+  per-client credentials. Confirmed via source inspection
+  (`web/service/client.go` in MHSanaei/3x-ui).
 - TLS certificates: the inbound stores `certificateFile`/`keyFile`
   paths on the node's filesystem. The dashboard CANNOT upload
   certs via API — operator manages certs externally

@@ -26,8 +26,8 @@ Findings in `notes/3xui-wg-api.md`. Key conclusions:
       inbound_id            BIGINT NOT NULL,
       created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
   );
-  ALTER TABLE nodes
-      ADD COLUMN supported_protocols TEXT[] NOT NULL DEFAULT ARRAY['vless','vmess','trojan','shadowsocks'];
+  -- No supported_protocols column — capability detection removed.
+  -- See design.md "Capability detection — REMOVED".
   ```
 - [ ] 1.2 `internal/service/wgcrypto/`:
   - `keypair.go` — generate curve25519 pair via
@@ -43,10 +43,11 @@ Findings in `notes/3xui-wg-api.md`. Key conclusions:
 - [ ] 2.1 Add `XrayClient.UpdateInbound(ctx, id int64, inbound runtime.Inbound) error`
   → `POST /panel/api/inbounds/update/:id`. Existing `AddInbound`
   + `RemoveInbound` patterns; same `{success, msg, obj}` envelope.
-- [ ] 2.2 Confirm probe call → `GET /panel/api/inbounds/options`
-  returns enumerable protocol list. If yes, parse + persist into
-  `nodes.supported_protocols`. If no (T0 didn't verify shape),
-  fall back to a probe-create+probe-delete sniff.
+- [ ] 2.2 ~~Probe `/inbounds/options` for capability detection~~ —
+  REMOVED. Endpoint returns 404 with Bearer auth (it calls
+  `session.GetLoginUser` which returns nil for token callers).
+  We target MHSanaei/3x-ui as a monolithic spec, no per-node
+  capability flagging needed. See design.md.
 - [ ] 2.3 Tests: httptest fake serves the captured WG inbound shape;
   client round-trips through marshal/unmarshal.
 
@@ -134,13 +135,13 @@ Findings in `notes/3xui-wg-api.md`. Key conclusions:
   option; button text → "下载配置文件" instead of "复制 URL"
 - [ ] 7.4 vitest mount smoke for WG inbound editor + WG sub format
 
-## 8. Capability gating
+## 8. ~~Capability gating~~ — REMOVED
 
-- [ ] 8.1 Backend: list of available providers + protocols at
-  `GET /api/admin/capabilities` (admin frontend reads this on
-  page load)
-- [ ] 8.2 Frontend: hide WG features when no probed node has
-  `wireguard` in supported_protocols
+Per design.md, the dashboard targets MHSanaei/3x-ui as a
+monolithic spec. WG features are always available; if an operator
+runs a non-MHSanaei fork that lacks WG, `/inbounds/add` with
+`protocol="wireguard"` fails server-side and the dashboard
+surfaces that as a regular operation error.
 
 ## 9. Spec promotion + ROADMAP
 

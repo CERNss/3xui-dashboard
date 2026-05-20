@@ -2,14 +2,32 @@
 
 ## Why
 
-Side-finding from #8 T0 (`changes/add-protocol-wireguard/notes/3xui-wg-api.md`):
-the deployed 3x-ui fork's route surface differs from what the
-dashboard's existing `internal/runtime` XrayClient assumes. We
-verified WireGuard support is real on this fork (good news for
-#8), but we did NOT verify that the rest of XrayClient's
-endpoints match the fork's actual paths.
+Side-finding from #8 T0 (`changes/add-protocol-wireguard/notes/3xui-wg-api.md`),
+**confirmed via codebase grep in 2026-05-20 reflection round**:
+the dashboard's existing `internal/runtime` XrayClient assumes
+endpoint paths that 3x-ui (MHSanaei/3x-ui, any recent commit on
+either `main` or `bash` branch — content identical) moved to a
+separate `/panel/api/clients/*` API group.
 
-Concrete evidence:
+Grep evidence (not speculation):
+
+```
+backend/internal/runtime/remote.go:493
+  r.doGet("/inbounds/getClientTraffics/"+url.PathEscape(email))
+    REAL: /panel/api/clients/traffic/:email
+backend/internal/runtime/remote.go:518
+  r.doPostEmpty("/inbounds/onlines")
+    REAL: /panel/api/clients/onlines
+backend/internal/e2e/mock_panel_test.go:102,105
+  mock serves /panel/api/inbounds/{addClient,updateClient/*}
+    REAL: /panel/api/clients/{add,update/:email}
+```
+
+The mock serves the WRONG paths AND the runtime calls match the
+mock — so e2e tests pass, but real-fork deploys silently fail on
+client mutation. Confirmed via grep; not a hot take.
+
+Concrete path-drift catalog (extended after grep):
 
 | Endpoint XrayClient probably uses | Status on the live fork |
 |---|---|
@@ -74,10 +92,16 @@ false sense of correctness.
 
 ## Assumptions
 
-- The fork at https://github.com/MHSanaei/3x-ui/tree/bash is the
+- The MHSanaei/3x-ui repository (any recent commit on either
+  `main` or `bash` branch — verified identical via api.go + model.go
+  byte-count and protocol-reference checks 2026-05-20) is the
   source of truth for what's running on this dashboard's target
-  nodes. If different operators run different forks, capability
-  detection (from #8) determines which endpoints to use.
-- The fork doesn't have version-skew protection (i.e. the routes
-  in HEAD of `bash` are the routes running today). If they
-  rename paths, we re-audit.
+  nodes. There is no "canonical 3x-ui without WG" upstream —
+  MHSanaei's repo IS the extended fork that has WG/Hysteria
+  baked in.
+- Older releases / x-ui-style forks would have a different
+  surface but are out of scope; we explicitly target current
+  MHSanaei/3x-ui.
+- Version-skew protection: the routes in MHSanaei/3x-ui change
+  rarely (we just realigned against ~current HEAD). If they
+  rename, re-audit.

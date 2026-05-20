@@ -8,6 +8,26 @@ supports 10 inbound protocols, including WireGuard, Hysteria,
 mixed (SOCKS+HTTP), and routing primitives (tun, tunnel). Stock
 3x-ui covers only 4.
 
+## TL;DR — T0 conclusion REVERSED (+ round 3 verifications)
+
+**Round 3 verifications (2026-05-20, post-reflection)**:
+- `MHSanaei/3x-ui` default branch is `main`. Both `main` and
+  `bash` have content-identical `api.go` + `model.go` (same
+  byte counts + same `wireguard` reference count). The fork's
+  10-protocol surface is on both branches.
+- API-create roundtrip confirmed for vmess + hysteria via
+  Bearer token (`POST /panel/api/inbounds/add` returns 200 with
+  identical readback). Schema in this doc is canonical.
+- `/inbounds/options` returns 404 with Bearer auth — the
+  controller calls `session.GetLoginUser(c)` which only works
+  for cookie-session callers. Capability detection via this
+  endpoint is **NOT possible**. Spec switched to "target
+  MHSanaei/3x-ui monolithically, no per-node detection".
+- Codebase grep confirms our existing XrayClient uses
+  `/inbounds/addClient` + `/inbounds/onlines` +
+  `/inbounds/getClientTraffics` paths — all 404 on real fork.
+  #11 audit-xrayclient-vs-fork is a real bug, not paranoia.
+
 ## TL;DR — T0 conclusion REVERSED
 
 The first-pass T0 said "drop #8 — stock 3x-ui has no WG". That

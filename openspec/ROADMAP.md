@@ -229,7 +229,7 @@ admin moderation of users/plans/orders.
 | 7 | `add-notification-channels` | 通知 | 50% → 80%（实际达成） | ✅ shipped (2026-05-20)：Channel 接口 + Router（env-var 配置化路由）+ 4 个 channel（email 复用 mailer / Telegram bot / Discord webhook / 飞书 interactive card）+ NodeRecovered 事件区分启动首次上线 vs 故障恢复 + 每 channel 独立 dedup key（kind 后缀）+ 通用 PostJSON 含 retry/Retry-After。Per-user channel routing 拆到 add-user-notification-prefs |
 | 8 | `add-protocol-wireguard` | 多协议 | 节点 4 → 5 | 🚧 spec v2 ready (2026-05-20)：T0 第二轮实测推翻先前结论——deployed fork 是非 canonical，支持 10 协议，WG 走统一 `/panel/api/inbounds/*`。spec/design/tasks 已 rewrite，等实现。详见 `notes/3xui-wg-api.md` |
 | 10 | `add-protocol-hysteria` | 多协议 | 节点 5 → 6 | 🚧 spec ready (2026-05-20)：T0 顺带发现 Hysteria 也在 fork 协议下拉里，且适配 unified `/clients/add` 流程，diff 小于 #8。spec scaffold 落地 |
-| 11 | `audit-xrayclient-vs-fork` | 运维质量 | 修正 path drift | 🚧 spec ready (2026-05-20)：T0 副产物——发现 `/inbounds/addClient` 等几个 XrayClient 假设的端点在 fork 上是 404；真实路径迁到 `/clients/*`。当前 dashboard 部署到真实节点时 client 操作会 silent fail。优先级 P0（先行实施再开 #8 实现） |
+| 11 | `audit-xrayclient-vs-fork` | 运维质量 | 修正 path drift | 🚧 spec ready (2026-05-20, P0 verified)：codebase grep 确认 `runtime/remote.go:493,518` + `e2e/mock_panel_test.go:102,105` 在用 `/inbounds/addClient`/`/inbounds/onlines`/`/inbounds/getClientTraffics`/`/inbounds/updateClient/*` 等过时路径，真实 fork 已迁到 `/clients/*`。mock 用错路径导致 e2e 假绿，真实部署 silent fail。target fork = MHSanaei/3x-ui（main + bash branch 内容一致）|
 | 9 | `add-mobile-responsive` | 用户界面 | 90% → 95%（实际达成） | ✅ shipped (2026-05-20)：AdminLayout 改 off-canvas drawer + 移动 top bar；PortalLayout 水平滚动 nav + 移动端 logout icon-only；admin 表格全部包 overflow-x-auto；7 个页面 header 改 flex-col → sm:flex-row；padding 阶梯式（px-4 / sm:px-6 / lg:px-8）|
 
 做完 1-9 → 5 维度都 ≥ 80%，综合 ~85%，可以真上线给真用户。
