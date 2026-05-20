@@ -40,6 +40,7 @@ import (
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
 	"github.com/cern/3xui-dashboard/internal/service/webhook"
+	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
@@ -134,6 +135,29 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	ownershipRepo := repository.NewClientOwnershipRepo(db)
 	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
 	adminhandler.NewClientHandler(clientService).RegisterRoutes(apiAdminAuthed)
+
+	// WireGuard provisioning — only wired when WG_MASTER_KEY is
+	// configured. The provisioner stays nil otherwise; downstream
+	// handlers / billing branches MUST treat nil as "WG features
+	// unavailable on this deployment" rather than panicking.
+	wgPeerRepo := repository.NewWGPeerRepo(db)
+	var wgProvisioner *clientsvc.WGProvisioner
+	if cfg.WireGuard.Enabled() {
+		cipher, err := wgcrypto.NewCipherFromHexKey(cfg.WireGuard.MasterKey)
+		if err != nil {
+			// Misconfigured key is louder than silent disable —
+			// the operator clearly intended to enable WG.
+			logger.Error("WG_MASTER_KEY rejected; wireguard features disabled", slog.String("err", err.Error()))
+		} else if prov, err := clientsvc.NewWGProvisioner(rtManager, ownershipRepo, wgPeerRepo, cipher); err != nil {
+			logger.Error("WGProvisioner init failed", slog.String("err", err.Error()))
+		} else {
+			wgProvisioner = prov
+			logger.Info("wireguard provisioning enabled")
+		}
+	} else {
+		logger.Info("WG_MASTER_KEY not set — wireguard features disabled")
+	}
+	_ = wgProvisioner // wired in WG handler / sub renderer (follow-up commits)
 
 	// Traffic.
 	trafficRepo := repository.NewTrafficSampleRepo(db)

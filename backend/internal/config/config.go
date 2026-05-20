@@ -24,13 +24,30 @@ type Config struct {
 	Admin  Admin
 	OIDC   OIDC
 	SMTP   SMTP
-	Alipay Alipay
-	Stripe Stripe
-	Notify Notify
+	Alipay    Alipay
+	Stripe    Stripe
+	Notify    Notify
+	WireGuard WireGuard
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
 }
+
+// WireGuard holds the at-rest key encryption configuration for
+// the WG provisioning flow. The master key is hex-encoded
+// (`openssl rand -hex 32`) and protects every peer's private
+// key in the wg_peers.private_key_encrypted column.
+//
+// MasterKey is optional: when empty, WG features are unavailable
+// and the dashboard refuses to create or provision WG inbounds
+// with a clear error. Non-WG flows are unaffected.
+type WireGuard struct {
+	MasterKey string // hex-encoded 32-byte AES-256 key; empty disables WG features
+}
+
+// Enabled reports whether WG provisioning is available. The
+// app wiring checks this before constructing the WGProvisioner.
+func (w WireGuard) Enabled() bool { return w.MasterKey != "" }
 
 // Notify configures multi-channel notification dispatch. `Routes`
 // is the env-var string parsed by notify.ParseRoutes; per-channel
@@ -279,6 +296,9 @@ func Load(envFile string) (*Config, error) {
 			CancelURL:            v.GetString("STRIPE_CANCEL_URL"),
 			SessionExpiryMinutes: v.GetInt("STRIPE_SESSION_EXPIRY_MINUTES"),
 			Endpoint:             v.GetString("STRIPE_ENDPOINT"),
+		},
+		WireGuard: WireGuard{
+			MasterKey: v.GetString("WG_MASTER_KEY"),
 		},
 		Notify: Notify{
 			Routes:       v.GetString("NOTIFY_ROUTES"),
