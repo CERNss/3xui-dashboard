@@ -81,7 +81,7 @@ onMounted(reload)
 
 <template>
   <div>
-    <header class="mb-7 flex items-end justify-between">
+    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">订单管理</h1>
         <p class="mt-1.5 text-sm text-surface-500">全部订单 · 跨用户</p>
@@ -121,7 +121,7 @@ onMounted(reload)
 
     <Skeleton v-if="loading" :rows="6" />
 
-    <div v-else-if="filtered.length > 0" class="overflow-hidden rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900">
+    <div v-else-if="filtered.length > 0" class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900">
       <table class="min-w-full text-sm">
         <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
           <tr class="border-b border-surface-100 dark:border-surface-800">

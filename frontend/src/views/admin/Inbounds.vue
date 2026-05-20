@@ -605,7 +605,7 @@ onMounted(reload)
 <template>
   <div>
     <!-- Header -->
-    <header class="mb-7 flex items-end justify-between">
+    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">入站列表</h1>
         <p class="mt-1.5 text-sm text-surface-500">跨节点聚合 · 流量 · 客户端 · 点击行展开看每个入站下的客户端</p>
@@ -710,7 +710,7 @@ onMounted(reload)
     <Skeleton v-if="loading" :rows="6" />
     <div
       v-else
-      class="overflow-hidden rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
+      class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
     >
       <table class="min-w-full text-sm">
         <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">

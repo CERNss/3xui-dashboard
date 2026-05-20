@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { useThemeStore } from '@/stores/theme'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAdminAuthStore()
 const theme = useThemeStore()
+
+// Mobile drawer state. Sidebar is always-on at md+ (md: visible),
+// off-canvas + toggleable below that. Close on route change so a
+// nav click doesn't leave the drawer hanging open.
+const drawerOpen = ref(false)
+watch(() => route.fullPath, () => { drawerOpen.value = false })
 
 function logout() {
   auth.clear()
@@ -92,8 +99,20 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
 
 <template>
   <div class="flex h-full bg-surface-50 dark:bg-surface-950">
+    <!-- Mobile backdrop — covers content when drawer is open. -->
+    <div
+      v-if="drawerOpen"
+      class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
+      @click="drawerOpen = false"
+    />
+
     <aside
-      class="flex w-64 flex-col border-r border-surface-100/80 bg-surface-0 px-4 pb-5 pt-6 dark:border-surface-800 dark:bg-surface-900"
+      :class="[
+        'flex w-64 flex-col border-r border-surface-100/80 bg-surface-0 px-4 pb-5 pt-6 dark:border-surface-800 dark:bg-surface-900',
+        'md:relative md:translate-x-0 md:shadow-none',
+        'fixed inset-y-0 left-0 z-40 shadow-elevated transition-transform duration-200 ease-brand',
+        drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+      ]"
     >
       <!-- Brand -->
       <div class="mb-7 flex items-center gap-3 px-2">
@@ -178,8 +197,24 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
       </div>
     </aside>
 
-    <main class="flex-1 overflow-y-auto">
-      <section class="mx-auto max-w-page px-8 py-9">
+    <main class="flex flex-1 flex-col overflow-y-auto">
+      <!-- Mobile top bar: hamburger + brand. md:hidden because the
+           sidebar is always-visible at md+. -->
+      <header class="flex h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-800 dark:bg-surface-900 md:hidden">
+        <button
+          type="button"
+          :aria-label="drawerOpen ? '关闭导航' : '打开导航'"
+          class="flex h-9 w-9 items-center justify-center rounded-xl text-surface-600 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+          @click="drawerOpen = !drawerOpen"
+        >
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div class="text-sm font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('app.title') }}</div>
+      </header>
+
+      <section class="mx-auto w-full max-w-page px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-9">
         <router-view />
       </section>
     </main>

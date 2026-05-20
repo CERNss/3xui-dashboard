@@ -65,7 +65,7 @@ onMounted(reload)
 
 <template>
   <div>
-    <header class="mb-7 flex items-end justify-between">
+    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">系统状态</h1>
         <p class="mt-1.5 text-sm text-surface-500">fleet 总览：节点健康 · 入站数 · 客户端 · 流量</p>

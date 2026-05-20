@@ -138,7 +138,7 @@ onMounted(reload)
 
 <template>
   <div>
-    <header class="mb-7 flex items-end justify-between">
+    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">用户管理</h1>
         <p class="mt-1.5 text-sm text-surface-500">查看 · 封停 · 调余额 · 删除</p>
@@ -172,7 +172,7 @@ onMounted(reload)
 
     <div
       v-else-if="filtered.length > 0"
-      class="overflow-hidden rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
+      class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
     >
       <table class="min-w-full text-sm">
         <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
