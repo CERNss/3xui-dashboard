@@ -74,7 +74,7 @@ type Client struct {
 }
 
 // ClientTraffic is what the panel returns inside Inbound.ClientStats
-// and from /getClientTraffics/:email. Up/Down are cumulative bytes
+// and from /clients/traffic/:email. Up/Down are cumulative bytes
 // since the last reset.
 type ClientTraffic struct {
 	ID         int64  `json:"id"`

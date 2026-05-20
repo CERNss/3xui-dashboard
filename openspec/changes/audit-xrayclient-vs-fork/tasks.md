@@ -5,56 +5,61 @@ runtime client to the fork's actual route surface.
 
 ## 1. Audit
 
-- [ ] 1.1 Catalog every HTTP call XrayClient makes (grep
-  `c.do(` / `c.post(` / `c.get(` in `internal/runtime/`)
-- [ ] 1.2 Cross-check against `web/controller/inbound.go` +
+- [x] 1.1 Catalog every HTTP call XrayClient makes (grep
+  `r.doGet` / `r.doForm` / `r.doJSON` / `r.doPostEmpty` in
+  `internal/runtime/remote.go`)
+- [x] 1.2 Cross-check against `web/controller/inbound.go` +
   `web/controller/client.go` route registrations from the fork
-  source (https://github.com/MHSanaei/3x-ui/tree/bash)
-- [ ] 1.3 Produce a `notes/path-diff.md` table per the proposal's
+  source (MHSanaei/3x-ui `main` — WebFetched 2026-05-20)
+- [x] 1.3 Produce a `notes/path-diff.md` table per the proposal's
   format, flagging each callsite to fix
 
 ## 2. Path fixes
 
-- [ ] 2.1 `internal/runtime/remote.go`: update each affected
-  method to use the new path. Methods to touch (per the
-  proposal table — confirm exact names during audit):
-  - AddClient → POST /clients/add
-  - UpdateClient → POST /clients/update/:email
-  - DelClient → POST /clients/del/:email
-  - ResetClientTraffic → POST /clients/resetTraffic/:email
-  - GetClientTrafficsByEmail → GET /clients/traffic/:email
-  - GetClientIPs → POST /clients/ips/:email
-  - ClearClientIPs → POST /clients/clearIps/:email
-  - OnlineClients → POST /clients/onlines
-- [ ] 2.2 Update body shape for `AddClient` (now takes a
-  `{client, inboundIds}` envelope, not the per-inbound
-  `clientId` path param)
-- [ ] 2.3 Add typed wrappers for the newly-discovered endpoints:
-  - AttachClient(email, inboundIDs)
-  - DetachClient(email, inboundID)
-  - GetSubLinks(subID) — returns the node's pre-rendered link
-    bundle (useful as a fallback for our own sub render)
+- [x] 2.1 `internal/runtime/remote.go`: update each affected
+  method to use the new path:
+  - [x] AddClient → POST /clients/add (was /inbounds/addClient)
+  - [x] UpdateClient → POST /clients/update/:email (was /inbounds/updateClient/:clientId)
+  - [x] DeleteClientByEmail → POST /clients/del/:email (was /inbounds/:id/delClientByEmail/:email)
+  - [x] ResetClientTraffic → POST /clients/resetTraffic/:email (was /inbounds/:id/resetClientTraffic/:email)
+  - [x] GetClientTraffic → GET /clients/traffic/:email (was /inbounds/getClientTraffics/:email)
+  - [x] FetchTrafficSnapshot.onlines → POST /clients/onlines (was /inbounds/onlines)
+  - [x] FetchTrafficSnapshot.lastOnline → POST /clients/lastOnline (was /inbounds/lastOnline)
+  - [x] ResetAllClientTraffics → refactor to loop /clients/resetTraffic/:email per client (fork has no per-inbound endpoint)
+- [x] 2.2 Update body shape for `AddClient` to
+  `{client: model.Client, inboundIds: [int]}` (was `{id, settings:string}`)
+- [x] 2.2 Update body shape for `UpdateClient` to a raw
+  `model.Client` JSON body with email as the path key (was
+  `{id, settings:string}` keyed on UUID/password)
+- [ ] 2.3 Add typed wrappers for the newly-discovered endpoints
+  (DEFERRED — none of the dashboard's current flows need them;
+  documented in `notes/path-diff.md` "Out of audit scope"):
+  - AttachClient / DetachClient
+  - GetSubLinks(subID)
+  - DelDepleted, UpdateTraffic, GetIps/ClearIps
 
 ## 3. Mock panel realignment
 
-- [ ] 3.1 Rewrite `internal/e2e/mock_panel_test.go` route table to
+- [x] 3.1 Rewrite `internal/e2e/mock_panel_test.go` route table to
   match the fork's actual paths
-- [ ] 3.2 Run existing e2e tests — they SHOULD still pass after
-  the rename if our XrayClient was the only thing affected. If
-  they break, the test code itself was calling old paths and
-  needs the same fix.
+- [x] 3.2 Re-run e2e tests — `internal/e2e` is green after the
+  rewrite, confirming the dashboard's XrayClient calls land on
+  the new paths
 
 ## 4. Add coverage for the formerly-silent-failure cases
 
-- [ ] 4.1 e2e test: AddClient on canonical-3x-ui path returns
-  404, dashboard surfaces a clear error (no silent provision
-  success)
-- [ ] 4.2 e2e test: AddClient on fork path returns 200, dashboard
-  reflects the new client correctly
+- [x] 4.1 `TestAddClient_404SurfacesPath` (in
+  `internal/runtime/remote_test.go`): when the panel returns 404
+  for `/clients/add`, the dashboard returns an error that names
+  the actual 404'd path. No silent provision success.
+- [x] 4.2 `TestAddClient_RoutesToClientsAddPath`: asserts both
+  the path AND the new `{client, inboundIds}` body envelope —
+  guards against future regressions to the old `{id, settings}`
+  shape.
 
 ## 5. Documentation
 
-- [ ] 5.1 `docs/operator/3xui-fork-compat.md`: brief note that
-  this dashboard targets the MHSanaei/3x-ui `bash` branch fork.
-  Operators running canonical 3x-ui need to either upgrade or
+- [x] 5.1 `docs/operator/3xui-fork-compat.md`: brief note that
+  this dashboard targets the MHSanaei/3x-ui fork. Operators
+  running canonical 3x-ui need to either upgrade or
   use a feature-flag (out of scope for v1).

@@ -11,9 +11,9 @@ import (
 	"github.com/cern/3xui-dashboard/internal/runtime"
 )
 
-// mockPanel stands in for the 3x-ui /panel/api surface. It tracks
-// addClient / updateClient / delClientByEmail so the rest of the
-// dashboard sees a consistent view across calls.
+// mockPanel stands in for the 3x-ui /panel/api surface (MHSanaei/3x-ui
+// fork route shape). It tracks /clients/{add,update,del} so the rest
+// of the dashboard sees a consistent view across calls.
 type mockPanel struct {
 	server *httptest.Server
 
@@ -93,50 +93,57 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 		m.mu.Unlock()
 		writeEnv(w, out)
 
-	case req.URL.Path == "/panel/api/inbounds/onlines":
+	case req.URL.Path == "/panel/api/clients/onlines":
 		writeEnv(w, []string{})
 
-	case req.URL.Path == "/panel/api/inbounds/lastOnline":
+	case req.URL.Path == "/panel/api/clients/lastOnline":
 		writeEnv(w, map[string]int64{})
 
-	case req.URL.Path == "/panel/api/inbounds/addClient":
+	case req.URL.Path == "/panel/api/clients/add":
 		m.handleAddClient(w, req)
 
-	case strings.HasPrefix(req.URL.Path, "/panel/api/inbounds/updateClient/"):
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/update/"):
 		m.handleUpdateClient(w, req)
 
-	case strings.Contains(req.URL.Path, "/delClientByEmail/"):
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/del/"):
 		m.handleDelClientByEmail(w, req)
+
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/resetTraffic/"):
+		writeEnv(w, nil)
+
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/traffic/"):
+		writeEnv(w, nil)
 
 	default:
 		writeEnv(w, nil)
 	}
 }
 
+// handleAddClient mirrors the fork's POST /panel/api/clients/add.
+// Body shape: {client: model.Client, inboundIds: [int]}.
 func (m *mockPanel) handleAddClient(w http.ResponseWriter, req *http.Request) {
 	body, _ := io.ReadAll(req.Body)
 	var r struct {
-		ID       int64  `json:"id"`
-		Settings string `json:"settings"`
+		Client     runtime.Client `json:"client"`
+		InboundIDs []int          `json:"inboundIds"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
 		http.Error(w, "bad body", http.StatusBadRequest)
 		return
 	}
-	var s runtime.InboundSettings
-	if err := json.Unmarshal([]byte(r.Settings), &s); err != nil {
-		http.Error(w, "bad inner json", http.StatusBadRequest)
+	if len(r.InboundIDs) == 0 {
+		http.Error(w, "missing inboundIds", http.StatusBadRequest)
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, in := range m.inbounds {
-		if in.ID != r.ID {
+		if in.ID != int64(r.InboundIDs[0]) {
 			continue
 		}
 		var existing runtime.InboundSettings
 		_ = json.Unmarshal([]byte(in.Settings), &existing)
-		existing.Clients = append(existing.Clients, s.Clients...)
+		existing.Clients = append(existing.Clients, r.Client)
 		out, _ := json.Marshal(existing)
 		in.Settings = string(out)
 		break
@@ -144,32 +151,29 @@ func (m *mockPanel) handleAddClient(w http.ResponseWriter, req *http.Request) {
 	writeEnv(w, nil)
 }
 
+// handleUpdateClient mirrors the fork's POST /panel/api/clients/update/:email.
+// Body is a raw runtime.Client; path captures the email key.
 func (m *mockPanel) handleUpdateClient(w http.ResponseWriter, req *http.Request) {
+	parts := strings.Split(req.URL.Path, "/")
+	// "" "panel" "api" "clients" "update" "<email>"
+	if len(parts) < 6 {
+		writeEnv(w, nil)
+		return
+	}
+	email := parts[5]
 	body, _ := io.ReadAll(req.Body)
-	var r struct {
-		ID       int64  `json:"id"`
-		Settings string `json:"settings"`
-	}
-	if err := json.Unmarshal(body, &r); err != nil {
+	var newClient runtime.Client
+	if err := json.Unmarshal(body, &newClient); err != nil {
 		writeEnv(w, nil)
 		return
 	}
-	var s runtime.InboundSettings
-	if err := json.Unmarshal([]byte(r.Settings), &s); err != nil || len(s.Clients) == 0 {
-		writeEnv(w, nil)
-		return
-	}
-	newClient := s.Clients[0]
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, in := range m.inbounds {
-		if in.ID != r.ID {
-			continue
-		}
 		var existing runtime.InboundSettings
 		_ = json.Unmarshal([]byte(in.Settings), &existing)
 		for i := range existing.Clients {
-			if existing.Clients[i].Email == newClient.Email {
+			if existing.Clients[i].Email == email {
 				existing.Clients[i] = newClient
 				out, _ := json.Marshal(existing)
 				in.Settings = string(out)
@@ -181,14 +185,15 @@ func (m *mockPanel) handleUpdateClient(w http.ResponseWriter, req *http.Request)
 	writeEnv(w, nil)
 }
 
+// handleDelClientByEmail mirrors the fork's POST /panel/api/clients/del/:email.
 func (m *mockPanel) handleDelClientByEmail(w http.ResponseWriter, req *http.Request) {
 	parts := strings.Split(req.URL.Path, "/")
-	// "" "panel" "api" "inbounds" "<id>" "delClientByEmail" "<email>"
-	if len(parts) < 7 {
+	// "" "panel" "api" "clients" "del" "<email>"
+	if len(parts) < 6 {
 		writeEnv(w, nil)
 		return
 	}
-	email := parts[6]
+	email := parts[5]
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, in := range m.inbounds {

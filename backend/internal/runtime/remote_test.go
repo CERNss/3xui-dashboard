@@ -235,6 +235,74 @@ func TestDeleteClientByEmail_MissingTagIsNoop(t *testing.T) {
 	}
 }
 
+// TestAddClient_RoutesToClientsAddPath asserts the realigned path
+// AND the new body envelope. A node that does NOT register
+// /panel/api/clients/add (e.g. an older fork) returns 404 — the
+// dashboard SHALL surface that visibly rather than silently fall
+// back to a write that pretends success.
+func TestAddClient_RoutesToClientsAddPath(t *testing.T) {
+	var seenPath string
+	var seenBody []byte
+	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/panel/api/inbounds/list":
+			okEnvelope(w, []Inbound{{ID: 7, Tag: "vless-in"}})
+		case "/panel/api/clients/add":
+			seenPath = req.URL.Path
+			seenBody, _ = io.ReadAll(req.Body)
+			okEnvelope(w, nil)
+		default:
+			t.Errorf("unexpected path %s", req.URL.Path)
+		}
+	}))
+
+	if err := r.AddClient(context.Background(), "vless-in", Client{Email: "alice@example.com", ID: "uuid-1"}); err != nil {
+		t.Fatalf("AddClient: %v", err)
+	}
+	if seenPath != "/panel/api/clients/add" {
+		t.Errorf("AddClient hit %q, want /panel/api/clients/add", seenPath)
+	}
+
+	var got struct {
+		Client     Client `json:"client"`
+		InboundIDs []int  `json:"inboundIds"`
+	}
+	if err := json.Unmarshal(seenBody, &got); err != nil {
+		t.Fatalf("decode body: %v (body=%s)", err, seenBody)
+	}
+	if got.Client.Email != "alice@example.com" || got.Client.ID != "uuid-1" {
+		t.Errorf("client envelope = %+v, want email/id propagated", got.Client)
+	}
+	if len(got.InboundIDs) != 1 || got.InboundIDs[0] != 7 {
+		t.Errorf("inboundIds = %v, want [7]", got.InboundIDs)
+	}
+}
+
+// TestAddClient_404SurfacesPath asserts that when /clients/add is
+// missing (canonical 3x-ui without the /clients group), the
+// returned error names the actual path that 404'd — so operators
+// know to upgrade the fork, not chase an unrelated bug.
+func TestAddClient_404SurfacesPath(t *testing.T) {
+	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/panel/api/inbounds/list":
+			okEnvelope(w, []Inbound{{ID: 3, Tag: "vless-in"}})
+		case "/panel/api/clients/add":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			t.Errorf("unexpected path %s", req.URL.Path)
+		}
+	}))
+
+	err := r.AddClient(context.Background(), "vless-in", Client{Email: "bob@example.com"})
+	if err == nil {
+		t.Fatal("expected 404 to surface as error, got nil")
+	}
+	if !strings.Contains(err.Error(), "/panel/api/clients/add") {
+		t.Errorf("error %q does not name the 404'd path /panel/api/clients/add", err.Error())
+	}
+}
+
 // ---- base path normalization -----------------------------------------------
 
 func TestNormalizeBasePath(t *testing.T) {
