@@ -57,7 +57,12 @@ type harness struct {
 	client *http.Client
 }
 
-func setupHarness(t *testing.T) *harness {
+// harnessOption mutates the config before app.Build is called.
+// Tests use these to opt into payment gateway wiring, custom
+// notify routes, etc.
+type harnessOption func(*config.Config)
+
+func setupHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
 	dbURL := os.Getenv("INTEGRATION_DB_URL")
 	if dbURL == "" {
@@ -80,6 +85,9 @@ func setupHarness(t *testing.T) *harness {
 		Auth:               config.Auth{JWTSecret: jwtSecret, AccessTokenTTL: time.Hour},
 		Admin:              config.Admin{Username: adminUser, Password: adminPass},
 		PublicRegistration: true,
+	}
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
 	openCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

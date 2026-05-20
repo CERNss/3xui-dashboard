@@ -1,0 +1,413 @@
+package e2e
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/cern/3xui-dashboard/internal/config"
+	"github.com/cern/3xui-dashboard/internal/model"
+	"github.com/cern/3xui-dashboard/internal/runtime"
+)
+
+// seedNodeInboundPlan sets up the prerequisites for a purchase
+// test: one mock-panel node + one inbound + one plan. Returns the
+// plan ID so the test can post against it.
+func seedNodeInboundPlan(t *testing.T, h *harness, adminTok string) (planID, nodeID int64, inboundTag string) {
+	t.Helper()
+	// Node — the e2e mockPanel serves canned responses, but the
+	// dashboard's app wiring expects a real Node row in the DB so
+	// inbound listing has something to find.
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/nodes",
+		token:  adminTok,
+		body: map[string]any{
+			"name": "mock-node", "scheme": "http",
+			"host": h.panel.server.Listener.Addr().(*net.TCPAddr).IP.String(),
+			"port": h.panel.server.Listener.Addr().(*net.TCPAddr).Port,
+			"api_token": "x", "enabled": true,
+		},
+	}, nil); got != http.StatusCreated {
+		t.Fatalf("create node: status=%d", got)
+	}
+	nodeID = 1
+	inboundTag = "vless-1"
+	h.panel.SeedInbound(runtime.Inbound{
+		ID: 1, Tag: inboundTag, Port: 443, Protocol: "vless", Enable: true,
+		Settings:       `{"clients":[]}`,
+		StreamSettings: `{"network":"tcp","security":"none"}`,
+	})
+
+	var plan struct{ ID int64 `json:"id"` }
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/admin/plans", token: adminTok,
+		body: map[string]any{
+			"name": "30d", "duration_days": 30, "traffic_limit_bytes": 0,
+			"price_cents": 500, "enabled": true,
+		},
+	}, &plan); got != http.StatusCreated {
+		t.Fatalf("create plan: status=%d", got)
+	}
+	return plan.ID, nodeID, inboundTag
+}
+
+// orderRow reads a single order row directly from the DB so tests
+// can assert payment columns without going through the JSON API.
+func orderRow(t *testing.T, h *harness, id int64) *model.Order {
+	t.Helper()
+	var o model.Order
+	if err := h.db.First(&o, id).Error; err != nil {
+		t.Fatalf("read order %d: %v", id, err)
+	}
+	return &o
+}
+
+// ---- Alipay --------------------------------------------------------------
+
+func TestAlipay_PurchaseFlow_HappyPath(t *testing.T) {
+	mock := newMockAlipayHarness(t)
+	h := setupHarness(t, mock.opt)
+	mock.bind(t, h)
+
+	adminTok := h.adminLogin(t)
+	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
+	planID, _, _ := seedNodeInboundPlan(t, h, adminTok)
+
+	// Purchase via alipay — should land in payment_pending with
+	// a QR URL populated.
+	var order struct {
+		ID                     int64  `json:"id"`
+		Status                 string `json:"status"`
+		PaymentMethod          string `json:"payment_method"`
+		PaymentTargetURL       string `json:"payment_target_url"`
+		PaymentProviderOrderID string `json:"payment_provider_order_id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/user/purchase/alipay",
+		token:  userTok,
+		body: map[string]any{
+			"plan_id":         planID,
+			"idempotency_key": "alipay-test-key-1",
+			"node_id":         1,
+			"inbound_tag":     "vless-1",
+		},
+	}, &order); got != http.StatusOK {
+		t.Fatalf("purchase: status=%d", got)
+	}
+	if order.Status != "payment_pending" {
+		t.Errorf("status = %q, want payment_pending", order.Status)
+	}
+	if order.PaymentMethod != "alipay" {
+		t.Errorf("method = %q, want alipay", order.PaymentMethod)
+	}
+	if !strings.HasPrefix(order.PaymentTargetURL, "https://qr.alipay.com/bax") {
+		t.Errorf("target_url = %q, want alipay QR URL", order.PaymentTargetURL)
+	}
+	if order.PaymentProviderOrderID == "" {
+		t.Errorf("provider_order_id should be populated")
+	}
+
+	// Now simulate alipay's async notify → should advance the order.
+	form := mock.alipay.AlipayNotifyForm(t, strconv.FormatInt(order.ID, 10), "TRADE_SUCCESS")
+	resp := postForm(t, h, "/api/public/payment/alipay/notify", form)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("notify: status=%d, body=%s", resp.StatusCode, resp.body)
+	}
+	if resp.body != "success" {
+		t.Errorf("notify body = %q, want literal \"success\" per alipay contract", resp.body)
+	}
+
+	// Order should now be completed + have a client_ownership_id.
+	final := orderRow(t, h, order.ID)
+	if final.Status != "completed" {
+		t.Errorf("final status = %q, want completed", final.Status)
+	}
+	if final.ClientOwnershipID == nil {
+		t.Errorf("client_ownership_id should be set after provisioning")
+	}
+}
+
+func TestAlipay_Notify_BadSignature(t *testing.T) {
+	mock := newMockAlipayHarness(t)
+	h := setupHarness(t, mock.opt)
+	mock.bind(t, h)
+
+	adminTok := h.adminLogin(t)
+	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
+	planID, _, _ := seedNodeInboundPlan(t, h, adminTok)
+
+	var order struct {
+		ID int64 `json:"id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/user/purchase/alipay", token: userTok,
+		body: map[string]any{"plan_id": planID, "idempotency_key": "k", "node_id": 1, "inbound_tag": "vless-1"},
+	}, &order); got != http.StatusOK {
+		t.Fatalf("purchase: %d", got)
+	}
+
+	// Build a valid form then tamper with the signature.
+	form := mock.alipay.AlipayNotifyForm(t, strconv.FormatInt(order.ID, 10), "TRADE_SUCCESS")
+	form.Set("sign", "bm90LWEtdmFsaWQtc2lnbmF0dXJl") // base64("not-a-valid-signature")
+	resp := postForm(t, h, "/api/public/payment/alipay/notify", form)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bad-sig status = %d, want 400", resp.StatusCode)
+	}
+
+	// Order MUST still be payment_pending — no advance on bad sig.
+	final := orderRow(t, h, order.ID)
+	if final.Status != "payment_pending" {
+		t.Errorf("bad-sig should not advance order; got status %q", final.Status)
+	}
+}
+
+// ---- Stripe --------------------------------------------------------------
+
+func TestStripe_PurchaseFlow_HappyPath(t *testing.T) {
+	mock := newMockStripeHarness(t)
+	h := setupHarness(t, mock.opt)
+
+	adminTok := h.adminLogin(t)
+	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
+	planID, _, _ := seedNodeInboundPlan(t, h, adminTok)
+
+	var order struct {
+		ID                     int64  `json:"id"`
+		Status                 string `json:"status"`
+		PaymentMethod          string `json:"payment_method"`
+		PaymentTargetURL       string `json:"payment_target_url"`
+		PaymentProviderOrderID string `json:"payment_provider_order_id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/user/purchase/stripe", token: userTok,
+		body: map[string]any{
+			"plan_id": planID, "idempotency_key": "stripe-test-k1",
+			"node_id": 1, "inbound_tag": "vless-1",
+		},
+	}, &order); got != http.StatusOK {
+		t.Fatalf("purchase: status=%d", got)
+	}
+	if order.Status != "payment_pending" {
+		t.Errorf("status = %q, want payment_pending", order.Status)
+	}
+	if !strings.HasPrefix(order.PaymentTargetURL, "https://checkout.stripe.com/c/pay/") {
+		t.Errorf("target_url = %q, want stripe checkout URL", order.PaymentTargetURL)
+	}
+	if !strings.HasPrefix(order.PaymentProviderOrderID, "cs_test_e2e_") {
+		t.Errorf("provider_order_id = %q", order.PaymentProviderOrderID)
+	}
+
+	// Simulate Stripe webhook for checkout.session.completed.
+	body := []byte(`{"type":"checkout.session.completed","data":{"object":{"id":"` + order.PaymentProviderOrderID + `","client_reference_id":"` + strconv.FormatInt(order.ID, 10) + `"}}}`)
+	sig := mock.stripe.SignWebhook(body, time.Now())
+	resp := postRaw(t, h, "/api/public/payment/stripe/webhook", body, map[string]string{
+		"Content-Type":     "application/json",
+		"Stripe-Signature": sig,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("webhook: status=%d, body=%s", resp.StatusCode, resp.body)
+	}
+
+	final := orderRow(t, h, order.ID)
+	if final.Status != "completed" {
+		t.Errorf("final status = %q, want completed", final.Status)
+	}
+	if final.ClientOwnershipID == nil {
+		t.Errorf("client_ownership_id should be set")
+	}
+}
+
+func TestStripe_Webhook_ReplayProtection(t *testing.T) {
+	mock := newMockStripeHarness(t)
+	h := setupHarness(t, mock.opt)
+
+	adminTok := h.adminLogin(t)
+	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
+	planID, _, _ := seedNodeInboundPlan(t, h, adminTok)
+
+	var order struct {
+		ID                     int64  `json:"id"`
+		PaymentProviderOrderID string `json:"payment_provider_order_id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/user/purchase/stripe", token: userTok,
+		body: map[string]any{"plan_id": planID, "idempotency_key": "k", "node_id": 1, "inbound_tag": "vless-1"},
+	}, &order); got != http.StatusOK {
+		t.Fatalf("purchase: %d", got)
+	}
+
+	// Sign with a timestamp 10 minutes old → should be rejected.
+	body := []byte(`{"type":"checkout.session.completed","data":{"object":{"id":"` + order.PaymentProviderOrderID + `"}}}`)
+	sig := mock.stripe.SignWebhook(body, time.Now().Add(-10*time.Minute))
+	resp := postRaw(t, h, "/api/public/payment/stripe/webhook", body, map[string]string{
+		"Content-Type":     "application/json",
+		"Stripe-Signature": sig,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("replay status = %d, want 400", resp.StatusCode)
+	}
+
+	final := orderRow(t, h, order.ID)
+	if final.Status != "payment_pending" {
+		t.Errorf("replay should not advance order; got status %q", final.Status)
+	}
+}
+
+// ---- PaymentMethods discovery -------------------------------------------
+
+func TestPaymentMethods_ReflectsConfiguredGateways(t *testing.T) {
+	// No payment gateways configured — only balance.
+	h := setupHarness(t)
+	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
+	var out struct {
+		Methods []string `json:"methods"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodGet, path: "/api/user/payment-methods", token: userTok,
+	}, &out); got != http.StatusOK {
+		t.Fatalf("methods: %d", got)
+	}
+	if len(out.Methods) != 1 || out.Methods[0] != "balance" {
+		t.Errorf("no-gateway methods = %v, want [balance]", out.Methods)
+	}
+}
+
+func TestPaymentMethods_IncludesAlipayWhenConfigured(t *testing.T) {
+	mock := newMockAlipayHarness(t)
+	h := setupHarness(t, mock.opt)
+	mock.bind(t, h)
+	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
+	var out struct {
+		Methods []string `json:"methods"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodGet, path: "/api/user/payment-methods", token: userTok,
+	}, &out); got != http.StatusOK {
+		t.Fatalf("methods: %d", got)
+	}
+	hasBalance, hasAlipay := false, false
+	for _, m := range out.Methods {
+		if m == "balance" {
+			hasBalance = true
+		}
+		if m == "alipay" {
+			hasAlipay = true
+		}
+	}
+	if !hasBalance || !hasAlipay {
+		t.Errorf("methods = %v, want both balance + alipay", out.Methods)
+	}
+}
+
+// ---- harness wiring ------------------------------------------------------
+
+// alipayHarness bundles a mockAlipay + the harnessOption that
+// configures the dashboard to point at it. `bind` finishes the
+// keypair handoff after the harness is built (needs t for keygen).
+type alipayHarness struct {
+	alipay      *mockAlipay
+	privPEM     string
+	opt         harnessOption
+}
+
+func newMockAlipayHarness(t *testing.T) *alipayHarness {
+	t.Helper()
+	mock := newMockAlipay(t)
+	priv, _ := mock.DashboardKeypairPEM(t)
+	return &alipayHarness{
+		alipay:  mock,
+		privPEM: priv,
+		opt: func(cfg *config.Config) {
+			cfg.Alipay = config.Alipay{
+				AppID:           "e2e_app_id",
+				PrivateKey:      priv,
+				AlipayPublicKey: mock.AlipayPublicKeyPEM(),
+				Gateway:         mock.URL(),
+			}
+		},
+	}
+}
+
+// bind is currently a no-op — the harnessOption captures everything
+// the mock needs. Kept as a stub so tests have a consistent shape
+// (`mock := new...; h := setupHarness(t, mock.opt); mock.bind(t, h)`)
+// in case future bindings need post-build wiring (e.g. swapping a
+// runtime manager's HTTP client).
+func (a *alipayHarness) bind(t *testing.T, h *harness) {
+	t.Helper()
+}
+
+type stripeHarness struct {
+	stripe *mockStripe
+	opt    harnessOption
+}
+
+func newMockStripeHarness(t *testing.T) *stripeHarness {
+	t.Helper()
+	mock := newMockStripe(t)
+	return &stripeHarness{
+		stripe: mock,
+		opt: func(cfg *config.Config) {
+			cfg.Stripe = config.Stripe{
+				SecretKey:            "sk_test_e2e_dummy",
+				WebhookSecret:        mock.WebhookSecret(),
+				Currency:             "usd",
+				Endpoint:             mock.URL(),
+				SessionExpiryMinutes: 30,
+			}
+		},
+	}
+}
+
+// ---- HTTP form/raw helpers ----------------------------------------------
+
+type rawResponse struct {
+	StatusCode int
+	body       string
+}
+
+func postForm(t *testing.T, h *harness, path string, form interface{ Encode() string }) rawResponse {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, h.URL(path), strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return rawResponse{StatusCode: resp.StatusCode, body: string(body)}
+}
+
+func postRaw(t *testing.T, h *harness, path string, body []byte, headers map[string]string) rawResponse {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, h.URL(path), bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return rawResponse{StatusCode: resp.StatusCode, body: string(raw)}
+}
+
+// jsonRoundTrip is kept for future expansion (asserting JSON
+// response bodies against typed structs).
+var _ = json.Marshal

@@ -25,8 +25,14 @@ func New(cfg config.Stripe) payment.Gateway {
 	if !cfg.Enabled() {
 		return nil
 	}
+	c := NewClient(cfg.SecretKey, cfg.Currency, cfg.SuccessURL, cfg.CancelURL, cfg.SessionExpiryMinutes)
+	if cfg.Endpoint != "" {
+		// Endpoint override — production omits this; e2e tests use it
+		// to point at a httptest fake.
+		c.SetBaseURL(cfg.Endpoint)
+	}
 	return &Gateway{
-		client:        NewClient(cfg.SecretKey, cfg.Currency, cfg.SuccessURL, cfg.CancelURL, cfg.SessionExpiryMinutes),
+		client:        c,
 		webhookSecret: cfg.WebhookSecret,
 		now:           time.Now,
 	}

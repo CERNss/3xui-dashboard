@@ -162,6 +162,12 @@ type Stripe struct {
 	SuccessURL           string // where Stripe redirects after success — usually /portal/orders?stripe=ok
 	CancelURL            string // where Stripe redirects on cancel — usually /portal/plans?stripe=cancel
 	SessionExpiryMinutes int    // 0 → 30 minutes (Stripe's API default is 24h but we expire eagerly)
+	// Endpoint overrides the API base URL. Empty defaults to
+	// `https://api.stripe.com` (production). Stripe themselves
+	// distinguish test vs live by the secret-key prefix, not URL —
+	// this field exists primarily so e2e tests can point at a
+	// httptest fake.
+	Endpoint string
 }
 
 // Enabled reports whether the stripe gateway is fully configured.
@@ -272,6 +278,7 @@ func Load(envFile string) (*Config, error) {
 			SuccessURL:           v.GetString("STRIPE_SUCCESS_URL"),
 			CancelURL:            v.GetString("STRIPE_CANCEL_URL"),
 			SessionExpiryMinutes: v.GetInt("STRIPE_SESSION_EXPIRY_MINUTES"),
+			Endpoint:             v.GetString("STRIPE_ENDPOINT"),
 		},
 		Notify: Notify{
 			Routes:       v.GetString("NOTIFY_ROUTES"),
