@@ -14,6 +14,10 @@ import (
 // Link is one renderable proxy link assembled by the link builders.
 // It carries everything the format layer (base64, JSON, Clash, sing-box,
 // SIP008) needs.
+//
+// WireGuard variant: Client is nil, WGPeer is set, and the panel-side
+// server keypair is reachable via Inbound.Settings → WGSettings. The
+// renderers branch on Protocol == "wireguard".
 type Link struct {
 	URL      string // canonical link URL — e.g. "vless://uuid@host:port?..."
 	Protocol string // matches runtime/3x-ui protocol enum
@@ -22,7 +26,20 @@ type Link struct {
 	Port     int    // inbound's listen port
 	Inbound  *runtime.Inbound
 	Client   *runtime.Client
+	WGPeer   *WGPeerView // populated only when Protocol == "wireguard"
 	NodeID   int64
+}
+
+// WGPeerView is the read-only WG peer info the renderers consume.
+// PrivateKey is already decrypted (the assembler does that once,
+// behind closed doors). ServerPublicKey is read from the inbound's
+// WGSettings.SecretKey via DerivePublic.
+type WGPeerView struct {
+	PrivateKey      string
+	PublicKey       string
+	ServerPublicKey string
+	AllocatedIP     string // "10.0.0.2"
+	MTU             int    // inbound-level
 }
 
 // UserInfo aggregates the numbers we report in the

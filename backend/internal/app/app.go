@@ -171,6 +171,9 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	// Subscription.
 	subAsm := sub.New(userRepo, ownershipRepo, &subNodeLookup{svc: nodeService}, rtManager, logger, 0)
+	if wgProvisioner != nil {
+		subAsm.SetWGPeerSource(&subWGAdapter{prov: wgProvisioner})
+	}
 	publichandler.NewSubHandler(subAsm, settingRepo, "", logger).RegisterRoutes(engine)
 
 	// User accounts.
@@ -362,4 +365,22 @@ func (a *subNodeLookup) GetNode(ctx context.Context, id int64) (*model.Node, err
 		return nil, nil
 	}
 	return n, nil
+}
+
+// subWGAdapter bridges *clientsvc.WGProvisioner to the sub
+// package's WGPeerSource interface.
+type subWGAdapter struct{ prov *clientsvc.WGProvisioner }
+
+func (a *subWGAdapter) PeerForOwnership(ctx context.Context, ownershipID int64) (*sub.WGPeerView, error) {
+	v, err := a.prov.PeerForOwnership(ctx, ownershipID)
+	if err != nil || v == nil {
+		return nil, err
+	}
+	return &sub.WGPeerView{
+		PrivateKey:      v.PrivateKey,
+		PublicKey:       v.PublicKey,
+		ServerPublicKey: v.ServerPublicKey,
+		AllocatedIP:     v.AllocatedIP,
+		MTU:             v.MTU,
+	}, nil
 }

@@ -20,11 +20,13 @@ import (
 type Format string
 
 const (
-	FormatBase64  Format = "base64"
-	FormatJSON    Format = "json"
-	FormatClash   Format = "clash"
-	FormatSingBox Format = "singbox"
-	FormatSIP008  Format = "sip008"
+	FormatBase64    Format = "base64"
+	FormatJSON      Format = "json"
+	FormatClash     Format = "clash"
+	FormatSingBox   Format = "singbox"
+	FormatSIP008    Format = "sip008"
+	FormatWireGuard Format = "wireguard"
+	FormatWGZip     Format = "wireguard-zip"
 )
 
 // SubHandler serves /sub/*.
@@ -65,6 +67,8 @@ func (h *SubHandler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/sub/clash/:subId", h.bind(FormatClash))
 	r.GET("/sub/singbox/:subId", h.bind(FormatSingBox))
 	r.GET("/sub/sip008/:subId", h.bind(FormatSIP008))
+	r.GET("/sub/wireguard/:subId", h.bind(FormatWireGuard))
+	r.GET("/sub/wireguard-zip/:subId", h.bind(FormatWGZip))
 }
 
 // Auto picks the format from ?format= or User-Agent and dispatches.
@@ -142,11 +146,50 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Header("Content-Type", "application/json; charset=utf-8")
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
+	case FormatWireGuard:
+		// Plain .conf format. If the user has exactly one WG peer
+		// we serve it as a single config; if more, concatenate with
+		// a [Interface] block per peer (still valid wg-quick input,
+		// but most clients prefer the ZIP variant for multi-peer).
+		body := strings.Join(wgConfBodies(data), "\n\n")
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Content-Disposition", `attachment; filename="wireguard.conf"`)
+		c.String(http.StatusOK, body)
+	case FormatWGZip:
+		body, err := sub.BuildWGConfZip(data.Links)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Type", "application/zip")
+		c.Header("Content-Disposition", `attachment; filename="wireguard.zip"`)
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.Write(body)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "unsupported format; valid: base64, json, clash, singbox, sip008",
+			"error": "unsupported format; valid: base64, json, clash, singbox, sip008, wireguard, wireguard-zip",
 		})
 	}
+}
+
+// wgConfBodies returns the .conf body for every WG link in data,
+// preserving link order. Non-WG links are skipped silently.
+func wgConfBodies(data *sub.SubscriptionData) []string {
+	if data == nil {
+		return nil
+	}
+	out := make([]string, 0, len(data.Links))
+	for _, l := range data.Links {
+		if l.Protocol != "wireguard" {
+			continue
+		}
+		body := sub.BuildWGConf(l)
+		if body == "" {
+			continue
+		}
+		out = append(out, body)
+	}
+	return out
 }
 
 // detectFormat picks the response format from either an explicit query
@@ -170,6 +213,10 @@ func detectFormat(qs, ua string) Format {
 			return FormatSingBox
 		case "sip008":
 			return FormatSIP008
+		case "wireguard", "wg":
+			return FormatWireGuard
+		case "wireguard-zip", "wg-zip":
+			return FormatWGZip
 		default:
 			return Format(qs) // pass through; serve() returns 400
 		}

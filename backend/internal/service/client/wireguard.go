@@ -275,6 +275,40 @@ func (p *WGProvisioner) DecryptPrivateKey(peer *model.WGPeer) (string, error) {
 	return string(plain), nil
 }
 
+// PeerView is the read-only WG peer surface the subscription
+// renderer wants. Lives here so the sub package can depend on
+// it without pulling in the GORM model. ServerPublicKey is left
+// blank — the renderer derives it from the inbound's secretKey.
+type PeerView struct {
+	PrivateKey      string
+	PublicKey       string
+	ServerPublicKey string
+	AllocatedIP     string
+	MTU             int
+}
+
+// PeerForOwnership implements sub.WGPeerSource: returns the
+// mirror peer with a pre-decrypted PrivateKey, or (nil, nil)
+// when no peer exists for this ownership.
+func (p *WGProvisioner) PeerForOwnership(ctx context.Context, ownershipID int64) (*PeerView, error) {
+	peer, err := p.peers.GetByOwnership(ctx, ownershipID)
+	if err != nil {
+		return nil, err
+	}
+	if peer == nil {
+		return nil, nil
+	}
+	priv, err := p.DecryptPrivateKey(peer)
+	if err != nil {
+		return nil, err
+	}
+	return &PeerView{
+		PrivateKey:  priv,
+		PublicKey:   peer.PublicKey,
+		AllocatedIP: peer.AllocatedIP,
+	}, nil
+}
+
 // ---- IP allocator ---------------------------------------------------------
 
 // defaultSubnet is the per-inbound CIDR used when the inbound has

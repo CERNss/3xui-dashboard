@@ -27,6 +27,16 @@ type NodeLookup interface {
 	GetNode(ctx context.Context, id int64) (*model.Node, error)
 }
 
+// WGPeerSource is the assembler-side hook into the WG mirror.
+// Returns (nil, nil) when no peer is provisioned for the
+// ownership — the link is then dropped silently like any other
+// missing-client case. Returns the peer with a pre-decrypted
+// PrivateKey when available. ServerPublicKey is the WG inbound's
+// own public key, derived from settings.SecretKey by the caller.
+type WGPeerSource interface {
+	PeerForOwnership(ctx context.Context, ownershipID int64) (*WGPeerView, error)
+}
+
 // Assembler composes a user's subscription. It caches inbound
 // payloads per (nodeID, tag) for inboundTTL to avoid hammering each
 // node when many users share the same inbound.
@@ -35,6 +45,7 @@ type Assembler struct {
 	ownership *repository.ClientOwnershipRepo
 	nodes     NodeLookup
 	rt        *runtime.Manager
+	wgPeers   WGPeerSource // optional; nil → WG links are skipped silently
 	log       *slog.Logger
 
 	inboundTTL time.Duration
@@ -42,6 +53,10 @@ type Assembler struct {
 	mu       sync.Mutex
 	inbCache map[string]inboundCacheEntry // key = nodeID|tag
 }
+
+// SetWGPeerSource attaches the mirror lookup. Called once at
+// startup when WG is enabled (cfg.WireGuard.Enabled()). Idempotent.
+func (a *Assembler) SetWGPeerSource(s WGPeerSource) { a.wgPeers = s }
 
 type inboundCacheEntry struct {
 	exp     time.Time
@@ -113,6 +128,13 @@ func (a *Assembler) Build(ctx context.Context, subID string, remarkFmt string) (
 				slog.String("tag", o.InboundTag),
 				slog.String("error", err.Error()),
 			)
+			continue
+		}
+		if in.IsWireguard() {
+			if link, ok := a.buildWGLink(ctx, o, node.Host, node.Name, in, remarkFmt); ok {
+				link.NodeID = node.ID
+				data.Links = append(data.Links, link)
+			}
 			continue
 		}
 		client, ok := findClientByEmail(in, o.ClientEmail)
@@ -201,6 +223,12 @@ func (a *Assembler) FormatClash(d *SubscriptionData, opts FormatOpts) ([]byte, e
 	nodes := make([]map[string]any, 0, len(d.Links))
 	for i := range d.Links {
 		l := &d.Links[i]
+		if l.Protocol == "wireguard" {
+			if n := clashWGNode(*l); n != nil {
+				nodes = append(nodes, n)
+			}
+			continue
+		}
 		n, ok := clashNode(l.Host, l.Port, l.Inbound, l.Client, l.Remark)
 		if !ok {
 			continue
@@ -220,6 +248,12 @@ func (a *Assembler) FormatSingBox(d *SubscriptionData, opts FormatOpts) ([]byte,
 	outs := make([]map[string]any, 0, len(d.Links))
 	for i := range d.Links {
 		l := &d.Links[i]
+		if l.Protocol == "wireguard" {
+			if n := singboxWGOutbound(*l); n != nil {
+				outs = append(outs, n)
+			}
+			continue
+		}
 		n, ok := singboxOutbound(l.Host, l.Port, l.Inbound, l.Client, l.Remark)
 		if !ok {
 			continue
@@ -252,6 +286,52 @@ func (a *Assembler) UserInfoHeader(d *SubscriptionData) string {
 		s += fmt.Sprintf("; expire=%d", u.ExpiresAt.Unix())
 	}
 	return s
+}
+
+// buildWGLink resolves a WG inbound + ownership into a Link with
+// a populated WGPeerView. Returns false if WG is not configured
+// on this dashboard, if the mirror row is missing, or if the
+// inbound's server keypair is unreadable.
+func (a *Assembler) buildWGLink(ctx context.Context, o *ownershipRow, host, nodeName string, in *runtime.Inbound, remarkFmt string) (Link, bool) {
+	if a.wgPeers == nil {
+		a.log.Warn("WG inbound encountered but no WGPeerSource configured — skipping",
+			slog.String("tag", in.Tag), slog.String("email", o.ClientEmail),
+		)
+		return Link{}, false
+	}
+	view, err := a.wgPeers.PeerForOwnership(ctx, o.ID)
+	if err != nil {
+		a.log.Warn("wg peer lookup failed",
+			slog.Int64("ownership_id", o.ID), slog.String("error", err.Error()),
+		)
+		return Link{}, false
+	}
+	if view == nil {
+		return Link{}, false
+	}
+	settings, err := decodeWGSettings(in.Settings)
+	if err != nil {
+		a.log.Warn("decode WG settings", slog.String("tag", in.Tag), slog.String("error", err.Error()))
+		return Link{}, false
+	}
+	serverPub, err := deriveServerPublic(settings.SecretKey)
+	if err != nil {
+		a.log.Warn("derive WG server public key", slog.String("tag", in.Tag), slog.String("error", err.Error()))
+		return Link{}, false
+	}
+	view.ServerPublicKey = serverPub
+	if view.MTU == 0 {
+		view.MTU = settings.MTU
+	}
+	remark := formatRemark(remarkFmt, nodeName, in.Remark, in.Tag, o.ClientEmail)
+	return Link{
+		Protocol: "wireguard",
+		Remark:   remark,
+		Host:     host,
+		Port:     in.Port,
+		Inbound:  in,
+		WGPeer:   view,
+	}, true
 }
 
 // fetchInbound returns the inbound for (nodeID, tag), serving from a
