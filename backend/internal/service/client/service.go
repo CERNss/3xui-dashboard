@@ -54,6 +54,31 @@ type Service struct {
 // app.Build once at startup when cfg.WireGuard.Enabled().
 func (s *Service) SetWGProvisioner(p *WGProvisioner) { s.wg = p }
 
+// PreflightProvision is a cheap "would ProvisionClient fail?"
+// probe that does NOT mutate the node. Used by billing.Purchase
+// to reject impossible provisions before charging the user.
+//
+// Returns nil when the target is provisionable. Errors mean
+// the resolved (nodeID, inboundTag) is unreachable / disabled /
+// requires WG_MASTER_KEY which isn't set / inbound vanished.
+func (s *Service) PreflightProvision(ctx context.Context, nodeID int64, inboundTag string) error {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("node: %w", err)
+	}
+	in, err := r.GetInbound(ctx, inboundTag)
+	if err != nil {
+		return fmt.Errorf("inbound %q: %w", inboundTag, err)
+	}
+	if !in.Enable {
+		return fmt.Errorf("inbound %q is disabled on the panel", inboundTag)
+	}
+	if in.IsWireguard() && s.wg == nil {
+		return fmt.Errorf("WG inbound %q requires WG_MASTER_KEY but it is not configured on this dashboard", inboundTag)
+	}
+	return nil
+}
+
 // UserLookup / PlanLookup are tiny interfaces to keep the client
 // package decoupled from full user / plan services. main wires
 // minimal adapters around the GORM repos.

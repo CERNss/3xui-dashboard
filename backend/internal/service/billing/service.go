@@ -174,6 +174,24 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 		return order, fmt.Errorf("%w: have=%d, need=%d", ErrInsufficientBalance, user.BalanceCents, plan.PriceCents)
 	}
 
+	// Pre-flight: verify the resolved (NodeID, InboundTag) target is
+	// actually provisionable before charging the user. Catches:
+	//  - node is disabled / missing
+	//  - inbound tag has been deleted on the panel
+	//  - inbound is disabled (operator paused it)
+	//  - WG inbound but WG_MASTER_KEY not set on this dashboard
+	// All of these would otherwise cause a charge → provision-fail →
+	// refund pair, leaving paired ledger entries for what's
+	// effectively a no-op. Reject up front instead.
+	if err := s.client.PreflightProvision(ctx, in.NodeID, in.InboundTag); err != nil {
+		_ = s.orders.MarkFailed(ctx, order.ID, "inbound preflight: "+err.Error())
+		s.bus.PublishType(event.OrderFailed, payload.Order{
+			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
+			Reason: "inbound_unavailable",
+		})
+		return order, fmt.Errorf("billing.Purchase: preflight: %w", err)
+	}
+
 	// Charge.
 	if _, err := s.users.AdjustBalance(ctx, user.ID, -plan.PriceCents, model.BalanceReasonOrderCharge, "", &order.ID); err != nil {
 		_ = s.orders.MarkFailed(ctx, order.ID, "charge failed: "+err.Error())
