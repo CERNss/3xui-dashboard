@@ -23,16 +23,32 @@ stay tractable:
 | `NodeOnline` | `node.online` |
 | `NodeOffline` | `node.offline` |
 | `NodeProbeFailed` | `node.probe_failed` |
+| `NodeRecovered` | `node.recovered` (offline → online only — NOT unknown → online; lets ops channels skip boot chatter) |
 | `UserRegistered` | `user.registered` |
 | `OrderCreated` | `order.created` |
 | `OrderCompleted` | `order.completed` |
 | `OrderFailed` | `order.failed` |
+| `OrderPaymentConfirmed` | `order.payment_confirmed` |
+| `OrderPaymentFailed` | `order.payment_failed` |
+| `OrderPaymentExpired` | `order.payment_expired` |
 | `ClientExpired` | `client.expired` |
+| `ClientExpiringSoon` | `client.expiring_soon` |
 | `ClientOverLimit` | `client.over_limit` |
 
-Per-type payload structs are owned by their producing service (e.g.
-`usersvc.RegisteredPayload`). The bus stores them as `any` —
-subscribers type-assert.
+Per-type payload structs live in `internal/service/event/payload`
+(a dedicated package, NOT scattered across publishing services).
+Publishers expose type aliases (e.g.
+`job.ExpiredPayload = payload.ClientExpired`) so their own publishes
+stay readable; subscribers import the canonical types from
+`payload/` and consume via typed switches. The bus stores values
+as `any` — subscribers type-assert.
+
+This split exists because the notify service consumes events from
+multiple publishers (job, billing, traffic); defining payloads in
+publisher packages would force notify to either import each one
+(creating cycles) or extract fields via reflection (which silently
+drops field renames). Centralized typed payloads = compile-time
+safety.
 
 ## Requirements
 

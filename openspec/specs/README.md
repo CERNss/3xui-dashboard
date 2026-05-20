@@ -24,10 +24,10 @@ work still missing for full sspanel parity.
 | Pillar | Modules | Gap (★ = not yet built) |
 |---|---|---|
 | **运维管理** (Operations) | `node-management`, `traffic-statistics`, `scheduler-jobs`, `settings`, `admin-views`, `admin-auth`, `auth-bootstrap` | — |
-| **多协议支持** (Multi-protocol) | `inbound-management`, `client-provisioning`, `subscription`, `runtime-3xui-client` | ★ `subscription-converter` (Clash full / sing-box / sip008); ★ Hysteria2 / TUIC v5 on the node-runtime side |
-| **支付系统** (Payment) | `billing-and-plans` | ★ Real gateway integrations: Alipay F2F, Stripe, Cryptomus; ★ coupon system; ★ access-type-based pricing |
-| **通知系统** (Notification) | `webhook-notifications`, `mailer`, `email-verification`, `event-bus` | ★ Telegram / Discord / Slack bot subscribers; ★ persistent email queue (currently synchronous) |
-| **用户界面** (UI) | `design-system`, `theme-system`, `layouts-and-chrome`, `admin-views`, `unified-login`, `user-accounts`, `oidc-providers`, `i18n` | ★ Portal `views/portal/*` views beyond the Dashboard stub |
+| **多协议支持** (Multi-protocol) | `inbound-management`, `client-provisioning`, `subscription`, `runtime-3xui-client` | ★ Hysteria2 / TUIC v5 on the node-runtime side (Xray-core gap); ★ WireGuard runtime + sub |
+| **支付系统** (Payment) | `billing-and-plans`, `payment-gateway-alipay`, `payment-gateway-stripe` | ★ Cryptomus (crypto); ★ coupon system; ★ recurring billing (auto-renewal) |
+| **通知系统** (Notification) | `notify-service`, `notification-channels`, `webhook-notifications`, `mailer`, `email-verification`, `event-bus` | ★ persistent delivery queue (today best-effort with single retry); ★ per-user channel routing (today telegram/discord/feishu deliver only to admin-configured targets) |
+| **用户界面** (UI) | `design-system`, `theme-system`, `layouts-and-chrome`, `admin-views`, `unified-login`, `user-accounts`, `oidc-providers`, `i18n` | ★ mobile-responsive admin views |
 
 ## High-level architecture
 
@@ -84,10 +84,14 @@ Each entry maps to `openspec/specs/<key>/spec.md`.
 - `subscription` — `/api/public/sub/:subId` URL + assembly.
 
 ### Plans & messaging
-- `billing-and-plans` — plan CRUD, purchase (idempotency-key + row lock + refund), balance.
-- `webhook-notifications` — event subscription, signed delivery, persistent retry.
+- `billing-and-plans` — plan CRUD, purchase (idempotency-key + row lock + refund), balance, gateway-pay state machine (`payment_pending` → `paid` → `completed`).
+- `payment-gateway-alipay` — alipay 当面付 precreate + query + RSA2 notify verify; Beijing-TZ timestamps.
+- `payment-gateway-stripe` — Stripe Checkout Sessions + HMAC webhook verify (raw-body) + replay protection.
+- `notify-service` — event-bus subscriber that fans `client.*` / `node.*` / `order.*` to routed channels with per-channel dedup.
+- `notification-channels` — Email / Telegram / Discord / Feishu adapters behind a common `Channel` interface.
+- `webhook-notifications` — event subscription, signed delivery, persistent retry (customer-facing integrations; distinct from `notify-service` ops alerts).
 - `mailer` — stdlib SMTP wrapper, STARTTLS + implicit-TLS branches, dev no-op fallback.
-- `event-bus` — in-process publish/subscribe, typed payloads.
+- `event-bus` — in-process publish/subscribe, typed payloads in `internal/service/event/payload`.
 
 ### Infrastructure
 - `runtime-3xui-client` — bearer auth, `{success,msg,obj}` envelope, form-encoded inbound add.
