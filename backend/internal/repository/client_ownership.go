@@ -49,7 +49,7 @@ func (r *ClientOwnershipRepo) Upsert(ctx context.Context, row *model.ClientOwner
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "node_id"}, {Name: "inbound_tag"}, {Name: "client_email"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"user_id", "plan_id", "expires_at", "traffic_limit_bytes",
+				"user_id", "plan_id", "protocol", "expires_at", "traffic_limit_bytes",
 				"enabled", "updated_at",
 			}),
 		}).

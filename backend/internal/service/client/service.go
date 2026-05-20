@@ -176,6 +176,7 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 		NodeID:            nodeID,
 		InboundTag:        inboundTag,
 		ClientEmail:       clientEmail,
+		Protocol:          strings.ToLower(in.Protocol),
 		PlanID:            params.PlanID,
 		ExpiresAt:         expiryPtr,
 		TrafficLimitBytes: trafficLimit,
@@ -192,6 +193,7 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 		slog.Int64("user_id", userID),
 		slog.Int64("node_id", nodeID),
 		slog.String("inbound", inboundTag),
+		slog.String("protocol", row.Protocol),
 		slog.Bool("created", existing == nil),
 	)
 	return saved, nil
@@ -204,6 +206,10 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 // optionally links to a user via userID > 0.
 func (s *Service) AddClientDirect(ctx context.Context, nodeID int64, inboundTag string, c runtime.Client, userID int64) (*runtime.Client, error) {
 	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	in, err := r.GetInbound(ctx, inboundTag)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +233,7 @@ func (s *Service) AddClientDirect(ctx context.Context, nodeID int64, inboundTag 
 			NodeID:            nodeID,
 			InboundTag:        inboundTag,
 			ClientEmail:       c.Email,
+			Protocol:          strings.ToLower(in.Protocol),
 			ExpiresAt:         expiry,
 			TrafficLimitBytes: limit,
 			Enabled:           c.Enable,
@@ -332,13 +339,21 @@ func (s *Service) ListOnInbound(ctx context.Context, nodeID int64, inboundTag st
 
 // LinkToUser attaches an unmapped 3x-ui client to a user by writing
 // an ownership row. Used by admins after they manually create a
-// client on a node panel.
+// client on a node panel. Best-effort populates the protocol from
+// the inbound; falls back to empty (ExpiryJob will runtime-lookup).
 func (s *Service) LinkToUser(ctx context.Context, nodeID int64, inboundTag, clientEmail string, userID int64, planID *int64) (*model.ClientOwnership, error) {
+	protocol := ""
+	if r, err := s.rt.Get(ctx, nodeID); err == nil {
+		if in, err := r.GetInbound(ctx, inboundTag); err == nil {
+			protocol = strings.ToLower(in.Protocol)
+		}
+	}
 	row := &model.ClientOwnership{
 		UserID:      userID,
 		NodeID:      nodeID,
 		InboundTag:  inboundTag,
 		ClientEmail: clientEmail,
+		Protocol:    protocol,
 		PlanID:      planID,
 		Enabled:     true,
 	}

@@ -182,6 +182,14 @@ func (j *ExpiryJob) processExpired(ctx context.Context, o *model.ClientOwnership
 // bit — the peer entry has to be removed from settings.peers[]
 // via the WGProvisioner's advisory-locked RMW path.
 //
+// Fast path: the row's `protocol` column is populated by
+// ProvisionClient on every forward provision, so the WG vs non-WG
+// decision happens without a runtime lookup. Legacy rows from
+// before migration 0008 have empty protocol — for those we fall
+// back to a one-time GetInbound. Once the legacy row is re-touched
+// (Upsert via re-provision / renewal), the column populates and
+// future passes are O(0) on the runtime side.
+//
 // Skips silently if the runtime manager is nil (test fixtures) or
 // the node is disabled — in either case pushing makes no sense.
 func (j *ExpiryJob) disableOnNode(ctx context.Context, o *model.ClientOwnership) error {
@@ -195,17 +203,21 @@ func (j *ExpiryJob) disableOnNode(ctx context.Context, o *model.ClientOwnership)
 		}
 		return err
 	}
-	// Resolve the inbound once so we can tell WG apart from the
-	// unified path. A missing inbound (tag rename / deletion) is
-	// treated as already-disabled.
-	in, err := r.GetInbound(ctx, o.InboundTag)
-	if err != nil {
-		if errors.Is(err, runtime.ErrTagNotFound) {
-			return nil
+
+	protocol := o.Protocol
+	if protocol == "" {
+		// Legacy row — one-time runtime lookup to decide.
+		in, err := r.GetInbound(ctx, o.InboundTag)
+		if err != nil {
+			if errors.Is(err, runtime.ErrTagNotFound) {
+				return nil
+			}
+			return err
 		}
-		return err
+		protocol = in.Protocol
 	}
-	if in.IsWireguard() {
+
+	if protocol == "wireguard" {
 		if j.wg == nil {
 			// WG_MASTER_KEY not configured — we can't decrypt or
 			// reconstitute the peer. Log + leave the DB flip as the

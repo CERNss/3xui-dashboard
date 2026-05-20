@@ -13,6 +13,7 @@ type ClientOwnership struct {
 	NodeID            int64      `gorm:"column:node_id;not null"                   json:"node_id"`
 	InboundTag        string     `gorm:"column:inbound_tag;not null"               json:"inbound_tag"`
 	ClientEmail       string     `gorm:"column:client_email;not null"              json:"client_email"`
+	Protocol          string     `gorm:"column:protocol"                           json:"protocol,omitempty"`
 	PlanID            *int64     `gorm:"column:plan_id"                            json:"plan_id,omitempty"`
 	ExpiresAt         *time.Time `gorm:"column:expires_at"                         json:"expires_at,omitempty"`
 	TrafficLimitBytes *int64     `gorm:"column:traffic_limit_bytes"                json:"traffic_limit_bytes,omitempty"`
