@@ -171,6 +171,93 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 	return saved, nil
 }
 
+// AddClientDirect adds a client to a panel inbound without going
+// through the plan-driven Provision flow. Used by the admin "manual
+// add client" path where the caller controls the full Client struct
+// (email + protocol identifier + limits + flow + sub_id, etc.) and
+// optionally links to a user via userID > 0.
+func (s *Service) AddClientDirect(ctx context.Context, nodeID int64, inboundTag string, c runtime.Client, userID int64) (*runtime.Client, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.AddClient(ctx, inboundTag, c); err != nil {
+		return nil, err
+	}
+	// Optional ownership upsert when an owner is named.
+	if userID > 0 && c.Email != "" {
+		var expiry *time.Time
+		if c.ExpiryTime > 0 {
+			t := time.UnixMilli(c.ExpiryTime).UTC()
+			expiry = &t
+		}
+		var limit *int64
+		if c.TotalGB > 0 {
+			v := c.TotalGB
+			limit = &v
+		}
+		row := &model.ClientOwnership{
+			UserID:            userID,
+			NodeID:            nodeID,
+			InboundTag:        inboundTag,
+			ClientEmail:       c.Email,
+			ExpiresAt:         expiry,
+			TrafficLimitBytes: limit,
+			Enabled:           c.Enable,
+		}
+		if _, err := s.ownership.Upsert(ctx, row); err != nil {
+			s.log.Warn("ownership upsert failed after direct add",
+				slog.Int64("user_id", userID),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
+	return &c, nil
+}
+
+// UpdateClientDirect mutates an existing client identified by email.
+// Mirrors 3x-ui's edit-client form: limits, expiry, flow, security
+// can all be changed in place.
+func (s *Service) UpdateClientDirect(ctx context.Context, nodeID int64, inboundTag string, c runtime.Client) (*runtime.Client, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.UpdateClient(ctx, inboundTag, c); err != nil {
+		return nil, err
+	}
+	// Update the corresponding ownership row when one exists.
+	existing, _ := s.ownership.GetByTriple(ctx, nodeID, inboundTag, c.Email)
+	if existing != nil {
+		if c.ExpiryTime > 0 {
+			t := time.UnixMilli(c.ExpiryTime).UTC()
+			existing.ExpiresAt = &t
+		} else {
+			existing.ExpiresAt = nil
+		}
+		if c.TotalGB > 0 {
+			v := c.TotalGB
+			existing.TrafficLimitBytes = &v
+		} else {
+			existing.TrafficLimitBytes = nil
+		}
+		existing.Enabled = c.Enable
+		_, _ = s.ownership.Upsert(ctx, existing)
+	}
+	return &c, nil
+}
+
+// FetchSnapshot returns the dashboard-side composite — inbounds +
+// online emails + last-online map — for one node. Frontend uses this
+// when expanding an inbound row to show per-client online status.
+func (s *Service) FetchSnapshot(ctx context.Context, nodeID int64) (*runtime.TrafficSnapshot, error) {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return r.FetchTrafficSnapshot(ctx)
+}
+
 // DeleteClient removes the panel-side client and clears the
 // ownership row. Idempotent — missing client or missing ownership
 // is success.

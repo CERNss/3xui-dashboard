@@ -26,10 +26,12 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/billing"
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
+	"github.com/cern/3xui-dashboard/internal/service/verification"
 	"github.com/cern/3xui-dashboard/internal/service/webhook"
 	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/web"
@@ -120,9 +122,12 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// User accounts.
 	settingRepo := repository.NewSettingRepo(db)
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
-	userhandler.NewAuthHandler(userService, authSvc).RegisterRoutes(apiUser)
+	mailerSvc := mailer.New(cfg.SMTP, logger)
+	verifyService := verification.New(db, mailerSvc, logger)
+	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.OIDC, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
+	adminhandler.NewSettingHandler(settingRepo, cfg).RegisterRoutes(apiAdminAuthed)
 
 	// Billing.
 	orderRepo := repository.NewOrderRepo(db)

@@ -31,19 +31,48 @@ func withEnv(t *testing.T, env map[string]string, fn func()) {
 
 func TestLoad_FailsOnMissingRequired(t *testing.T) {
 	// Wipe every required key so Load reports them all at once.
-	for _, k := range []string{"DATABASE_URL", "JWT_SECRET", "ADMIN_USERNAME", "ADMIN_PASSWORD"} {
+	// ADMIN_PASSWORD is intentionally excluded — Load() now auto-generates it
+	// when blank (printed to stderr for first-boot bootstrap).
+	required := []string{"DATABASE_URL", "JWT_SECRET", "ADMIN_USERNAME"}
+	for _, k := range required {
 		os.Unsetenv(k)
 	}
+	os.Unsetenv("ADMIN_PASSWORD")
 	_, err := Load("")
 	if err == nil {
 		t.Fatal("expected error on missing required keys, got nil")
 	}
 	got := err.Error()
-	for _, k := range []string{"DATABASE_URL", "JWT_SECRET", "ADMIN_USERNAME", "ADMIN_PASSWORD"} {
+	for _, k := range required {
 		if !strings.Contains(got, k) {
 			t.Errorf("error %q should mention %s", got, k)
 		}
 	}
+	if strings.Contains(got, "ADMIN_PASSWORD") {
+		t.Errorf("ADMIN_PASSWORD should auto-generate now, not error: %v", err)
+	}
+}
+
+func TestLoad_GeneratesAdminPasswordWhenBlank(t *testing.T) {
+	withEnv(t, map[string]string{
+		"DATABASE_URL":   "postgres://x@x/x",
+		"JWT_SECRET":     "secret",
+		"ADMIN_USERNAME": "admin@example.com",
+		// ADMIN_PASSWORD intentionally absent
+		"ENV": "dev",
+	}, func() {
+		os.Unsetenv("ADMIN_PASSWORD")
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Admin.Password == "" {
+			t.Error("expected auto-generated password, got empty")
+		}
+		if len(cfg.Admin.Password) < 16 {
+			t.Errorf("auto-generated password too short: %d chars", len(cfg.Admin.Password))
+		}
+	})
 }
 
 func TestLoad_FullEnvLoadsCleanly(t *testing.T) {

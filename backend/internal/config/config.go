@@ -4,8 +4,11 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -65,6 +68,12 @@ type OIDC struct {
 	TokenURL string
 	JWKSURL  string
 	UserURL  string
+
+	// UI hints — surfaced to the login page so the operator can brand the
+	// "使用 X 登录" button. Both default to empty; frontend falls back to
+	// the issuer hostname / a generic globe icon when missing.
+	DisplayName string // e.g. "集换社"
+	IconURL     string // e.g. "https://cdn.example.com/logos/jihuanshe.svg"
 }
 
 // Enabled reports whether OIDC is configured.
@@ -160,6 +169,8 @@ func Load(envFile string) (*Config, error) {
 			TokenURL:     v.GetString("OIDC_TOKEN_URL"),
 			JWKSURL:      v.GetString("OIDC_JWKS_URL"),
 			UserURL:      v.GetString("OIDC_USERINFO_URL"),
+			DisplayName:  v.GetString("OIDC_DISPLAY_NAME"),
+			IconURL:      v.GetString("OIDC_ICON_URL"),
 		},
 		SMTP: SMTP{
 			Host:     v.GetString("SMTP_HOST"),
@@ -182,10 +193,47 @@ func Load(envFile string) (*Config, error) {
 		}
 	}
 
+	// Bootstrap admin password — if operator left ADMIN_PASSWORD blank,
+	// generate a fresh random one and print it to stderr so they can
+	// find it in the first-boot logs. On subsequent boots the value must
+	// be set in .env (or env) for the same credentials to keep working.
+	if cfg.Admin.Password == "" {
+		pw, err := generateAdminPassword()
+		if err != nil {
+			return nil, fmt.Errorf("generate admin password: %w", err)
+		}
+		cfg.Admin.Password = pw
+		fmt.Fprintf(os.Stderr,
+			"\n"+
+				"============================================================\n"+
+				"  ADMIN_PASSWORD was not set in env / .env file.\n"+
+				"  Generated a fresh random one for this boot:\n"+
+				"\n"+
+				"      ADMIN_PASSWORD=%s\n"+
+				"\n"+
+				"  Save it into your .env file to keep the same credentials\n"+
+				"  across restarts; otherwise a new password is generated on\n"+
+				"  every startup and previous tokens stay valid until expiry.\n"+
+				"============================================================\n\n",
+			pw,
+		)
+	}
+
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// generateAdminPassword returns a 24-char URL-safe random password.
+// Uses crypto/rand so it's safe to publish into logs as a one-shot
+// bootstrap secret — operator is expected to copy it into .env.
+func generateAdminPassword() (string, error) {
+	var b [18]byte // 18 bytes → 24 base64 chars, no padding
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
 // MustLoad is a convenience for main(): it Loads and panics on error.
@@ -208,7 +256,9 @@ func (c *Config) validate() error {
 	require("DATABASE_URL", c.DB.URL)
 	require("JWT_SECRET", c.Auth.JWTSecret)
 	require("ADMIN_USERNAME", c.Admin.Username)
-	require("ADMIN_PASSWORD", c.Admin.Password)
+	// ADMIN_PASSWORD is no longer required — Load() auto-generates one if
+	// blank and prints it to stderr. We still leave the validate() hook in
+	// place so future required fields slot in here.
 
 	// Partial OIDC config is a misconfiguration — either all four or none.
 	oidcSet := []string{
