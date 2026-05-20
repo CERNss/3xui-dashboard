@@ -225,7 +225,7 @@ admin moderation of users/plans/orders.
 | 5 | `add-payment-alipay` | 支付 | 20% → 45%（实际达成） | ✅ shipped (2026-05-20)：alipay 当面付 QR + 异步 notify + RSA2 sign/verify（纯 stdlib 无 SDK 依赖）+ payment-poll 30s 兜底 + payment_pending/paid/payment_failed/payment_expired 状态机。Auto-renewal 拆到独立 change |
 | 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。Subscriptions 拆到 add-billing-auto-renewal |
 | 7 | `add-notification-channels` | 通知 | 50% → 80%（实际达成） | ✅ shipped (2026-05-20)：Channel 接口 + Router（env-var 配置化路由）+ 4 个 channel（email 复用 mailer / Telegram bot / Discord webhook / 飞书 interactive card）+ NodeRecovered 事件区分启动首次上线 vs 故障恢复 + 每 channel 独立 dedup key（kind 后缀）+ 通用 PostJSON 含 retry/Retry-After。Per-user channel routing 拆到 add-user-notification-prefs |
-| 8 | `add-protocol-wireguard` | 多协议 | 节点 4/5 → 5/5（WireGuard runtime/links/sub） | ❌ 未开（低优先级） |
+| 8 | `add-protocol-wireguard` | 多协议 | 节点 4/5 → 5/5（WireGuard runtime/links/sub） | 🚧 spec scaffolded (2026-05-20) — proposal + design + tasks + 4 spec deltas committed；impl 待 T0 prereq（从一台真实 3x-ui 节点抓 WG 面板端点真实 shape）|
 | 9 | `add-mobile-responsive` | 用户界面 | 90% → 95% | ❌ 未开 |
 
 做完 1-9 → 5 维度都 ≥ 80%，综合 ~85%，可以真上线给真用户。
@@ -259,4 +259,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-protocol-wireguard`（# 8）— 把 WireGuard 协议加入节点 runtime + 订阅链接 + 入站管理。3x-ui 已经支持，主要是 dashboard 这层补齐。优先级偏低，多个支付 + 通知都拿下后这是相对孤立的扩展。
+> **当前焦点**：`add-mobile-responsive`（# 9）— 纯前端 Tailwind 响应式断点工作。#8 (`add-protocol-wireguard`) spec 已落地，但实现等 T0：从真实 3x-ui 节点抓 WG 面板端点 shape（不同版本端点路径不一致）。等抓到再开 T1。
