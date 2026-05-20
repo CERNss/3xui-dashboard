@@ -213,5 +213,20 @@ onMounted(load)
         </form>
       </div>
     </section>
+
+    <!-- Secondary actions: Orders moved here so the primary nav
+         stays at 4 items (Sub2API portal shape). -->
+    <section class="mt-6 rounded-2xl border border-surface-100 bg-surface-0 px-6 py-5 dark:border-surface-800 dark:bg-surface-900">
+      <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">其他</h2>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <router-link
+          to="/portal/orders"
+          class="inline-flex items-center gap-1.5 rounded-xl border border-surface-200 px-3.5 py-2 text-sm font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
+        >
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+          订单历史
+        </router-link>
+      </div>
+    </section>
   </div>
 </template>

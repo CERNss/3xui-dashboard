@@ -12,10 +12,12 @@ export default {
     nodes: 'Nodes',
     inbounds: 'Inbounds',
     settings: 'Settings',
-    subscription: 'Subscription',
+    subscription: 'My subscription',
+    usage: 'Usage',
     plans: 'Plans',
     orders: 'Orders',
     profile: 'Profile',
+    webhooks: 'Webhooks',
   },
   auth: {
     login: 'Log in',

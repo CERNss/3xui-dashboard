@@ -28,10 +28,9 @@ function logout() {
       <nav class="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto text-sm">
         <router-link
           v-for="item in [
-            { to: '/portal/dashboard',    label: $t('nav.dashboard') },
             { to: '/portal/subscription', label: $t('nav.subscription') },
+            { to: '/portal/usage',        label: $t('nav.usage') },
             { to: '/portal/plans',        label: $t('nav.plans') },
-            { to: '/portal/orders',       label: $t('nav.orders') },
             { to: '/portal/profile',      label: $t('nav.profile') },
           ]"
           :key="item.to"

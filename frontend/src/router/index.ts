@@ -98,18 +98,29 @@ const portalRoutes: RouteRecordRaw[] = [
     component: () => import('@/components/layout/PortalLayout.vue'),
     meta: { requiresUser: true },
     children: [
-      { path: '', redirect: { name: 'portal.dashboard' } },
+      // Default landing — subscription is the primary action,
+      // matching the Sub2API-style portal shape (post-sale, not
+      // shopping-first).
+      { path: '', redirect: { name: 'portal.subscription' } },
+      // Legacy /portal/dashboard preserved as a redirect so old
+      // bookmarks don't 404 after the slim-down.
       {
         path: 'dashboard',
-        name: 'portal.dashboard',
-        component: () => import('@/views/portal/Dashboard.vue'),
-        meta: { requiresUser: true, titleKey: 'nav.dashboard' },
+        redirect: { name: 'portal.usage' },
       },
       {
         path: 'subscription',
         name: 'portal.subscription',
         component: () => import('@/views/portal/Subscription.vue'),
         meta: { requiresUser: true, titleKey: 'nav.subscription' },
+      },
+      {
+        path: 'usage',
+        name: 'portal.usage',
+        // Reuses the Dashboard component — the traffic-stat
+        // content already matches what "使用记录" should show.
+        component: () => import('@/views/portal/Dashboard.vue'),
+        meta: { requiresUser: true, titleKey: 'nav.usage' },
       },
       {
         path: 'plans',
