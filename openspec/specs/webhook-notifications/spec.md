@@ -6,9 +6,29 @@ delivery, persistent retry queue, delivery log, manual test + replay.
 ## Purpose & boundaries
 
 Adjacent modules: **`event-bus`** is the in-process pub/sub that
-producers (probe loop, billing, provisioning) publish to; this module
-is the only subscriber that crosses the network. **`scheduler-jobs`**
-drives the persistent-retry cron.
+producers (probe loop, billing, provisioning) publish to;
+**`scheduler-jobs`** drives the persistent-retry cron.
+
+**Distinct from `notify-service`**: this module ships
+**user-defined** webhook endpoints (CRM, BI, customer-facing
+integrations) — admin CRUD, signed delivery, persistent retry,
+delivery log, replay. The newer `notify-service` covers
+**operator-defined** alerts to fixed IM channels
+(email/telegram/discord/feishu) configured via env vars at boot
+with per-channel templating. The two share the event bus as
+source but diverge on:
+
+| | webhook-notifications | notify-service |
+|---|---|---|
+| Audience | end-user / 3rd party integrations | operator's own ops channel |
+| Config surface | admin CRUD UI + DB | env vars at boot |
+| Retry | persistent queue + cron | in-process best-effort + 1 retry |
+| Templating | none (ships raw event JSON) | per-channel native (HTML / embed / card) |
+| Dedup | per-delivery row | `notification_log` keyed by event-kind + ownership |
+
+A single domain event can fan out to both: webhook subscribers
+receive the raw JSON; notify-service emits a human-rendered
+message to its routed channels.
 
 ## Requirements
 

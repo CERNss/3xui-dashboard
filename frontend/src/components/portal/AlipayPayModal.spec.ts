@@ -82,12 +82,20 @@ describe('AlipayPayModal', () => {
     await mountModal({ open: true, order: makeOrder() })
 
     expect(apiStubs.getOrder).not.toHaveBeenCalled()
-    // Advance 3 ticks — should fire 3 polls
+    // Advance 3 ticks — should fire 3 polls. flushPromises after
+    // each advance forces vitest to settle the then-handlers from
+    // the mocked getOrder so the call-count assertion is stable
+    // (vitest 2.1's advanceTimersByTimeAsync settles microtasks
+    // between timers but the boundary's been flaky across releases —
+    // explicit flushPromises is the belt-and-suspenders fix).
     await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
     expect(apiStubs.getOrder).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
     expect(apiStubs.getOrder).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
     expect(apiStubs.getOrder).toHaveBeenCalledTimes(3)
   })
 
@@ -117,6 +125,7 @@ describe('AlipayPayModal', () => {
 
     // Advance more time — no further polls because timers cleared.
     await vi.advanceTimersByTimeAsync(10000)
+    await flushPromises()
     expect(apiStubs.getOrder).toHaveBeenCalledTimes(1)
   })
 
