@@ -128,6 +128,26 @@ func (p *WGProvisioner) ProvisionPeer(ctx context.Context, userID, nodeID int64,
 				return fmt.Errorf("decode WG settings: %w", err)
 			}
 		}
+		// Lazy server-keypair generation: T1 probe (2026-05-21)
+		// confirmed the production fork does NOT auto-fill
+		// settings.secretKey when an inbound is created with an
+		// empty value. The dashboard fills it here on the first
+		// peer provision so the WG inbound becomes functional;
+		// subsequent provisions leave it intact.
+		if settings.SecretKey == "" {
+			serverKP, err := wgcrypto.GenerateKeypair()
+			if err != nil {
+				return fmt.Errorf("generate WG server keypair: %w", err)
+			}
+			settings.SecretKey = serverKP.Private
+		}
+		// Same for MTU — surface a sane default if the inbound
+		// was created with mtu=0 (RFC says max-MTU 1500, but
+		// WireGuard recommends 1420 to dodge fragmentation
+		// through most overlay/tunnels).
+		if settings.MTU == 0 {
+			settings.MTU = 1420
+		}
 
 		taken, err := p.peers.AllocatedIPs(ctx, tx, fresh.ID)
 		if err != nil {

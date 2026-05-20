@@ -239,32 +239,42 @@ declared statically per `docs/operator/3xui-fork-compat.md`.
 - **THEN** the dashboard SHALL NOT use this endpoint
 - **AND** the runtime client SHALL NOT have a method that calls `/inbounds/options`
 
-### Requirement: Fork-Aligned Client Routes
+### Requirement: Legacy Inbounds-Grouped Client Routes
 
-The runtime client SHALL speak the MHSanaei/3x-ui fork's
-`/panel/api/clients/*` endpoint group for every per-client
-mutation. The legacy `/panel/api/inbounds/{addClient,...}` routes
-are absent on the fork and SHALL NOT be used.
+The runtime client SHALL use the production-fork-verified
+`/panel/api/inbounds/*` endpoint group for every per-client
+mutation. T1 probe 2026-05-21 against
+`node-1.bwg.us.tcg12345.win:10138` confirmed the
+`/panel/api/clients/*` group is **absent** on real deployed
+forks (404 on every member). See
+`openspec/changes/audit-xrayclient-vs-fork/notes/t1-results.md`.
 
 | Operation | Path |
 |---|---|
-| Add client | `POST /panel/api/clients/add` |
-| Update client | `POST /panel/api/clients/update/:email` |
-| Delete client | `POST /panel/api/clients/del/:email` |
-| Per-client traffic read | `GET  /panel/api/clients/traffic/:email` |
-| Reset one client | `POST /panel/api/clients/resetTraffic/:email` |
-| Onlines list | `POST /panel/api/clients/onlines` |
-| Last-online map | `POST /panel/api/clients/lastOnline` |
+| Add client | `POST /panel/api/inbounds/addClient` |
+| Update client | `POST /panel/api/inbounds/updateClient/:clientID` |
+| Delete client by email | `POST /panel/api/inbounds/:id/delClientByEmail/:email` |
+| Per-client traffic read | `GET  /panel/api/inbounds/getClientTraffics/:email` |
+| Reset one client | `POST /panel/api/inbounds/:id/resetClientTraffic/:email` |
+| Reset all clients on inbound | `POST /panel/api/inbounds/resetAllClientTraffics/:id` |
+| Onlines list | `POST /panel/api/inbounds/onlines` |
+| Last-online map | `POST /panel/api/inbounds/lastOnline` |
 
 #### Scenario: AddClient body envelope
 
 - **WHEN** the dashboard calls `Remote.AddClient(ctx, inboundTag, client)`
-- **THEN** the runtime SHALL POST to `/panel/api/clients/add` with body `{client: model.Client, inboundIds: [int]}`
-- **AND** the runtime SHALL NOT use the legacy `{id, settings: stringified-json}` envelope
+- **THEN** the runtime SHALL POST to `/panel/api/inbounds/addClient` with body `{id: <inbound_id>, settings: "<stringified-JSON {\"clients\":[{...}]}>"}`
+- **AND** the runtime SHALL NOT use the speculative `{client, inboundIds}` envelope I tried in `#11` — that shape applies to a `/clients/*` route group that doesn't exist on production forks
+
+#### Scenario: Delete-last-client quirk surfaces via re-push fallback
+
+- **GIVEN** the fork refuses `delClientByEmail` when the call would leave the inbound with zero clients (returns `success:false` + msg `"no client remained in Inbound"`)
+- **WHEN** the surgical delete fails with an `EnvelopeError`
+- **THEN** the runtime SHALL fall back to `rePushInboundWithMutation` which posts `POST /panel/api/inbounds/update/:id` with `settings.clients=[]` (verified accepted by the production fork)
 
 #### Scenario: Network 404 surfaces visibly
 
-- **WHEN** the panel responds 404 to a `/panel/api/clients/*` path
+- **WHEN** the panel responds 404 to a `/panel/api/inbounds/*` path
 - **THEN** the runtime SHALL return an error whose message names the full path
 - **AND** SHALL NOT silently fall back to inbound re-push (so fork-version drift surfaces, not hides)
 
