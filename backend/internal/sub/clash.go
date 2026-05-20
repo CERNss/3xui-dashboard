@@ -22,9 +22,42 @@ func clashNode(host string, port int, in *runtime.Inbound, c *runtime.Client, re
 		return clashTrojan(host, port, in, c, remark), true
 	case "shadowsocks":
 		return clashShadowsocks(host, port, in, c, remark), true
+	case "hysteria", "hysteria2":
+		return clashHysteria2(host, port, in, c, remark), true
 	default:
 		return nil, false
 	}
+}
+
+// ---- Hysteria 2 -----------------------------------------------------------
+//
+// Mihomo schema: https://wiki.metacubex.one/config/proxies/hysteria2/.
+// The `password` field on the proxy entry is what the fork stores in
+// client.Auth; SNI + skip-cert-verify come from streamSettings.
+func clashHysteria2(host string, port int, in *runtime.Inbound, c *runtime.Client, remark string) map[string]any {
+	if c.Auth == "" {
+		return nil
+	}
+	ss := parseStreamSettings(in.StreamSettings)
+	tls, _ := ss["tlsSettings"].(map[string]any)
+	sni, _ := tls["serverName"].(string)
+	allowInsecure, _ := tls["allowInsecure"].(bool)
+
+	node := map[string]any{
+		"name":     remark,
+		"type":     "hysteria2",
+		"server":   host,
+		"port":     port,
+		"password": c.Auth,
+		"alpn":     []string{"h3"},
+	}
+	if sni != "" {
+		node["sni"] = sni
+	}
+	if allowInsecure {
+		node["skip-cert-verify"] = true
+	}
+	return node
 }
 
 // ---- VLESS -----------------------------------------------------------------

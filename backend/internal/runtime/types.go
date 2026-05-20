@@ -61,9 +61,15 @@ type InboundSettings struct {
 // TotalGB is the traffic cap in BYTES despite the name (3x-ui quirk).
 // ExpiryTime is unix milliseconds; 0 = never; negative = relative-
 // from-first-use (the absolute value is the duration in ms).
+//
+// Per-protocol credential field placement:
+//   - VLESS / VMess        → ID (UUID)
+//   - Trojan / Shadowsocks → Password (random hex)
+//   - Hysteria             → Auth (random URL-safe string)
 type Client struct {
 	ID         string `json:"id,omitempty"`         // VLESS/VMess UUID
 	Password   string `json:"password,omitempty"`   // Trojan / Shadowsocks
+	Auth       string `json:"auth,omitempty"`       // Hysteria
 	Security   string `json:"security,omitempty"`
 	Flow       string `json:"flow,omitempty"`
 	Email      string `json:"email"`
@@ -100,6 +106,17 @@ type WGPeer struct {
 	PSK        string   `json:"psk,omitempty"`
 	AllowedIPs []string `json:"allowedIPs"`
 	KeepAlive  int      `json:"keepAlive"`
+}
+
+// HysteriaStreamConfig is the parsed shape of
+// Inbound.StreamSettings → hysteriaSettings. Captured 2026-05-20.
+// `Version` is 2 for hysteria2; the older v1 protocol stores
+// transport bits differently and is treated as out-of-scope
+// (warning logged on encounter).
+type HysteriaStreamConfig struct {
+	Version        int    `json:"version"`
+	UDPIdleTimeout int    `json:"udpIdleTimeout"` // seconds; default 60
+	Auth           string `json:"auth,omitempty"` // inbound-wide pre-shared password (rarely used)
 }
 
 // ClientTraffic is what the panel returns inside Inbound.ClientStats

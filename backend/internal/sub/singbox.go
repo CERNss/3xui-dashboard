@@ -21,8 +21,46 @@ func singboxOutbound(host string, port int, in *runtime.Inbound, c *runtime.Clie
 		return singboxTrojan(host, port, in, c, remark), true
 	case "shadowsocks":
 		return singboxShadowsocks(host, port, in, c, remark), true
+	case "hysteria", "hysteria2":
+		return singboxHysteria2(host, port, in, c, remark), true
 	default:
 		return nil, false
+	}
+}
+
+// singboxHysteria2 emits a sing-box `type: hysteria2` outbound.
+// Reference: https://sing-box.sagernet.org/configuration/outbound/hysteria2/.
+// The fork stores Hysteria's per-client credential in client.Auth →
+// sing-box wants it in `password`. TLS is mandatory; the fork
+// rejects Hysteria inbounds without security=tls.
+func singboxHysteria2(host string, port int, in *runtime.Inbound, c *runtime.Client, remark string) map[string]any {
+	if c.Auth == "" {
+		return nil
+	}
+	ss := parseStreamSettings(in.StreamSettings)
+	tlsCfg, _ := ss["tlsSettings"].(map[string]any)
+	sni, _ := tlsCfg["serverName"].(string)
+	allowInsecure, _ := tlsCfg["allowInsecure"].(bool)
+
+	tlsBlock := map[string]any{
+		"enabled":    true,
+		"alpn":       []string{"h3"},
+		"server_name": sni,
+		"insecure":   allowInsecure,
+	}
+	if sni == "" {
+		// sing-box requires a non-empty server_name when enabled=true.
+		// Fall back to the connect host so the config still loads.
+		tlsBlock["server_name"] = host
+	}
+
+	return map[string]any{
+		"type":        "hysteria2",
+		"tag":         remark,
+		"server":      host,
+		"server_port": port,
+		"password":    c.Auth,
+		"tls":         tlsBlock,
 	}
 }
 

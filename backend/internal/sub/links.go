@@ -22,9 +22,48 @@ func BuildLink(host string, port int, in *runtime.Inbound, c *runtime.Client, re
 		return trojanLink(host, port, in, c, remark)
 	case "shadowsocks":
 		return shadowsocksLink(host, port, in, c, remark)
+	case "hysteria", "hysteria2":
+		return hysteriaLink(host, port, in, c, remark)
 	default:
 		return ""
 	}
+}
+
+// ---- Hysteria 2 -----------------------------------------------------------
+//
+// hysteria2://<auth>@<host>:<port>/?sni=<sni>&alpn=h3&insecure=0#<remark>
+//
+// Spec: https://hysteria.network/docs/developers/URI-Scheme/.
+// The fork stores Hysteria's per-client credential in client.Auth;
+// streamSettings carries the tlsSettings.serverName (SNI) and
+// hysteriaSettings.{version, udpIdleTimeout}. v1 only emits version 2
+// links — v1-emitting nodes get a warning and an empty link.
+func hysteriaLink(host string, port int, in *runtime.Inbound, c *runtime.Client, remark string) string {
+	if c.Auth == "" {
+		return ""
+	}
+	ss := parseStreamSettings(in.StreamSettings)
+	hys, _ := ss["hysteriaSettings"].(map[string]any)
+	version, _ := hys["version"].(float64)
+	if version != 0 && version != 2 {
+		return ""
+	}
+	tls, _ := ss["tlsSettings"].(map[string]any)
+	sni, _ := tls["serverName"].(string)
+
+	q := url.Values{}
+	q.Set("alpn", "h3")
+	q.Set("insecure", "0")
+	if sni != "" {
+		q.Set("sni", sni)
+	}
+	return fmt.Sprintf(
+		"hysteria2://%s@%s:%d/?%s#%s",
+		url.QueryEscape(c.Auth),
+		host, port,
+		q.Encode(),
+		url.QueryEscape(remark),
+	)
 }
 
 // ---- VLESS ----------------------------------------------------------------

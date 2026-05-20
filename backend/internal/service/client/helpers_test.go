@@ -106,10 +106,46 @@ func TestBuildWireClient_ShadowsocksGetsPassword(t *testing.T) {
 	}
 }
 
+func TestBuildWireClient_HysteriaGetsAuth(t *testing.T) {
+	c := buildWireClient("hysteria", "dan", "sub-4", time.Time{}, 0)
+	if c.Auth == "" {
+		t.Error("hysteria client should have Auth populated")
+	}
+	if c.ID != "" || c.Password != "" {
+		t.Errorf("hysteria client should not carry ID/Password (got id=%q password=%q)", c.ID, c.Password)
+	}
+	// Also test the legacy 'hysteria2' alias — the fork emits
+	// `hysteria` but UAs and configs sometimes spell it `hysteria2`.
+	c2 := buildWireClient("hysteria2", "erin", "sub-5", time.Time{}, 0)
+	if c2.Auth == "" {
+		t.Error("hysteria2 alias should also populate Auth")
+	}
+}
+
 func TestBuildWireClient_UnknownGetsUUIDIdAsSafeDefault(t *testing.T) {
-	c := buildWireClient("hysteria2", "dan", "sub-4", time.Time{}, 0)
+	c := buildWireClient("totally-made-up", "fred", "sub-6", time.Time{}, 0)
 	if c.ID == "" {
 		t.Error("unknown protocol should default to UUID id")
+	}
+}
+
+func TestRandomAuthString_FormatAndUnique(t *testing.T) {
+	seen := map[string]struct{}{}
+	for i := 0; i < 50; i++ {
+		got := randomAuthString(16)
+		if len(got) != 16 {
+			t.Fatalf("len = %d, want 16", len(got))
+		}
+		for _, r := range got {
+			// Verify URL-safe alphabet membership; reject ambiguous chars.
+			if r == '0' || r == 'O' || r == '1' || r == 'l' || r == 'I' {
+				t.Fatalf("ambiguous char %q in %q", r, got)
+			}
+		}
+		if _, dup := seen[got]; dup {
+			t.Fatalf("duplicate auth string at iter %d — crypto/rand is suspect", i)
+		}
+		seen[got] = struct{}{}
 	}
 }
 

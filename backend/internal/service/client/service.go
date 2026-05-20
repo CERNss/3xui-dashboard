@@ -363,10 +363,33 @@ func buildWireClient(protocol, email, subID string, expiry time.Time, trafficByt
 		c.Password = randomHex(16)
 	case "shadowsocks":
 		c.Password = randomHex(16)
+	case "hysteria", "hysteria2":
+		c.Auth = randomAuthString(16)
 	default:
 		c.ID = uuid.NewString()
 	}
 	return c
+}
+
+// authAlphabet is the URL-safe character set Hysteria's auth
+// strings draw from. Excludes ambiguous chars (0/O/1/l/I) so
+// operators copy-pasting a value into a config file don't
+// confuse them.
+const authAlphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+// randomAuthString returns an n-character random string from the
+// URL-safe authAlphabet, drawn via crypto/rand (never math/rand —
+// auth strings are auth bearers, NOT identifiers).
+func randomAuthString(n int) string {
+	buf := make([]byte, n)
+	rb := make([]byte, n)
+	if _, err := rand.Read(rb); err != nil {
+		panic("crypto/rand: " + err.Error())
+	}
+	for i := range rb {
+		buf[i] = authAlphabet[int(rb[i])%len(authAlphabet)]
+	}
+	return string(buf)
 }
 
 func randomHex(n int) string {
