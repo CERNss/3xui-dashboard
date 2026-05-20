@@ -56,7 +56,7 @@ func (g *Gateway) CreatePayment(ctx context.Context, order *model.Order, planNam
 		return payment.CreateResult{}, fmt.Errorf("alipay precreate: %w", err)
 	}
 	return payment.CreateResult{
-		QRURL:           resp.QRCode,
+		TargetURL:       resp.QRCode,
 		ExpiresAt:       expiresAt,
 		ProviderOrderID: resp.OutTradeNo,
 	}, nil

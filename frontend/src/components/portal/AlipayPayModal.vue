@@ -125,8 +125,8 @@ onUnmounted(() => {
 watch(
   () => props.order,
   (o) => {
-    if (o?.payment_qr_url) {
-      renderQR(o.payment_qr_url)
+    if (o?.payment_target_url) {
+      renderQR(o.payment_target_url)
       startTimers()
     }
   },
@@ -138,7 +138,7 @@ watch(
   (v) => {
     if (v) {
       document.addEventListener('keydown', onKey)
-      if (props.order?.payment_qr_url) startTimers()
+      if (props.order?.payment_target_url) startTimers()
     } else {
       document.removeEventListener('keydown', onKey)
       stopTimers()
@@ -180,8 +180,8 @@ watch(
             二维码 {{ Math.floor(remainingSec / 60) }}:{{ String(remainingSec % 60).padStart(2, '0') }} 后失效
           </p>
           <a
-            v-if="order?.payment_qr_url"
-            :href="order.payment_qr_url"
+            v-if="order?.payment_target_url"
+            :href="order.payment_target_url"
             class="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-[#1677ff] px-4 text-sm font-medium text-white shadow-card transition-all hover:opacity-90 active:scale-[0.98]"
           >
             打开支付宝 APP

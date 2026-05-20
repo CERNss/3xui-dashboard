@@ -38,7 +38,10 @@ export interface Order {
   completed_at?: string | null
   payment_method: PaymentMethod
   payment_provider_order_id?: string
-  payment_qr_url?: string
+  /** Gateway-agnostic "send the user here to complete payment" URL.
+   *  alipay → QR-source URL (frontend renders as QR).
+   *  stripe → Checkout redirect URL (frontend navigates via location.href). */
+  payment_target_url?: string
   payment_expires_at?: string | null
 }
 
@@ -91,9 +94,9 @@ export const portalBillingApi = {
   paymentMethods: () =>
     portalClient.get<{ methods: PaymentMethod[] }>('/payment-methods').then((r) => r.data.methods),
 
-  /** Buy via a payment gateway (alipay). Returns the same Order shape
-   *  but with payment_qr_url + payment_expires_at populated; the
-   *  portal renders the QR and polls /orders/:id until completed. */
+  /** Buy via a payment gateway (alipay / stripe). Returns the order
+   *  with payment_target_url + payment_expires_at populated; the
+   *  portal either renders a QR (alipay) or redirects (stripe). */
   purchaseViaPayment: (provider: PaymentMethod, input: PurchaseInput) =>
     portalClient.post<Order>(`/purchase/${provider}`, input).then((r) => r.data),
 

@@ -34,10 +34,14 @@ const (
 var ErrUnknownProvider = errors.New("payment: unknown provider")
 
 // CreateResult is the gateway's reply to a payment creation request.
-// QRURL is what the portal renders as a QR; ProviderOrderID is what
-// the gateway uses internally (alipay's trade_no) — we persist both.
+// TargetURL is the "send the user here to complete payment" URL —
+// alipay returns a QR-source URL (portal renders as QR), stripe
+// returns the Checkout redirect URL (portal redirects via
+// location.href). ProviderOrderID is what the gateway uses
+// internally (alipay's trade_no / stripe's checkout_session_id);
+// we persist both.
 type CreateResult struct {
-	QRURL           string
+	TargetURL       string
 	ExpiresAt       time.Time
 	ProviderOrderID string
 }

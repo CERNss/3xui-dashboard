@@ -36,16 +36,17 @@ func New(cfg config.Stripe) payment.Gateway {
 func (g *Gateway) Provider() string { return "stripe" }
 
 // CreatePayment maps to Stripe's CreateCheckoutSession. The
-// `payment_qr_url` column on Order ends up holding the Checkout
-// page URL — the frontend redirects there instead of rendering a
-// QR. Naming preserved from alipay so we don't need a schema change.
+// payment_target_url column ends up holding the Checkout page URL
+// — the frontend redirects there via location.href rather than
+// rendering a QR (the field is gateway-agnostic now; #6 reused
+// what was originally an alipay-only column).
 func (g *Gateway) CreatePayment(ctx context.Context, order *model.Order, planName string) (payment.CreateResult, error) {
 	sess, err := g.client.CreateCheckoutSession(ctx, order.ID, order.PriceCents, planName)
 	if err != nil {
 		return payment.CreateResult{}, fmt.Errorf("stripe checkout: %w", err)
 	}
 	return payment.CreateResult{
-		QRURL:           sess.URL,
+		TargetURL:       sess.URL,
 		ExpiresAt:       time.Unix(sess.ExpiresAt, 0),
 		ProviderOrderID: sess.ID,
 	}, nil

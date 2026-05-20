@@ -23,7 +23,7 @@ type Order struct {
 	// values (method='balance', empty strings, NULL expires_at).
 	PaymentMethod          string     `gorm:"column:payment_method;not null;default:balance" json:"payment_method"`
 	PaymentProviderOrderID string     `gorm:"column:payment_provider_order_id;not null;default:''" json:"payment_provider_order_id,omitempty"`
-	PaymentQRURL           string     `gorm:"column:payment_qr_url;not null;default:''"       json:"payment_qr_url,omitempty"`
+	PaymentTargetURL       string     `gorm:"column:payment_target_url;not null;default:''"   json:"payment_target_url,omitempty"`
 	PaymentExpiresAt       *time.Time `gorm:"column:payment_expires_at"                       json:"payment_expires_at,omitempty"`
 
 	// Provisioning target. Captured at PurchaseViaPayment time so the

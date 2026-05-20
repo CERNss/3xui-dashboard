@@ -128,17 +128,16 @@ func (r *OrderRepo) Get(ctx context.Context, id int64) (*model.Order, error) {
 	return &o, nil
 }
 
-// SetPaymentMetadata persists the QR url + provider order id +
-// expires_at on a freshly-created payment_pending order. The
-// columns are nullable / defaulted so we don't need to set them in
-// Create() — this method runs once right after Precreate succeeds.
-func (r *OrderRepo) SetPaymentMetadata(ctx context.Context, id int64, providerOrderID, qrURL string, expiresAt time.Time) error {
+// SetPaymentMetadata persists the redirect/QR target URL + provider
+// order id + expires_at on a freshly-created payment_pending order.
+// Runs once right after the gateway's CreatePayment succeeds.
+func (r *OrderRepo) SetPaymentMetadata(ctx context.Context, id int64, providerOrderID, targetURL string, expiresAt time.Time) error {
 	res := r.db.WithContext(ctx).
 		Model(&model.Order{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"payment_provider_order_id": providerOrderID,
-			"payment_qr_url":            qrURL,
+			"payment_target_url":        targetURL,
 			"payment_expires_at":        expiresAt,
 		})
 	if res.Error != nil {

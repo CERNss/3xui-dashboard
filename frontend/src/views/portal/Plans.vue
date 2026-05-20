@@ -140,12 +140,12 @@ async function buy(plan: Plan) {
     }
     if (selectedMethod.value === 'stripe') {
       const order = await portalBillingApi.purchaseViaPayment('stripe', input)
-      // Stripe Checkout is a hosted page — payment_qr_url is the
+      // Stripe Checkout is a hosted page — payment_target_url is the
       // redirect target, not a QR source. We leave the page; the
       // success/cancel URLs configured server-side bring the user
       // back to /portal/orders or /portal/plans.
-      if (order.payment_qr_url) {
-        window.location.href = order.payment_qr_url
+      if (order.payment_target_url) {
+        window.location.href = order.payment_target_url
         return
       }
       flash.value = { kind: 'err', text: 'Stripe 未返回支付链接' }

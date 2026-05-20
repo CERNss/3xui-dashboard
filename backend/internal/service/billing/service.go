@@ -237,8 +237,8 @@ type PurchaseViaPaymentInput struct {
 
 // PurchaseViaPayment creates a payment_pending order and asks the
 // chosen gateway to create a payment session. Returns the order
-// with PaymentQRURL + PaymentExpiresAt populated so the handler can
-// hand the QR back to the portal.
+// with PaymentTargetURL + PaymentExpiresAt populated so the handler
+// can hand the redirect/QR back to the portal.
 func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentInput) (*model.Order, error) {
 	if in.IdempotencyKey == "" {
 		return nil, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)
@@ -319,11 +319,11 @@ func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentI
 		return order, fmt.Errorf("billing.PurchaseViaPayment: %w", err)
 	}
 
-	if err := s.orders.SetPaymentMetadata(ctx, order.ID, res.ProviderOrderID, res.QRURL, res.ExpiresAt); err != nil {
+	if err := s.orders.SetPaymentMetadata(ctx, order.ID, res.ProviderOrderID, res.TargetURL, res.ExpiresAt); err != nil {
 		return order, fmt.Errorf("billing.PurchaseViaPayment: persist metadata: %w", err)
 	}
 	order.PaymentProviderOrderID = res.ProviderOrderID
-	order.PaymentQRURL = res.QRURL
+	order.PaymentTargetURL = res.TargetURL
 	order.PaymentExpiresAt = &res.ExpiresAt
 	return order, nil
 }
