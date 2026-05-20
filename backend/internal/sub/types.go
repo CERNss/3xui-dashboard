@@ -12,11 +12,14 @@ import (
 )
 
 // Link is one renderable proxy link assembled by the link builders.
-// It carries everything the format layer (base64, JSON, Clash) needs.
+// It carries everything the format layer (base64, JSON, Clash, sing-box,
+// SIP008) needs.
 type Link struct {
 	URL      string // canonical link URL — e.g. "vless://uuid@host:port?..."
 	Protocol string // matches runtime/3x-ui protocol enum
 	Remark   string // visible label as configured by the remark model
+	Host     string // outward-facing hostname / IP of the node
+	Port     int    // inbound's listen port
 	Inbound  *runtime.Inbound
 	Client   *runtime.Client
 	NodeID   int64

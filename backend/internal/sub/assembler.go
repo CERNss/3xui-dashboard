@@ -14,6 +14,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	subtemplate "github.com/cern/3xui-dashboard/internal/sub/template"
 )
 
 // ErrNotFound is returned by Build when sub_id doesn't resolve to a
@@ -126,6 +127,7 @@ func (a *Assembler) Build(ctx context.Context, subID string, remarkFmt string) (
 		}
 		data.Links = append(data.Links, Link{
 			URL: url, Protocol: in.Protocol, Remark: remark,
+			Host: node.Host, Port: in.Port,
 			Inbound: in, Client: client, NodeID: node.ID,
 		})
 
@@ -179,6 +181,62 @@ func (a *Assembler) FormatJSON(d *SubscriptionData) ([]byte, error) {
 		out[i] = linkOut{Protocol: l.Protocol, URL: l.URL, Remark: l.Remark}
 	}
 	return json.Marshal(out)
+}
+
+// FormatOpts controls FormatClash / FormatSingBox rendering. Populated
+// by the handler from the runtime settings repo so admin changes take
+// effect without a restart.
+type FormatOpts struct {
+	ProxyGroupStrategy   string // "auto-only" / "select-only" / "auto+select"
+	RuleProvidersEnabled bool
+	ClashTemplate        string // operator override; empty → embedded default
+	SingBoxTemplate      string // operator override; empty → embedded default
+}
+
+// FormatClash returns a complete Mihomo YAML config — proxies +
+// proxy-groups + rule-providers + rules + dns — ready to drop into
+// Clash Verge / Mihomo / ClashX. See internal/sub/template/defaults.go
+// for the embedded default.
+func (a *Assembler) FormatClash(d *SubscriptionData, opts FormatOpts) ([]byte, error) {
+	nodes := make([]map[string]any, 0, len(d.Links))
+	for i := range d.Links {
+		l := &d.Links[i]
+		n, ok := clashNode(l.Host, l.Port, l.Inbound, l.Client, l.Remark)
+		if !ok {
+			continue
+		}
+		nodes = append(nodes, n)
+	}
+	return subtemplate.RenderClash(nodes, subtemplate.Options{
+		ProxyGroupStrategy:   opts.ProxyGroupStrategy,
+		RuleProvidersEnabled: opts.RuleProvidersEnabled,
+		ClashTemplate:        opts.ClashTemplate,
+	})
+}
+
+// FormatSingBox returns a sing-box JSON config with outbounds, a
+// selector + urltest pair, and a geosite-cn / geoip-cn rule set.
+func (a *Assembler) FormatSingBox(d *SubscriptionData, opts FormatOpts) ([]byte, error) {
+	outs := make([]map[string]any, 0, len(d.Links))
+	for i := range d.Links {
+		l := &d.Links[i]
+		n, ok := singboxOutbound(l.Host, l.Port, l.Inbound, l.Client, l.Remark)
+		if !ok {
+			continue
+		}
+		outs = append(outs, n)
+	}
+	return subtemplate.RenderSingBox(outs, subtemplate.Options{
+		SingBoxTemplate: opts.SingBoxTemplate,
+	})
+}
+
+// FormatSIP008 returns a SIP008 v1 JSON document containing only the
+// user's Shadowsocks clients. Non-SS clients are dropped (SIP008 is
+// SS-specific). Empty users get {"version":1,"servers":[]} rather
+// than a 404 — that's what SS apps expect.
+func (a *Assembler) FormatSIP008(d *SubscriptionData) ([]byte, error) {
+	return json.Marshal(buildSIP008(d))
 }
 
 // UserInfoHeader returns the value of the Subscription-Userinfo

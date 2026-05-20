@@ -115,12 +115,15 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	adminhandler.NewTrafficHandler(trafficService, ownershipRepo).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewTrafficHandler(trafficService).RegisterRoutes(apiUserAuthed)
 
+	// Settings repo — also used by the subscription handler so admin
+	// template overrides take effect without a restart.
+	settingRepo := repository.NewSettingRepo(db)
+
 	// Subscription.
 	subAsm := sub.New(userRepo, ownershipRepo, &subNodeLookup{svc: nodeService}, rtManager, logger, 0)
-	publichandler.NewSubHandler(subAsm, "").RegisterRoutes(engine)
+	publichandler.NewSubHandler(subAsm, settingRepo, "", logger).RegisterRoutes(engine)
 
 	// User accounts.
-	settingRepo := repository.NewSettingRepo(db)
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
 	mailerSvc := mailer.New(cfg.SMTP, logger)
 	verifyService := verification.New(db, mailerSvc, logger)

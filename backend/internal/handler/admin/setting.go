@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
@@ -96,6 +98,36 @@ var knownSettings = []settingDescriptor{
 		Group:       "traffic",
 		Default:     "3",
 		Description: "Emit warning when a client.expires_at is within this many days.",
+	},
+	{
+		Key:         model.SettingClashTemplateYAML,
+		Label:       "Clash template (YAML)",
+		Type:        "string",
+		Group:       "subscription",
+		Description: "Override the embedded Mihomo Clash template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
+	},
+	{
+		Key:         model.SettingSingBoxTemplateJSON,
+		Label:       "Sing-box template (JSON)",
+		Type:        "string",
+		Group:       "subscription",
+		Description: "Override the embedded sing-box template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
+	},
+	{
+		Key:         model.SettingProxyGroupStrategy,
+		Label:       "Proxy group strategy",
+		Type:        "string",
+		Group:       "subscription",
+		Default:     "auto+select",
+		Description: "One of: auto-only / select-only / auto+select. Controls the default Clash template's proxy-groups block. Ignored when clash_template_yaml is set.",
+	},
+	{
+		Key:         model.SettingRuleProvidersEnabled,
+		Label:       "Rule providers enabled",
+		Type:        "bool",
+		Group:       "subscription",
+		Default:     "true",
+		Description: "When false, the default Clash template strips rule-providers + rules — emitting just proxies + groups + a MATCH fallback. Ignored when clash_template_yaml is set.",
 	},
 }
 
@@ -242,6 +274,49 @@ func validate(key, value string) error {
 		}
 		return nil
 	default:
+		// String-type per-key validation (only kicks in for keys that
+		// need format checking; everything else accepts arbitrary text).
+		switch key {
+		case model.SettingClashTemplateYAML:
+			if strings.TrimSpace(value) == "" {
+				return nil // empty = use embedded default
+			}
+			// Clash config must be a top-level mapping. yaml.Unmarshal
+			// into a map (not `any`) rejects bare scalars like
+			// "::not::yaml::" that would otherwise pass as a string.
+			var probe map[string]any
+			if err := yaml.Unmarshal([]byte(value), &probe); err != nil {
+				return fmt.Errorf("clash_template_yaml: invalid YAML: %w", err)
+			}
+			if probe == nil {
+				return errors.New("clash_template_yaml: must be a YAML object (got null or scalar)")
+			}
+			// Require the placeholder so we know where to inject proxies.
+			if !strings.Contains(value, "${proxies}") {
+				return errors.New("clash_template_yaml: must contain the ${proxies} placeholder")
+			}
+		case model.SettingSingBoxTemplateJSON:
+			if strings.TrimSpace(value) == "" {
+				return nil
+			}
+			var probe map[string]any
+			if err := json.Unmarshal([]byte(value), &probe); err != nil {
+				return fmt.Errorf("singbox_template_json: invalid JSON: %w", err)
+			}
+			if probe == nil {
+				return errors.New("singbox_template_json: must be a JSON object")
+			}
+			if !strings.Contains(value, "${proxies}") {
+				return errors.New("singbox_template_json: must contain the ${proxies} placeholder")
+			}
+		case model.SettingProxyGroupStrategy:
+			switch strings.TrimSpace(value) {
+			case "", "auto-only", "select-only", "auto+select":
+				return nil
+			default:
+				return fmt.Errorf("proxy_group_strategy must be one of: auto-only, select-only, auto+select")
+			}
+		}
 		return nil
 	}
 }
