@@ -51,17 +51,37 @@ subscription (some Xray inbounds + some WG peers).
 
 The URI-bundle base64 format AND the SIP008 format SHALL omit WG
 peers without erroring — these formats have no representation for
-WireGuard.
+WireGuard. When a user's subscription has NO entries that the
+requested format can represent, the system SHALL return a
+human-readable explanation rather than an empty body. A blank
+response would surface in v2rayN / Shadowrocket as "subscription
+empty / broken" with no path to recovery.
 
 #### Scenario: Base64 format with WG-only subscription
 
 - **WHEN** a user whose subscription contains ONLY WG peers requests `?format=base64` (the default)
-- **THEN** the system SHALL return an empty link bundle (zero-length base64) with a `200 OK` status
+- **THEN** the system SHALL return `200 OK` with a plain-text body explaining the situation:
+  `Your subscription has only WireGuard peers. Use ?format=wireguard or ?format=wireguard-zip to download the .conf file(s), or ?format=clash for a mixed config.`
+- **AND** the response SHALL include `X-Subscription-Hint: wireguard` so client tooling can branch
 - **AND** SHALL include the `Subscription-Userinfo` header as usual
-- **AND** SHALL NOT 500 / 404
+- **AND** SHALL NOT return an empty body
 
 #### Scenario: Mixed subscription, base64 includes Xray only
 
 - **WHEN** a user with both WG and Xray entries requests `?format=base64`
-- **THEN** the system SHALL include only the Xray entries in the link bundle
+- **THEN** the system SHALL include only the Xray entries in the base64 bundle
 - **AND** the WG entries SHALL be silently skipped (their representation lives in `wireguard` / `clash` / `singbox` formats)
+- **AND** the response SHALL include `X-Subscription-Hint: mixed; wireguard-also-available` so a client that supports multi-format negotiation can offer the user the Clash download
+
+#### Scenario: User-Agent auto-detect prefers wireguard for WG-only users
+
+- **WHEN** the User-Agent auto-detect path would have selected `base64` (no `?format=` param, generic agent string)
+- **AND** the user's subscription is WG-only
+- **THEN** the auto-detect SHALL select `wireguard` instead of `base64`
+- **AND** the response SHALL serve the `.conf` body directly, not the explanation text
+
+#### Scenario: SIP008 format with WG-only subscription
+
+- **WHEN** a user with no Shadowsocks (only WG) requests `?format=sip008`
+- **THEN** the response SHALL be `200 OK` with a JSON body `{"version": 1, "servers": []}` (SIP008 is structured — empty array is the well-formed empty case, not a UX cliff like base64)
+- **AND** the response SHALL include `X-Subscription-Hint: wireguard` if WG peers exist

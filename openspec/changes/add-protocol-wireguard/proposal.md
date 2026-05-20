@@ -75,22 +75,46 @@ the URI base64 format are NOT extended (no WG URI scheme exists).
 ## Critical assumptions to verify before implementation
 
 These need to be confirmed against the actual 3x-ui deployment
-before T1 starts:
+before T1 starts. Each is load-bearing — if any breaks, the
+design.md "Architecture overview" needs material rework, not just
+parameter tuning.
 
 1. **3x-ui version supports WG panel**. Minimum version with a
    stable WG section TBD; design assumes `≥ v2.4`. If the operator's
    nodes run older versions, this change is a no-op for those nodes.
 2. **WG API endpoint shape**. The 3x-ui codebase recently moved
    WG endpoints around — implementation should sniff the exact
-   path + response envelope by inspecting one running node before
-   writing the client.
+   path by inspecting one running node before writing the client.
 3. **Peer key generation location**. Either:
    - Node generates the keypair (we receive both halves, hand
      private to user) — simpler but the private key transits us
    - Dashboard generates locally with `golang.org/x/crypto/curve25519`
      — never sends private key to node, but doubles the surface area
-   The design defaults to the second (more secure) but the change
-   should re-evaluate based on what 3x-ui's WG panel API expects.
+   The design defaults to the second (more secure) — but **if
+   3x-ui's add-peer endpoint REQUIRES server-side key generation
+   and only returns the result**, the "private key never touches
+   3x-ui" security claim breaks. Plan B is: accept the
+   server-returned private key, AES-encrypt + persist immediately,
+   never log it. Re-evaluate after T0.
+4. **WG panel auth model**. Open question whether the WG panel
+   accepts the SAME Bearer token as `/panel/api/inbounds/*` or
+   uses a separate admin-session cookie. The whole
+   "Node bundles both surfaces under one credential" design
+   collapses if it's the latter — the runtime client would need
+   a per-surface auth path. T0 MUST verify by `curl`-ing both
+   endpoints with the same token.
+5. **WG panel response envelope**. The existing XrayClient assumes
+   every response is wrapped in `{success: bool, msg: string,
+   obj: ...}` and branches errors on `success=false`. If WG
+   endpoints return RESTful HTTP status + a different JSON shape
+   (some 3x-ui forks did this for their newer modules), the
+   response parser has to be written separately rather than
+   reused. T0 records both: HTTP status semantics AND body shape.
+6. **WG panel idempotency on AddPeer**. Re-adding a peer with an
+   already-existing public key — does 3x-ui ignore, error, or
+   replace? Our renewal-after-expiry path (re-add with same key)
+   depends on idempotency. If the endpoint errors on duplicates,
+   the renewal path must first RemoveWGPeer then AddWGPeer.
 
 ## Out of scope
 
