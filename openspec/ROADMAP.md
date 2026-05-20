@@ -13,13 +13,13 @@ single state. Update this file whenever a change ships.
 
 ```
                             完成度    打分逻辑
-1. 运维管理   ████████████░░░░░░░░  60%   后端 90% + admin UI 缺 3 页 + cron 缺 3 任务
+1. 运维管理   ███████████████░░░░░  75%   后端 90% + admin UI 全覆盖 + cron 缺 3 任务
 2. 多协议     █████████████████░░░  85%   节点 4/5 + 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect 已交付）
 3. 支付系统   ████░░░░░░░░░░░░░░░░  20%   骨架齐 + 0 个真实网关 + 计费模式单一
 4. 通知系统   ████████░░░░░░░░░░░░  40%   webhook/mail 齐 + 0 个 bot + 邮件无队列
-5. 用户界面   ███████████████░░░░░  75%   admin 50% + portal 75% + 设计系统 95%
+5. 用户界面   ██████████████████░░  90%   admin 95% + portal 75% + 设计系统 95%
 ─────────────────────────────────────────
-综合（5 维均值） ███████████░░░░░░░░░  ~56%
+综合（5 维均值） ████████████░░░░░░░░  ~62%
 ```
 
 > **协议 scope**：节点能跑什么由 **3x-ui** 上游决定（sspanel 仅借鉴 5 大产品维度，不约束协议）。
@@ -48,9 +48,9 @@ admin moderation of users/plans/orders.
 | 节点延迟 / Xray 版本上报 | ✅ | — |
 | 入站管理（5-tab 编辑器，8 transport × 3 security） | ✅ | 我们比 sspanel 更细 |
 | 客户端 CRUD + 流量重置 | ✅ | — |
-| 用户列表/编辑/封停/调余额 | ⚠️ | 后端 API 全在，前端 0 行 |
-| 套餐管理（admin 端） | ⚠️ | 后端在，前端 0 行 |
-| 订单管理（admin 端） | ⚠️ | 后端在，前端 0 行 |
+| 用户列表/编辑/封停/调余额 | ✅ | Users.vue + balance modal（commit 08553c3） |
+| 套餐管理（admin 端） | ✅ | Plans.vue + 创建/编辑 modal + enable toggle |
+| 订单管理（admin 端） | ✅ | Orders.vue + 状态过滤 + 收入摘要 |
 | 运行时设置（功能开关） | ✅ | — |
 | Cron：节点探测 | ✅ | — |
 | Cron：流量采集 | ✅ | — |
@@ -60,7 +60,7 @@ admin moderation of users/plans/orders.
 | Cron：自动续费扣款 | ❌ | 全栈缺 |
 | 数据库迁移（启动时自动） | ✅ | — |
 
-**到 100% 缺**：3 个 admin 页面（用户/套餐/订单）+ 3 个 cron（流量重置 / 到期 / 自动续费）+ 1 个 UI 图表（节点时序）。
+**到 100% 缺**：3 个 cron（流量重置 / 到期 / 自动续费）+ 1 个 UI 图表（节点时序）+ 服务端 stats 聚合端点。
 
 ---
 
@@ -147,10 +147,10 @@ admin moderation of users/plans/orders.
 | 节点管理 | ✅ | — |
 | 入站管理（5-tab 编辑器） | ✅ | 我们独有，sspanel 没这粒度 |
 | 面板设置 | ✅ | — |
-| 用户管理 | ❌ | 后端 API 全在 |
-| 套餐管理 | ❌ | 后端 API 全在 |
-| 订单管理 | ❌ | 后端 API 全在 |
-| 统计页（活跃用户/收入趋势/图表） | ❌ | 全栈缺 |
+| 用户管理 | ✅ | Users.vue + balance modal + suspend/delete |
+| 套餐管理 | ✅ | Plans.vue + 创建/编辑 modal + toggle enable |
+| 订单管理 | ✅ | Orders.vue + 状态过滤 + 收入摘要 |
+| 统计页（活跃用户/收入趋势/图表） | ⚠️ | Stats.vue 落地 KPI + 套餐 + 近期订单；图表暂缺 |
 
 ### 5b. Portal（终端用户用）
 
@@ -205,7 +205,7 @@ admin moderation of users/plans/orders.
 | | (f) 在 cron 里挂到期/流量阈值的事件 publisher | #4（cron 实做时一并） |
 | **5. 用户界面** | (a) Portal 4 页：订阅 / 套餐 / 订单 / 资料 | ✅ #2 (commit `263dbc4`) |
 | | (b) Portal 仪表盘扩充（流量图表替换 stub） | ✅ #2 |
-| | (c) Admin 4 页：用户 / 套餐 / 订单 / 统计 | #3 `add-admin-business-views`（**下一焦点**） |
+| | (c) Admin 4 页：用户 / 套餐 / 订单 / 统计 | ✅ #3 (commit `08553c3`) |
 | | (d) 移动端响应式（admin + portal） | #9 `add-mobile-responsive` |
 
 合计 25 项明确缺口，由 9 个 change 关联承接。
@@ -220,8 +220,8 @@ admin moderation of users/plans/orders.
 |---|---|---|---|---|
 | 1 | `add-subscription-converter` | 多协议 | 67% → 85%（实际达成） | ✅ shipped `8170551` (2026-05-20) |
 | 2 | `add-portal-views` | 用户界面 | 50% → 75%（实际达成） | ✅ shipped `263dbc4` (2026-05-20) |
-| 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75% → 90% / 运维 60% → 75% | ❌ 未开（**下一焦点**） |
-| 4 | `add-billing-cron-jobs` | 运维 | 75% → 90% | ❌ 未开 |
+| 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75%→90% / 运维 60%→75%（实际达成） | ✅ shipped `08553c3` (2026-05-20) |
+| 4 | `add-billing-cron-jobs` | 运维 | 75% → 90% | ❌ 未开（**下一焦点**） |
 | 5 | `add-payment-alipay` | 支付 | 20% → 45% | ❌ 未开 |
 | 6 | `add-payment-stripe` | 支付 | 45% → 60% | ❌ 未开 |
 | 7 | `add-notification-channels` | 通知 | 40% → 80% | ❌ 未开 |
@@ -240,6 +240,7 @@ admin moderation of users/plans/orders.
 | `add-email-verification-and-oidc-hook` | 2026-05-20 | 邮箱验证码 + OIDC providers stub + ADMIN_PASSWORD 自动生成 |
 | `add-subscription-converter` | 2026-05-20 | 完整 Clash YAML + sing-box JSON + SIP008 + User-Agent 自动选格式 + admin 可覆盖的模板引擎（多协议 67% → 85%） |
 | `add-portal-views` | 2026-05-20 | Portal 5 页（dashboard 重写 + subscription + plans + orders + profile）+ billing API client + nav 扩展（用户界面 50% → 75%） |
+| `add-admin-business-views` | 2026-05-20 | Admin 4 页（users + plans + orders + stats）+ 3 API clients + sidebar 重组为 4 段（运维 60%→75%, UI 75%→90%） |
 
 ---
 
@@ -253,4 +254,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-admin-business-views`（# 3）— admin 4 页（用户 / 套餐 / 订单 / 统计 + 节点 CPU/Mem 时序图）。后端 API 大部分在；UI 需新写。
+> **当前焦点**：`add-billing-cron-jobs`（# 4）— Cron 3 任务（每日/月流量重置、用户到期处理、自动续费扣款），把 event-bus 里定义的 `client.expired` / `client.over_limit` 事件接通。
