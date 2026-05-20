@@ -12,6 +12,21 @@ import (
 	"time"
 )
 
+// beijingTZ is the timezone alipay uses for all timestamp + expiry
+// params. The wire format `2006-01-02 15:04:05` has no offset
+// suffix, so the server interprets it as Beijing local time. If we
+// ship UTC wall-clock under a Beijing label, the value is shifted
+// 8 hours — alipay rejects timestamps too far from "now" and
+// returns TimeExpire that's already in the past.
+var beijingTZ = time.FixedZone("CST", 8*3600)
+
+// formatBeijing renders t in alipay's expected wire format after
+// converting to Beijing TZ. Use this for `timestamp`, `time_expire`,
+// and any other param that alipay parses as a local-time string.
+func formatBeijing(t time.Time) string {
+	return t.In(beijingTZ).Format("2006-01-02 15:04:05")
+}
+
 // Client is an alipay 当面付 HTTP client. Thread-safe — all state
 // is set at construction and reads only.
 type Client struct {
@@ -140,7 +155,7 @@ func (c *Client) do(ctx context.Context, method, bizContent string) ([]byte, err
 		"format":      "JSON",
 		"charset":     "utf-8",
 		"sign_type":   "RSA2",
-		"timestamp":   c.now().Format("2006-01-02 15:04:05"),
+		"timestamp":   formatBeijing(c.now()),
 		"version":     "1.0",
 		"biz_content": bizContent,
 	}

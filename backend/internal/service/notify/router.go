@@ -74,6 +74,26 @@ func (r *Router) Channels(eventType string) []string {
 	return r.rules[eventType]
 }
 
+// OpsEventTypes returns the bus event types the service treats as
+// "ops alerts" — events without an inherent per-user recipient.
+// Exported so the app wiring can boot-check that the email channel
+// (if routed for any of these) has a configured fallback recipient.
+//
+// Kept aligned with the set of events Service.Start subscribes to
+// via opsOrderEvent / dispatchOpsEvent; the lifecycle events
+// (client.*) are NOT in this list because they always have a
+// per-user recipient.
+func OpsEventTypes() []string {
+	return []string{
+		"node.offline",
+		"node.recovered",
+		"order.payment_confirmed",
+		"order.payment_failed",
+		"order.payment_expired",
+		"order.failed",
+	}
+}
+
 // ConfiguredChannels returns the set of channel names referenced
 // anywhere in the rules. Used at boot to warn about channels that
 // are routed-to but unconfigured.

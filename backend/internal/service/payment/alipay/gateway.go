@@ -37,12 +37,19 @@ func (g *Gateway) Provider() string { return "alipay" }
 // CreatePayment calls alipay.trade.precreate, returns the QR + a
 // 15-minute expires_at hint (alipay's default QR life is 2h but we
 // expire eagerly to keep payment_pending rows from sticking).
+//
+// Both TimeExpire (wire) and ExpiresAt (DB) come from the same
+// `now + 15m` so the QR-shown countdown matches the DB-side
+// payment-poll expiry. We route through the client's `now` so tests
+// can pin the clock; the wire string is rendered in Beijing TZ via
+// formatBeijing since alipay's format has no offset.
 func (g *Gateway) CreatePayment(ctx context.Context, order *model.Order, planName string) (payment.CreateResult, error) {
+	expiresAt := g.client.now().Add(15 * time.Minute)
 	req := PrecreateRequest{
 		OutTradeNo:  strconv.FormatInt(order.ID, 10),
 		TotalAmount: payment.FormatYuan(order.PriceCents),
 		Subject:     planName,
-		TimeExpire:  time.Now().Add(15 * time.Minute).Format("2006-01-02 15:04:05"),
+		TimeExpire:  formatBeijing(expiresAt),
 	}
 	resp, err := g.client.Precreate(ctx, req)
 	if err != nil {
@@ -50,7 +57,7 @@ func (g *Gateway) CreatePayment(ctx context.Context, order *model.Order, planNam
 	}
 	return payment.CreateResult{
 		QRURL:           resp.QRCode,
-		ExpiresAt:       time.Now().Add(15 * time.Minute),
+		ExpiresAt:       expiresAt,
 		ProviderOrderID: resp.OutTradeNo,
 	}, nil
 }

@@ -8,6 +8,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -228,7 +229,34 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 				"hint", "events routed only to this channel will be dropped")
 		}
 	}
+	// Per-event check: if email is routed for ops events (anything
+	// not per-user) but NOTIFY_OPS_RECIPIENT is empty, those events
+	// land in /dev/null. Surface at boot so the operator can fix.
+	if cfg.Notify.OpsRecipient == "" && enabledByName["email"] {
+		for _, eventType := range notify.OpsEventTypes() {
+			for _, c := range notifyRouter.Channels(eventType) {
+				if c == "email" {
+					logger.Warn("notify email routed for ops event but NOTIFY_OPS_RECIPIENT is empty",
+						"event", eventType,
+						"hint", "set NOTIFY_OPS_RECIPIENT or remove email from this route")
+					break
+				}
+			}
+		}
+	}
 	notify.New(bus, notifyRouter, notifyChannels, userRepo, ownershipRepo, notifyLogRepo, logger).Start()
+
+	// Configured payment-provider currencies — surface at INFO so an
+	// operator who forgot STRIPE_CURRENCY=cny sees the active value
+	// before a real customer hits a USD checkout for a CNY plan.
+	if cfg.Stripe.Enabled() {
+		logger.Info("stripe gateway configured",
+			"currency", strings.ToLower(cfg.Stripe.Currency),
+			"hint", "plan price_cents is interpreted as smallest unit of this currency")
+	}
+	if cfg.Alipay.Enabled() {
+		logger.Info("alipay gateway configured (currency: cny, fixed by gateway)")
+	}
 
 	// SPA.
 	web.Register(engine)
