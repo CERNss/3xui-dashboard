@@ -31,25 +31,139 @@ configuration.
 
 ### Requirement: Subscription Output Formats
 
-The system SHALL serve subscription content in multiple client-compatible formats.
+The system SHALL serve subscription content in five client-compatible
+formats — base64, Xray JSON, Clash YAML (full Mihomo template),
+sing-box JSON, and SIP008 — selectable by `?format=` query parameter
+or by User-Agent auto-detect (see Requirement: User-Agent-Based Format Auto-Detection).
 
 #### Scenario: Base64 subscription
 
-- **WHEN** a subscription is requested in the default format
-- **THEN** the system returns the newline-joined link list, base64-encoded, with
-  subscription headers (e.g. `Subscription-Userinfo`, update interval, profile title)
+- **WHEN** `?format=base64` is requested (or with no format AND no recognizable Clash/sing-box/Shadowsocks User-Agent)
+- **THEN** the system SHALL return the newline-joined link list, base64-encoded
+- **AND** include `Subscription-Userinfo` and `Profile-Update-Interval` headers
+- **AND** Content-Type SHALL be `text/plain; charset=utf-8`
 
-#### Scenario: JSON subscription
+#### Scenario: Xray JSON subscription
 
-- **WHEN** a subscription is requested in JSON format
-- **THEN** the system returns an Xray-client JSON config assembled from the
-  client's inbounds, including routing/fragment/mux options where configured
+- **WHEN** `?format=json` is requested
+- **THEN** the system SHALL return a JSON config assembled from the user's clients
+- **AND** Content-Type SHALL be `application/json`
 
-#### Scenario: Clash subscription
+#### Scenario: Clash YAML — full Mihomo config
 
-- **WHEN** a subscription is requested in Clash format
-- **THEN** the system returns a Clash-compatible YAML config containing the
-  client's proxies and a basic proxy group
+- **WHEN** `?format=clash` is requested, OR the User-Agent contains `clash` / `mihomo` / `stash` and no `?format=` was supplied
+- **THEN** the system SHALL respond HTTP 200 with a complete Mihomo-compatible YAML config
+- **AND** the YAML SHALL include `proxies` (one entry per user link), `proxy-groups` (default: `节点选择` selector + `自动选择` url-test), `rule-providers` (loyalsoldier ruleset URLs by default), `rules` (standard set ending in `MATCH,节点选择`), and a `dns` block
+- **AND** the YAML SHALL be ready to use in Clash Verge / Mihomo / ClashX without further user edits
+- **AND** Content-Type SHALL be `text/yaml; charset=utf-8`
+
+#### Scenario: Sing-box JSON config
+
+- **WHEN** `?format=singbox` is requested, OR the User-Agent contains `sing-box` / `singbox` and no `?format=` was supplied
+- **THEN** the system SHALL respond HTTP 200 with a sing-box JSON config containing `outbounds[]`, `route.rule_set[]`, `route.rules[]`, `dns`, and a urltest + selector outbound pair
+- **AND** Content-Type SHALL be `application/json`
+
+#### Scenario: SIP008 — Shadowsocks-only
+
+- **WHEN** `?format=sip008` is requested, OR the User-Agent contains `shadowsocks` and no `?format=` was supplied
+- **THEN** the system SHALL respond HTTP 200 with a SIP008 v1 JSON document containing only the user's Shadowsocks clients
+- **AND** non-Shadowsocks clients SHALL be omitted from the `servers` array
+- **AND** if the user has zero Shadowsocks clients, the response SHALL be `{"version":1,"servers":[]}` (NOT 404)
+
+#### Scenario: Empty user — minimal fallback config
+
+- **WHEN** a Clash or sing-box request resolves to a user with zero provisioned clients
+- **THEN** the system SHALL return a minimal valid config (Clash: empty `proxies` + DIRECT-only group + MATCH rule; sing-box: direct/block/dns outbounds + final-direct route)
+- **AND** SHALL NOT emit broken YAML/JSON despite the empty proxy list
+
+#### Scenario: Per-protocol mapping into Clash
+
+- **WHEN** a Link's protocol + transport + security combination is mapped to a Clash proxy entry
+- **THEN** the field mapping SHALL be:
+  - VLESS / Reality → `type: vless` + `tls: true` + `reality-opts` + `client-fingerprint: chrome` + `flow` when present
+  - VLESS / WS → `type: vless` + `network: ws` + `ws-opts: {path, headers.Host}`
+  - VLESS / gRPC → `type: vless` + `network: grpc` + `grpc-opts: {grpc-service-name}`
+  - VMess → `type: vmess` + `alterId: 0` (modern AEAD) + `cipher: auto` + transport-specific opts
+  - Trojan → `type: trojan` + `password` + `sni` + `skip-cert-verify: false` + transport opts
+  - Shadowsocks → `type: ss` + `cipher` + `password`
+- **AND** every proxy SHALL default `udp: true`
+
+### Requirement: User-Agent-Based Format Auto-Detection
+
+The system SHALL inspect the request's User-Agent when `?format=` is
+absent and select a sensible default format so common clients work
+without manual configuration.
+
+#### Scenario: Explicit ?format= always wins
+
+- **GIVEN** the request URL is `/sub/<id>?format=clash` AND the User-Agent is `Shadowrocket/...`
+- **WHEN** the handler dispatches
+- **THEN** the response SHALL be Clash YAML (not SIP008)
+
+#### Scenario: Clash family UA → clash
+
+- **WHEN** the User-Agent contains any of: `clash`, `mihomo`, `stash` (case-insensitive) AND `?format=` is absent
+- **THEN** the response SHALL be Clash YAML
+
+#### Scenario: sing-box UA → singbox
+
+- **WHEN** the User-Agent contains `sing-box` or `singbox` AND `?format=` is absent
+- **THEN** the response SHALL be sing-box JSON
+
+#### Scenario: Shadowsocks UA → sip008
+
+- **WHEN** the User-Agent contains `shadowsocks` AND `?format=` is absent
+- **THEN** the response SHALL be SIP008 JSON
+
+#### Scenario: Unrecognized UA falls back to base64
+
+- **WHEN** the User-Agent does not match any of the above (V2RayN, curl, generic browsers) AND `?format=` is absent
+- **THEN** the response SHALL be base64
+
+#### Scenario: Unsupported ?format= is rejected
+
+- **WHEN** `?format=foo` is supplied (not one of base64/json/clash/singbox/sip008)
+- **THEN** the handler SHALL respond HTTP 400 with a clear error naming the supported formats
+
+### Requirement: Admin-Editable Subscription Templates
+
+The system SHALL expose four runtime settings keys allowing the
+administrator to customize the Clash and sing-box output without
+rebuilding the binary.
+
+#### Scenario: Default templates ship embedded
+
+- **WHEN** no settings overrides exist
+- **THEN** the system SHALL use embedded default templates (Mihomo Clash + sing-box) modeled on the loyalsoldier ruleset
+
+#### Scenario: clash_template_yaml override validation
+
+- **WHEN** an admin PUTs a non-empty `clash_template_yaml` value
+- **THEN** the value SHALL be validated by `yaml.Unmarshal` into a `map[string]any` (rejects bare scalars)
+- **AND** SHALL be required to contain the `${proxies}` placeholder; missing placeholder returns HTTP 400
+- **AND** if validation passes, subsequent `?format=clash` requests SHALL render through the operator's template
+- **AND** if rendering fails at request time (substitution result fails parse), the system SHALL log ERROR and fall back to the embedded default — never serve broken YAML
+
+#### Scenario: singbox_template_json override validation
+
+- **WHEN** an admin PUTs a non-empty `singbox_template_json` value
+- **THEN** the same validate-then-fallback logic applies, using `json.Unmarshal` into a `map[string]any`
+
+#### Scenario: proxy_group_strategy
+
+- **WHEN** the setting `proxy_group_strategy` is one of `auto-only` / `select-only` / `auto+select`
+- **THEN** the default Clash template's `proxy-groups:` block adjusts accordingly:
+  - `auto-only`: only `自动选择` url-test
+  - `select-only`: only `节点选择` selector with DIRECT first
+  - `auto+select` (default): both groups
+- **AND** invalid values are rejected at PUT time with HTTP 400
+- **AND** when `clash_template_yaml` is non-empty, this setting SHALL be ignored
+
+#### Scenario: rule_providers_enabled
+
+- **WHEN** `rule_providers_enabled = false`
+- **THEN** the default Clash template SHALL emit no `rule-providers` and no `rules` (just proxies + groups + a final MATCH fallback)
+- **AND** when `clash_template_yaml` is non-empty, this setting SHALL be ignored
 
 ### Requirement: Tokenized Public Subscription URL
 

@@ -14,12 +14,12 @@ single state. Update this file whenever a change ships.
 ```
                             完成度    打分逻辑
 1. 运维管理   ████████████░░░░░░░░  60%   后端 90% + admin UI 缺 3 页 + cron 缺 3 任务
-2. 多协议     █████████████░░░░░░░  67%   节点 4/5 (3x-ui 真实 surface) + 订阅 2.5/5 (Clash/sing-box/SIP008 全缺)
+2. 多协议     █████████████████░░░  85%   节点 4/5 + 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect 已交付）
 3. 支付系统   ████░░░░░░░░░░░░░░░░  20%   骨架齐 + 0 个真实网关 + 计费模式单一
 4. 通知系统   ████████░░░░░░░░░░░░  40%   webhook/mail 齐 + 0 个 bot + 邮件无队列
 5. 用户界面   ██████████░░░░░░░░░░  50%   admin 50% + portal 0% + 设计系统 95%
 ─────────────────────────────────────────
-综合（5 维均值） █████████░░░░░░░░░░░  ~47%
+综合（5 维均值） ██████████░░░░░░░░░░  ~51%
 ```
 
 > **协议 scope**：节点能跑什么由 **3x-ui** 上游决定（sspanel 仅借鉴 5 大产品维度，不约束协议）。
@@ -80,17 +80,17 @@ admin moderation of users/plans/orders.
 | **订阅分发格式** | | |
 | Base64 链接束 | ✅ | `Assembler.FormatBase64` 已实现 |
 | Xray JSON config | ✅ | `Assembler.FormatJSON` 已实现 |
-| Clash YAML（含 proxy-groups + rules + DNS） | ❌ | **完全没实现**（之前误标为"基础版"——实际无 `FormatClash` 方法）。🚧 `add-subscription-converter` |
-| Sing-box JSON | ❌ | 🚧 `add-subscription-converter` |
-| SIP008（Shadowsocks 标准订阅） | ❌ | 🚧 同上 |
-| User-Agent 自动选格式 | ❌ | 🚧 同上 |
+| Clash YAML（含 proxy-groups + rules + DNS） | ✅ | `Assembler.FormatClash` + loyalsoldier 默认模板，admin 可覆盖 |
+| Sing-box JSON | ✅ | `Assembler.FormatSingBox` + sing-box ≥1.8 模板 |
+| SIP008（Shadowsocks 标准订阅） | ✅ | `Assembler.FormatSIP008`（SS-only 过滤） |
+| User-Agent 自动选格式 | ✅ | `detectFormat(qs, ua)` 在 public/sub.go |
 | Token 化的公开订阅 URL（无需登录） | ✅ | — |
 | `Subscription-Userinfo` header（用量/到期） | ✅ | — |
 | 多客户端聚合到一个订阅 ID（一个用户跨多节点） | ✅ | — |
 
 **到 100% 缺**：
 - 节点侧：WireGuard runtime + links + 订阅渲染（低优先级）
-- 订阅格式：完整 Clash 模板 + sing-box + SIP008 + UA 自动选（高优先级，1 个 change 收口）
+- 订阅格式：✅ 已全部交付（commit `8170551`）
 
 ---
 
@@ -186,10 +186,10 @@ admin moderation of users/plans/orders.
 | **1. 运维** | (a) Admin UI 4 页：用户管理 / 套餐管理 / 订单管理 / 统计页 | #3 `add-admin-business-views` |
 | | (b) Cron 3 任务：每日/每月流量重置 / 到期处理 + 过期提醒 / 自动续费扣款 | #4 `add-billing-cron-jobs` |
 | | (c) 节点 CPU/Mem 时序图表（后端有 API） | #3 `add-admin-business-views`（顺带）|
-| **2. 多协议** | (a) Clash 完整模板（proxy-groups + rules + rule-providers + DNS） | #1 `add-subscription-converter` |
-| | (b) Sing-box JSON 输出 | #1 |
-| | (c) SIP008 输出 | #1 |
-| | (d) User-Agent 自动选格式 | #1 |
+| **2. 多协议** | (a) Clash 完整模板（proxy-groups + rules + rule-providers + DNS） | ✅ #1 (commit `8170551`) |
+| | (b) Sing-box JSON 输出 | ✅ #1 |
+| | (c) SIP008 输出 | ✅ #1 |
+| | (d) User-Agent 自动选格式 | ✅ #1 |
 | | (e) WireGuard 节点侧 runtime + links + 订阅渲染 | #8 `add-protocol-wireguard`（低优先级） |
 | **3. 支付** | (a) 支付宝当面付（含回调验签） | #5 `add-payment-alipay` |
 | | (b) Stripe（Checkout + Webhook） | #6 `add-payment-stripe` |
@@ -218,8 +218,8 @@ admin moderation of users/plans/orders.
 
 | # | Change | 主要影响维度 | 预期推进 | 状态 |
 |---|---|---|---|---|
-| 1 | `add-subscription-converter` | 多协议 | 45% → 80% | 🚧 proposal+design 在写 |
-| 2 | `add-portal-views` | 用户界面 | 50% → 75% | ❌ 未开 |
+| 1 | `add-subscription-converter` | 多协议 | 67% → 85%（实际达成） | ✅ shipped `8170551` (2026-05-20) |
+| 2 | `add-portal-views` | 用户界面 | 50% → 75% | ❌ 未开（**下一焦点**） |
 | 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75% → 90% / 运维 60% → 75% | ❌ 未开 |
 | 4 | `add-billing-cron-jobs` | 运维 | 75% → 90% | ❌ 未开 |
 | 5 | `add-payment-alipay` | 支付 | 20% → 45% | ❌ 未开 |
@@ -238,6 +238,7 @@ admin moderation of users/plans/orders.
 |---|---|---|
 | `bootstrap-central-panel` | 2026-05-18 | 全部 9 个 v1 模块的初次落地 |
 | `add-email-verification-and-oidc-hook` | 2026-05-20 | 邮箱验证码 + OIDC providers stub + ADMIN_PASSWORD 自动生成 |
+| `add-subscription-converter` | 2026-05-20 | 完整 Clash YAML + sing-box JSON + SIP008 + User-Agent 自动选格式 + admin 可覆盖的模板引擎（多协议 67% → 85%） |
 
 ---
 
@@ -251,4 +252,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-subscription-converter`（# 1）— proposal.md + design.md 已就位，tasks.md + spec deltas 待写。
+> **当前焦点**：`add-portal-views`（# 2）— portal 4 页（订阅 / 套餐 / 订单 / 资料），后端 API 全在，前端待画。
