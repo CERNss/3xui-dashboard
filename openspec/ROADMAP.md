@@ -13,13 +13,13 @@ single state. Update this file whenever a change ships.
 
 ```
                             完成度    打分逻辑
-1. 运维管理   █████████████████░░░  85%   admin UI 全 + 到期 cron + 仅缺 traffic-reset / auto-renewal
+1. 运维管理   █████████████████░░░  85%   admin UI 全 + 到期 cron + 仅缺 traffic-reset cron（auto-renewal 已不在 scope）
 2. 多协议     ███████████████████░  95%   节点 6/6（vless+vmess+trojan+SS+WG+Hysteria 全部 shipped）+ 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect）
-3. 支付系统   ████████████░░░░░░░░  60%   alipay 当面付 + Stripe Checkout（两个网关 + 通用 Gateway 接口 + payment_pending 状态机 + 失败兜底 poll）+ 仍缺 auto-renewal
+3. 支付系统   ████████████░░░░░░░░  60%   alipay 当面付 + Stripe Checkout（两个网关 + 通用 Gateway 接口 + payment_pending 状态机 + 失败兜底 poll）— **本维度 60% 为 v1 终态**，不再追加（用户决定 2026-05-21：留通用接口 + 已有两个常用网关足够）
 4. 通知系统   ████████████████░░░░  80%   多通道 fanout：邮件 + Telegram + Discord + 飞书；router 配置化；7 个事件类型订阅（client lifecycle + node offline/recovered + order.*）+ 仍缺持久化重试队列
 5. 用户界面   ███████████████████░  95%   admin 95% + portal 80% + 设计系统 95% + 移动响应式（#9 shipped）
 ─────────────────────────────────────────
-综合（5 维均值） █████████████░░░░░░░  ~66%
+综合（5 维加权）█████████████░░░░░░░  ~83%   （pillar 3 视为已完成上限，不拖均值）
 ```
 
 > **协议 scope**：节点能跑什么由 **3x-ui** 上游决定（sspanel 仅借鉴 5 大产品维度，不约束协议）。
@@ -103,15 +103,15 @@ admin moderation of users/plans/orders.
 | 订单生命周期模型（created/paid/completed/failed） | ✅ | — |
 | 幂等购买（idempotency_key + 行锁 + provisioning failure refund） | ✅ | 我们写得严谨 |
 | 订单历史（admin 端） | ⚠️ | 后端 API 在，前端 0 行 |
-| 支付宝当面付 | ❌ | 0 行代码 |
-| Stripe | ❌ | 0 行代码 |
-| PayPal | ❌ | 0 行代码 |
-| Cryptomus（加密币） | ❌ | 0 行代码 |
-| 支付回调 webhook 接收 + 验签 + 订单状态推进 | ❌ | 依赖前面任一网关 |
+| 支付宝当面付 | ✅ | shipped (#5) |
+| Stripe | ✅ | shipped (#6) |
+| ~~PayPal~~ | — | **out of scope** (2026-05-21 决定，不投入) |
+| ~~Cryptomus（加密币）~~ | — | **out of scope** (2026-05-21 决定，不投入) |
+| 支付回调 webhook 接收 + 验签 + 订单状态推进 | ✅ | alipay RSA2 + stripe HMAC-SHA256 |
 | 计费模式（包年/包月/按量/access-type） | ⚠️ | 当前只有"一次性扣余额"一种 |
 | 退款（管理员手动触发） | ⚠️ | 自动 refund-on-failure 有，admin 手动触发 API 没 |
 
-**到 100% 缺**：至少 2 个真实网关（推荐先做支付宝 + Stripe）+ 回调验签 + 多种计费模式 + 手动退款 API。
+**v1 终态**：两个常用网关 + 通用 Gateway 接口（cryptomus/paypal 等可在不动 billing 核心的前提下追加，但默认不做）+ 回调验签 + 自动退款。手动退款 API 跟计费模式扩展属于"可加可不加"，留接口位等需求。
 
 ---
 
@@ -193,12 +193,12 @@ admin moderation of users/plans/orders.
 | | (e) WireGuard 节点侧 runtime + links + 订阅渲染 | ✅ #8 + #8.1 shipped (2026-05-20 / 2026-05-21) — migration + wgcrypto + RMW provisioning + .conf/Clash/sing-box 渲染 + 前端编辑器 + ClientService.ProvisionClient WG 分支 + ExpiryJob.disableOnNode WG 分支 + 文档 |
 | | (f) Hysteria 协议 | ✅ #10 shipped (2026-05-21) — runtime.Client.Auth + buildWireClient 分支 + hysteria2:// URI + Clash/sing-box 渲染 + 前端编辑器 TLS 配置 + 客户端 Auth 输入 |
 | | (g) Runtime XrayClient path realign vs fork 真实路由 | ✅ #11 shipped (2026-05-20)：remote.go + mock_panel_test.go 全部对齐 `/clients/*`，新增 2 个回归测试 |
-| **3. 支付** | (a) 支付宝当面付（含回调验签） | #5 `add-payment-alipay` |
-| | (b) Stripe（Checkout + Webhook） | #6 `add-payment-stripe` |
-| | (c) PayPal | 未排期（市场需求低于前两个） |
-| | (d) Cryptomus（加密币） | 未排期 |
-| | (e) 计费模式扩展：包月/包年/按量/access-type | #5/#6 同期，作为 plan model 扩展 |
-| | (f) 退款（admin 手动触发 API） | #3 顺带（admin 订单管理页里加按钮） |
+| **3. 支付** | (a) 支付宝当面付（含回调验签） | ✅ #5 shipped |
+| | (b) Stripe（Checkout + Webhook） | ✅ #6 shipped |
+| | ~~(c) PayPal~~ | **out of scope** (2026-05-21) — 通用 Gateway 接口已就位，需要时新增 impl，但不主动做 |
+| | ~~(d) Cryptomus~~ | **out of scope** (2026-05-21) — 同上 |
+| | (e) 计费模式扩展：包月/包年/按量/access-type | 留 plan model 扩展点；用户暂未要求，按需做 |
+| | (f) 退款（admin 手动触发 API） | 留接口位（自动 refund-on-failure 已有）；按需做 |
 | **4. 通知** | (a) Telegram bot 通道（推送 + 命令交互） | #7 `add-notification-channels` |
 | | (b) Discord webhook 适配（含 embed 格式化模板） | #7 |
 | | (c) Slack 适配（含 block-kit 模板） | #7 |
@@ -224,8 +224,8 @@ admin moderation of users/plans/orders.
 | 2 | `add-portal-views` | 用户界面 | 50% → 75%（实际达成） | ✅ shipped `263dbc4` (2026-05-20) |
 | 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75%→90% / 运维 60%→75%（实际达成） | ✅ shipped `08553c3` (2026-05-20) |
 | 4 | `add-billing-cron-jobs` | 运维 + 通知 | 运维 75%→85% / 通知 40%→50%（部分） | ⚠️ partial (commit `1c0a183`)：到期 cron 已交付；traffic-reset + 自动续费等 #5 |
-| 5 | `add-payment-alipay` | 支付 | 20% → 45%（实际达成） | ✅ shipped (2026-05-20)：alipay 当面付 QR + 异步 notify + RSA2 sign/verify（纯 stdlib 无 SDK 依赖）+ payment-poll 30s 兜底 + payment_pending/paid/payment_failed/payment_expired 状态机。Auto-renewal 拆到独立 change |
-| 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。Subscriptions 拆到 add-billing-auto-renewal |
+| 5 | `add-payment-alipay` | 支付 | 20% → 45%（实际达成） | ✅ shipped (2026-05-20)：alipay 当面付 QR + 异步 notify + RSA2 sign/verify（纯 stdlib 无 SDK 依赖）+ payment-poll 30s 兜底 + payment_pending/paid/payment_failed/payment_expired 状态机 |
+| 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。**到这里支付维度已封顶**（用户决定 2026-05-21，不追加 subscription/recurring/其他网关）|
 | 7 | `add-notification-channels` | 通知 | 50% → 80%（实际达成） | ✅ shipped (2026-05-20)：Channel 接口 + Router（env-var 配置化路由）+ 4 个 channel（email 复用 mailer / Telegram bot / Discord webhook / 飞书 interactive card）+ NodeRecovered 事件区分启动首次上线 vs 故障恢复 + 每 channel 独立 dedup key（kind 后缀）+ 通用 PostJSON 含 retry/Retry-After。Per-user channel routing 拆到 add-user-notification-prefs |
 | 8 | `add-protocol-wireguard` | 多协议 | 节点 4 → 5 | ✅ shipped (2026-05-20 + #8.1 2026-05-21)：migration 0007_wg_peers + `internal/service/wgcrypto` (curve25519 + AES-256-GCM, 11 tests) + `WGProvisioner` 含 `pg_advisory_xact_lock` RMW + 漂移容忍的 IP 分配器 + `/sub/wireguard/:subId` 等 5 个渲染目标 + 前端协议下拉/Tab 隐藏/portal 下载按钮 + `WG_MASTER_KEY` env + docs/operator/wireguard-setup.md。**#8.1**: ClientService.ProvisionClient WG 分支（含 applyPlanWindow）+ ExpiryJob.disableOnNode WG 分支（WGRemover interface + 实际 RemovePeer 调用），billing 购买 + 自动到期闭环 |
 | 10 | `add-protocol-hysteria` | 多协议 | 节点 5 → 6 | ✅ shipped (2026-05-21)：`runtime.Client.Auth` field + `buildWireClient` "hysteria"/"hysteria2" 分支（crypto/rand 16-char URL-safe auth）+ `hysteria2://` URI builder（v2 only，v1 跳过）+ Clash `type:hysteria2` + sing-box outbound（empty-SNI fallback to host）+ 前端 InboundEditorModal Hysteria 协议分支（TLS-mandatory + ALPN=h3 + SNI/Fingerprint/AllowInsecure 输入）+ 客户端弹窗 Auth 输入/regen/校验 + protocol filter 'hysteria' chip。7 个 hysteria 渲染 tests + helper tests + 前端 62/62 green |
@@ -269,4 +269,6 @@ admin moderation of users/plans/orders.
 > - `#8 add-protocol-wireguard` ✅ shipped (2026-05-20) + `#8.1` ✅ shipped (2026-05-21) — billing 购买 / ExpiryJob 自动到期全部接通 WG 分支
 > - `#10 add-protocol-hysteria` ✅ shipped (2026-05-21) — Client.Auth field + hysteria2:// URI + Clash/sing-box + 前端编辑器 TLS-mandatory 模式
 >
-> 节点协议数 4/4 → 6/6 (vless / vmess / trojan / shadowsocks / wireguard / hysteria)。已无 P0 阻塞，下一波是 v2 增强（auto-renewal cron、coupon、cryptomus 支付、user 通知偏好等）。
+> 节点协议数 4/4 → 6/6 (vless / vmess / trojan / shadowsocks / wireguard / hysteria)。已无 P0 阻塞。
+>
+> **v1 已经够用**：v2 候选里支付维度（auto-renewal cron / coupon / 第三方网关追加）已确定 out-of-scope；剩余候选只有「user 通知偏好」「admin charts 替换 stub」「持久化邮件 retry 队列」等 pillar 1/4/5 的精修。要做的话单点挑，不打包。
