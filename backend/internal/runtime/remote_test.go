@@ -278,6 +278,69 @@ func TestAddClient_RoutesToClientsAddPath(t *testing.T) {
 	}
 }
 
+// TestUpdateInboundByID_PostsFormToUpdatePath asserts the new
+// id-keyed variant skips the tag→id lookup and posts a form-encoded
+// inbound to /inbounds/update/:id. This is the RMW happy path for
+// WireGuard peer mutation.
+func TestUpdateInboundByID_PostsFormToUpdatePath(t *testing.T) {
+	var capturedPath, capturedSettings, capturedProtocol string
+	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/panel/api/inbounds/update/7" {
+			t.Errorf("unexpected path %s", req.URL.Path)
+			return
+		}
+		capturedPath = req.URL.Path
+		if got := req.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/x-www-form-urlencoded") {
+			t.Errorf("Content-Type = %q, want form-urlencoded", got)
+		}
+		body, _ := io.ReadAll(req.Body)
+		vals, _ := url.ParseQuery(string(body))
+		capturedSettings = vals.Get("settings")
+		capturedProtocol = vals.Get("protocol")
+		okEnvelope(w, Inbound{ID: 7, Tag: "wg-1", Protocol: "wireguard"})
+	}))
+
+	in := &Inbound{
+		ID:       7,
+		Tag:      "wg-1",
+		Protocol: "wireguard",
+		Port:     51820,
+		Settings: `{"mtu":1420,"peers":[{"publicKey":"AAA"}]}`,
+	}
+	updated, err := r.UpdateInboundByID(context.Background(), 7, in)
+	if err != nil {
+		t.Fatalf("UpdateInboundByID: %v", err)
+	}
+	if capturedPath != "/panel/api/inbounds/update/7" {
+		t.Errorf("hit %q, want /panel/api/inbounds/update/7", capturedPath)
+	}
+	if capturedProtocol != "wireguard" {
+		t.Errorf("protocol form field = %q, want wireguard", capturedProtocol)
+	}
+	if !strings.Contains(capturedSettings, `"peers"`) {
+		t.Errorf("settings form field missing peers array: %q", capturedSettings)
+	}
+	if updated.Tag != "wg-1" {
+		t.Errorf("response decode = %+v, want tag wg-1", updated)
+	}
+}
+
+// TestInbound_IsWireguard guards against accidental case-changes
+// to the fork's protocol string.
+func TestInbound_IsWireguard(t *testing.T) {
+	if (&Inbound{Protocol: "wireguard"}).IsWireguard() != true {
+		t.Error("wireguard inbound not detected")
+	}
+	if (&Inbound{Protocol: "vless"}).IsWireguard() != false {
+		t.Error("vless inbound flagged as wireguard")
+	}
+	// The fork emits lowercase only — uppercase MUST NOT match,
+	// otherwise mixed-case drift goes unnoticed.
+	if (&Inbound{Protocol: "WireGuard"}).IsWireguard() != false {
+		t.Error("case-folded match would mask fork-protocol drift")
+	}
+}
+
 // TestAddClient_404SurfacesPath asserts that when /clients/add is
 // missing (canonical 3x-ui without the /clients group), the
 // returned error names the actual path that 404'd — so operators

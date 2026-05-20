@@ -268,6 +268,14 @@ func (r *Remote) UpdateInbound(ctx context.Context, tag string, in *Inbound) (*I
 	if err != nil {
 		return nil, err
 	}
+	return r.UpdateInboundByID(ctx, id, in)
+}
+
+// UpdateInboundByID mutates the inbound by numeric id. Used by the
+// WireGuard peer-mutation RMW path, where the caller already holds
+// the id from a GetInbound that ran inside the same transaction
+// and doesn't want a redundant /list refresh between GET and POST.
+func (r *Remote) UpdateInboundByID(ctx context.Context, id int64, in *Inbound) (*Inbound, error) {
 	form := r.wireInbound(in)
 	env, err := r.doForm(ctx, "/inbounds/update/"+strconv.FormatInt(id, 10), form)
 	if err != nil {

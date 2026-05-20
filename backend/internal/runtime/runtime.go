@@ -24,6 +24,7 @@ type NodeRuntime interface {
 	GetInbound(ctx context.Context, tag string) (*Inbound, error)
 	AddInbound(ctx context.Context, in *Inbound) (*Inbound, error)
 	UpdateInbound(ctx context.Context, tag string, in *Inbound) (*Inbound, error)
+	UpdateInboundByID(ctx context.Context, id int64, in *Inbound) (*Inbound, error)
 	DeleteInbound(ctx context.Context, tag string) error
 	SetInboundEnable(ctx context.Context, tag string, enable bool) error
 

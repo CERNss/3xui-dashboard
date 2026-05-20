@@ -40,6 +40,12 @@ type Inbound struct {
 	Sniffing             string          `json:"sniffing"`        // stringified JSON
 }
 
+// IsWireguard reports whether this inbound carries a WG peer
+// list rather than the standard clients[] envelope. The
+// MHSanaei/3x-ui fork registers the protocol verbatim — case
+// matters; the runtime uses lowercase as the panel emits it.
+func (i *Inbound) IsWireguard() bool { return i.Protocol == "wireguard" }
+
 // InboundSettings is the parsed structure inside Inbound.Settings.
 // Clients live here; the dashboard reads/writes them to perform
 // client mutations.
@@ -71,6 +77,29 @@ type Client struct {
 	Reset      int    `json:"reset,omitempty"`
 	CreatedAt  int64  `json:"created_at,omitempty"`
 	UpdatedAt  int64  `json:"updated_at,omitempty"`
+}
+
+// WGSettings is the parsed shape of an Inbound.Settings JSON
+// string when Protocol == "wireguard". Captured 2026-05-20 from
+// a live MHSanaei/3x-ui node via T0 probing (see
+// openspec/changes/add-protocol-wireguard/notes/3xui-wg-api.md).
+type WGSettings struct {
+	MTU         int      `json:"mtu"`
+	SecretKey   string   `json:"secretKey"`
+	Peers       []WGPeer `json:"peers"`
+	NoKernelTun bool     `json:"noKernelTun"`
+}
+
+// WGPeer is one element of WGSettings.Peers. AllowedIPs is a
+// list of CIDR strings ("10.0.0.2/32") rather than IPs alone.
+// KeepAlive is the persistent-keepalive interval in seconds; 0
+// disables it.
+type WGPeer struct {
+	PrivateKey string   `json:"privateKey"`
+	PublicKey  string   `json:"publicKey"`
+	PSK        string   `json:"psk,omitempty"`
+	AllowedIPs []string `json:"allowedIPs"`
+	KeepAlive  int      `json:"keepAlive"`
 }
 
 // ClientTraffic is what the panel returns inside Inbound.ClientStats
