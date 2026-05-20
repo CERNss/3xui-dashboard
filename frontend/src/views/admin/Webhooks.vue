@@ -317,8 +317,8 @@ onMounted(reload)
             <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">
               Body Template（Go text/template；留空使用默认 JSON envelope）
             </span>
-            <textarea v-model="editor.draft.body_template" rows="6" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" :placeholder="`{\n  &quot;text&quot;: &quot;[{{.Event}}] order #{{.Data.order_id}} for ¥{{.Data.price_cents}}&quot;\n}`" />
-            <p class="mt-1 text-2xs text-surface-500">可用变量：<code>{{ '{{.Event}}' }}</code> <code>{{ '{{.Version}}' }}</code> <code>{{ '{{.Timestamp}}' }}</code> <code>{{ '{{.Data.<field>}}' }}</code>。访问不存在的字段渲染为空，不会断开 delivery。</p>
+            <textarea v-model="editor.draft.body_template" rows="6" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" placeholder="留空使用默认 JSON envelope" />
+            <p class="mt-1 text-2xs text-surface-500">可用变量（Go text/template）：<code>.Event</code> <code>.Version</code> <code>.Timestamp</code> <code>.Data.&lt;字段名&gt;</code>。访问不存在的字段渲染为空，不会断开 delivery。</p>
           </label>
 
           <label class="block">
