@@ -31,10 +31,11 @@ configuration.
 
 ### Requirement: Subscription Output Formats
 
-The system SHALL serve subscription content in five client-compatible
+The system SHALL serve subscription content in seven client-compatible
 formats — base64, Xray JSON, Clash YAML (full Mihomo template),
-sing-box JSON, and SIP008 — selectable by `?format=` query parameter
-or by User-Agent auto-detect (see Requirement: User-Agent-Based Format Auto-Detection).
+sing-box JSON, SIP008, WireGuard `.conf`, and WireGuard ZIP bundle —
+selectable by `?format=` query parameter or by User-Agent auto-detect
+(see Requirement: User-Agent-Based Format Auto-Detection).
 
 #### Scenario: Base64 subscription
 
@@ -70,6 +71,28 @@ or by User-Agent auto-detect (see Requirement: User-Agent-Based Format Auto-Dete
 - **AND** non-Shadowsocks clients SHALL be omitted from the `servers` array
 - **AND** if the user has zero Shadowsocks clients, the response SHALL be `{"version":1,"servers":[]}` (NOT 404)
 
+#### Scenario: WireGuard .conf
+
+- **WHEN** `?format=wireguard` is requested (or `/sub/wireguard/:subId`)
+- **THEN** the system SHALL respond HTTP 200 with `text/plain; charset=utf-8` whose body is the wg-quick / wireguard-android compatible `[Interface]` + `[Peer]` ini text
+- **AND** `Content-Disposition: attachment; filename="wireguard.conf"` SHALL be set so browsers offer save-as
+- **AND** non-WG ownerships SHALL be skipped silently (Base64/Clash/sing-box still carry them)
+- **AND** v1 Hysteria-style endpoints (`hysteriaSettings.version=1`) are out of scope: emitting v1 WG inbounds returns the body unchanged but documents WG inbounds remain v2-only on the dashboard
+
+#### Scenario: WireGuard ZIP bundle
+
+- **WHEN** `?format=wireguard-zip` is requested (or `/sub/wireguard-zip/:subId`)
+- **THEN** the system SHALL respond HTTP 200 with `application/zip` whose archive contains one `.conf` per WG peer, named by sanitized remark (fallback to `wg-<pubkey-suffix>` when remark is empty/non-ASCII)
+- **AND** `Content-Disposition: attachment; filename="wireguard.zip"` SHALL be set
+- **AND** name collisions inside the archive SHALL be disambiguated with a numeric suffix
+
+#### Scenario: Hysteria 2 URI in Base64 + Clash + sing-box
+
+- **WHEN** the user has a Hysteria 2 ownership
+- **THEN** Base64 + JSON outputs SHALL include `hysteria2://<auth>@<host>:<port>/?sni=<sni>&alpn=h3&insecure=0#<remark>` per [Hysteria URI Scheme](https://hysteria.network/docs/developers/URI-Scheme/)
+- **AND** Clash SHALL emit a `type: hysteria2` proxy entry; sing-box SHALL emit a `type: hysteria2` outbound (tls.server_name falls back to connect host when SNI is empty)
+- **AND** SIP008 SHALL omit Hysteria entries (SS-only format)
+
 #### Scenario: Empty user — minimal fallback config
 
 - **WHEN** a Clash or sing-box request resolves to a user with zero provisioned clients
@@ -86,6 +109,8 @@ or by User-Agent auto-detect (see Requirement: User-Agent-Based Format Auto-Dete
   - VMess → `type: vmess` + `alterId: 0` (modern AEAD) + `cipher: auto` + transport-specific opts
   - Trojan → `type: trojan` + `password` + `sni` + `skip-cert-verify: false` + transport opts
   - Shadowsocks → `type: ss` + `cipher` + `password`
+  - WireGuard → `type: wireguard` + `private-key` + `public-key: <server>` + `ip` + `udp: true`
+  - Hysteria 2 → `type: hysteria2` + `password: <auth>` + `sni` + `alpn: [h3]` + `skip-cert-verify` when `allowInsecure: true`
 - **AND** every proxy SHALL default `udp: true`
 
 ### Requirement: User-Agent-Based Format Auto-Detection

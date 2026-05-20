@@ -1,3 +1,13 @@
+# ⓘ NOT PROMOTED 2026-05-21
+
+> The inbound editor changes are admin UI concerns, not part of
+> the canonical `inbound-management` capability surface (list /
+> create / update / delete). Two-section UI (Xray / WG split),
+> port-conflict detection, and the per-WG-inbound peer listing
+> ops endpoint did not ship in v1 — this file is retained as the
+> design record. Frontend protocol handling is documented in code
+> (InboundEditorModal.vue + Inbounds.vue protocol filter chip).
+
 ## MODIFIED Requirements
 
 ### Requirement: Inbound Editor

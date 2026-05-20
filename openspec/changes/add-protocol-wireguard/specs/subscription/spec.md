@@ -1,3 +1,9 @@
+# ⓘ PROMOTED 2026-05-21
+
+> Shipped scenarios folded into `openspec/specs/subscription/spec.md`
+> (WireGuard .conf / WireGuard ZIP bundle / Hysteria 2 URI in
+> Base64 + Clash + sing-box). This file kept as the design record.
+
 ## MODIFIED Requirements
 
 ### Requirement: Subscription Output Formats

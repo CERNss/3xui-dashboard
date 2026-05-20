@@ -216,3 +216,114 @@ Xray version, CPU %, memory %, and uptime in one call.
 
 - **WHEN** the call exceeds the probe timeout (10s)
 - **THEN** the returned struct SHALL have `status="offline"` and a non-nil error naming the timeout
+
+### Requirement: Target Fork Declaration
+
+The system SHALL target MHSanaei/3x-ui (any recent commit on
+`main` or `bash` branch) as the canonical 3x-ui implementation,
+since that fork includes the WireGuard + Hysteria protocol
+modules absent from canonical 3x-ui. The dashboard SHALL NOT
+attempt per-node capability detection — compatibility is
+declared statically per `docs/operator/3xui-fork-compat.md`.
+
+#### Scenario: Operator runs an incompatible fork
+
+- **WHEN** an operator points the dashboard at a 3x-ui fork that lacks WG/Hysteria support
+- **AND** the dashboard attempts the corresponding `POST /panel/api/inbounds/add`
+- **THEN** the node SHALL respond with a protocol-validation error
+- **AND** the dashboard SHALL surface that error to the admin verbatim
+
+#### Scenario: /inbounds/options not Bearer-accessible
+
+- **GIVEN** the controller for `/inbounds/options` calls `session.GetLoginUser(c)` which returns nil for API-token callers
+- **THEN** the dashboard SHALL NOT use this endpoint
+- **AND** the runtime client SHALL NOT have a method that calls `/inbounds/options`
+
+### Requirement: Fork-Aligned Client Routes
+
+The runtime client SHALL speak the MHSanaei/3x-ui fork's
+`/panel/api/clients/*` endpoint group for every per-client
+mutation. The legacy `/panel/api/inbounds/{addClient,...}` routes
+are absent on the fork and SHALL NOT be used.
+
+| Operation | Path |
+|---|---|
+| Add client | `POST /panel/api/clients/add` |
+| Update client | `POST /panel/api/clients/update/:email` |
+| Delete client | `POST /panel/api/clients/del/:email` |
+| Per-client traffic read | `GET  /panel/api/clients/traffic/:email` |
+| Reset one client | `POST /panel/api/clients/resetTraffic/:email` |
+| Onlines list | `POST /panel/api/clients/onlines` |
+| Last-online map | `POST /panel/api/clients/lastOnline` |
+
+#### Scenario: AddClient body envelope
+
+- **WHEN** the dashboard calls `Remote.AddClient(ctx, inboundTag, client)`
+- **THEN** the runtime SHALL POST to `/panel/api/clients/add` with body `{client: model.Client, inboundIds: [int]}`
+- **AND** the runtime SHALL NOT use the legacy `{id, settings: stringified-json}` envelope
+
+#### Scenario: Network 404 surfaces visibly
+
+- **WHEN** the panel responds 404 to a `/panel/api/clients/*` path
+- **THEN** the runtime SHALL return an error whose message names the full path
+- **AND** SHALL NOT silently fall back to inbound re-push (so fork-version drift surfaces, not hides)
+
+### Requirement: WireGuard Inbound Settings Schema
+
+The runtime SHALL expose typed Go structs for WG inbound settings:
+
+```go
+type WGSettings struct {
+    MTU         int      `json:"mtu"`
+    SecretKey   string   `json:"secretKey"`
+    Peers       []WGPeer `json:"peers"`
+    NoKernelTun bool     `json:"noKernelTun"`
+}
+type WGPeer struct {
+    PrivateKey string   `json:"privateKey"`
+    PublicKey  string   `json:"publicKey"`
+    PSK        string   `json:"psk,omitempty"`
+    AllowedIPs []string `json:"allowedIPs"`
+    KeepAlive  int      `json:"keepAlive"`
+}
+```
+
+Peer mutation uses `POST /panel/api/inbounds/update/:id` with a
+read-modify-write cycle on `settings.peers[]` (the fork has no
+per-peer endpoint). `Remote.UpdateInboundByID(ctx, id, *Inbound)`
+exposes the id-keyed variant for the RMW path.
+
+#### Scenario: Settings roundtrip
+
+- **WHEN** a WG inbound is fetched via `GetInbound(tag)`
+- **AND** its `settings` JSON string is unmarshalled into `WGSettings`
+- **THEN** re-marshalling SHALL produce the same `settings` string the fork accepts on `UpdateInbound`
+
+#### Scenario: IsWireguard match is case-strict
+
+- **GIVEN** `Inbound.IsWireguard()` returns true only for lowercase `"wireguard"`
+- **THEN** an inbound emitted with mixed case SHALL NOT match — case-folding here would hide fork-protocol drift
+
+### Requirement: Hysteria StreamSettings Shape
+
+The runtime SHALL recognize Hysteria 2 via `streamSettings.network ==
+"hysteria"` and expose `runtime.HysteriaStreamConfig` for the
+`hysteriaSettings` JSON block:
+
+```go
+type HysteriaStreamConfig struct {
+    Version        int    `json:"version"`
+    UDPIdleTimeout int    `json:"udpIdleTimeout"`
+    Auth           string `json:"auth,omitempty"`
+}
+```
+
+The per-client credential lives in `runtime.Client.Auth`, not
+`Client.ID` (VLESS/VMess) or `Client.Password` (Trojan/SS).
+
+#### Scenario: Provision a Hysteria client
+
+- **WHEN** `ClientService.ProvisionClient` is called on a Hysteria inbound
+- **THEN** `buildWireClient` SHALL populate `Client.Auth` via crypto/rand 16-char URL-safe alphabet (excluding ambiguous 0/O/1/l/I)
+- **AND** SHALL leave `Client.ID` and `Client.Password` empty
+- **AND** SHALL POST via the same `/panel/api/clients/add` envelope as VLESS/VMess

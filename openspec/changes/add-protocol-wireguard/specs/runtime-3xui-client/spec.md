@@ -1,3 +1,14 @@
+# ⓘ PROMOTED 2026-05-21
+
+> The shipped requirements from this delta have been folded into
+> `openspec/specs/runtime-3xui-client/spec.md` (Target Fork
+> Declaration / Fork-Aligned Client Routes / WireGuard Inbound
+> Settings Schema / Hysteria StreamSettings Shape).
+>
+> This change-local file is retained for historical context and
+> aspirational scenarios (e.g. re-add renewal flow) that did not
+> ship in v1.
+
 ## MODIFIED Requirements
 
 ### Requirement: Per-Node API Surface

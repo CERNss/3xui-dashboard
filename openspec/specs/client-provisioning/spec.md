@@ -98,3 +98,56 @@ plan purchases.
 - **WHEN** the provisioning operation runs for a user who already owns a client
 - **THEN** it SHALL extend that client's expiry and/or traffic limit instead of
   creating a duplicate
+
+### Requirement: Pre-flight Provision Check
+
+`ClientService.PreflightProvision(ctx, nodeID, inboundTag)` SHALL
+be a non-mutating probe that returns nil only when a subsequent
+`ProvisionClient` call would have a chance of succeeding. Billing
+SHALL call this before charging the user so failed provisions
+don't generate paired charge/refund ledger entries.
+
+#### Scenario: Inbound disabled
+
+- **WHEN** an admin paused the target inbound on the panel
+- **THEN** `PreflightProvision` SHALL return an error and `billing.Purchase` SHALL fail the order with reason `"inbound_unavailable"` BEFORE adjusting the user's balance
+
+#### Scenario: WG inbound but no master key
+
+- **GIVEN** the target inbound has `protocol="wireguard"`
+- **AND** the dashboard has no `WG_MASTER_KEY` configured
+- **THEN** `PreflightProvision` SHALL return an error explaining the WG_MASTER_KEY gap
+
+### Requirement: Protocol Branching
+
+`ProvisionClient` SHALL branch on the inbound's protocol:
+- WireGuard: delegate to `WGProvisioner.ProvisionPeer` (advisory-locked RMW on `settings.peers[]`, AES-256-GCM-sealed private key in `wg_peers`, IP allocator excluding `.0` + `.1` of `10.0.0.0/24`)
+- Hysteria / Hysteria 2: same `/panel/api/clients/add` envelope as VLESS, with `Client.Auth` populated instead of `.ID`
+- All others (VLESS / VMess / Trojan / Shadowsocks): the unified add path
+
+The resolved protocol SHALL be cached on
+`client_ownerships.protocol` so `ExpiryJob.disableOnNode`
+short-circuits the runtime lookup at scan time.
+
+#### Scenario: WG provision lands a wg_peers row
+
+- **WHEN** `ProvisionClient` is called on a WG inbound with a configured WG_MASTER_KEY
+- **THEN** the call SHALL acquire `pg_advisory_xact_lock(inbound_id)`, GET the inbound under the lock, allocate the next free IP excluding `.0`/`.1` plus any addresses already on the panel, append a peer with a freshly-generated curve25519 keypair, POST `/panel/api/inbounds/update/:id`, then in the same tx insert `wg_peers` (encrypted private key) and Upsert the ownership row with `protocol="wireguard"`
+
+#### Scenario: Hysteria provision uses auth field
+
+- **WHEN** `ProvisionClient` is called on a Hysteria inbound
+- **THEN** the constructed `model.Client` SHALL have `Auth` populated with a 16-char URL-safe random string (crypto/rand) and `ID`/`Password` empty
+
+### Requirement: WG Peer Revocation via RMW
+
+The same advisory-locked RMW path SHALL serve as the revocation
+mechanism: `WGProvisioner.RemovePeer` deletes the peer entry
+from `settings.peers[]` (matched by public key) + clears the
+`wg_peers` mirror + clears the ownership row.
+
+#### Scenario: Expiry removes WG peer
+
+- **WHEN** `ExpiryJob.disableOnNode` processes an ownership with `protocol="wireguard"`
+- **THEN** it SHALL call `WGRemover.RemovePeer(ctx, nodeID, inboundTag, clientEmail)` rather than the legacy `UpdateClient(Enable=false)` path (which is no-op for WG since the panel has no per-peer enable bit)
+- **AND** when no `WGRemover` is attached (`WG_MASTER_KEY` unset) the job SHALL log a warning and leave the DB flip as the only enforcement layer

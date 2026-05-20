@@ -1,3 +1,9 @@
+# ⓘ PROMOTED 2026-05-21
+
+> Shipped scenarios folded into `openspec/specs/subscription/spec.md`
+> (Subscription Output Formats §"Hysteria 2 URI in Base64 + Clash +
+> sing-box" + Per-protocol Clash mapping for Hysteria 2).
+
 ## MODIFIED Requirements
 
 ### Requirement: Subscription Output Formats

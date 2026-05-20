@@ -1,3 +1,11 @@
+# ⓘ PROMOTED 2026-05-21
+
+> Shipped requirements folded into
+> `openspec/specs/client-provisioning/spec.md` (Protocol Branching
+> / Pre-flight Provision Check / WG Peer Revocation via RMW).
+> Aspirational scenarios (key rotation, renewal re-add of same
+> peer) remain here as the design record but are not v1 behavior.
+
 ## MODIFIED Requirements
 
 ### Requirement: Client Provisioning Branch by Inbound Type

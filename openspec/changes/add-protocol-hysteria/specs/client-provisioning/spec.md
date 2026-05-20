@@ -1,3 +1,9 @@
+# ⓘ PROMOTED 2026-05-21
+
+> Shipped scenarios folded into
+> `openspec/specs/client-provisioning/spec.md` (Protocol Branching
+> §"Hysteria provision uses auth field").
+
 ## ADDED Requirements
 
 ### Requirement: Hysteria Client Provisioning
