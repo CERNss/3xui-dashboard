@@ -153,6 +153,8 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	_ = scheduler.Add("traffic", "@every 60s", trafficJob.RunOnce)
 	webhookRetryJob := job.NewWebhookRetryJob(webhookService, 0, logger)
 	_ = scheduler.Add("webhook-retry", "@every 15s", webhookRetryJob.RunOnce)
+	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, bus, logger)
+	_ = scheduler.Add("expiry", "@every 5m", expiryJob.RunOnce)
 
 	// SPA.
 	web.Register(engine)

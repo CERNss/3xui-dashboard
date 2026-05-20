@@ -112,3 +112,32 @@ func (r *ClientOwnershipRepo) FindByEmail(ctx context.Context, email string) ([]
 	}
 	return rows, nil
 }
+
+// ListExpired returns ownership rows where `expires_at <= now()` AND
+// `enabled = true`. Used by the expiry-processing cron to find rows
+// that need to be disabled. A nil expires_at is treated as "no expiry"
+// and excluded.
+func (r *ClientOwnershipRepo) ListExpired(ctx context.Context, now time.Time) ([]model.ClientOwnership, error) {
+	var rows []model.ClientOwnership
+	if err := r.db.WithContext(ctx).
+		Where("expires_at IS NOT NULL AND expires_at <= ? AND enabled = TRUE", now).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("ClientOwnership.ListExpired: %w", err)
+	}
+	return rows, nil
+}
+
+// ListExpiringWithin returns ownership rows where
+// `now < expires_at <= now + window` AND `enabled = true`. Used by
+// the expiry-reminder cron to fire warning events for clients near
+// expiry.
+func (r *ClientOwnershipRepo) ListExpiringWithin(ctx context.Context, now time.Time, window time.Duration) ([]model.ClientOwnership, error) {
+	var rows []model.ClientOwnership
+	if err := r.db.WithContext(ctx).
+		Where("expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ? AND enabled = TRUE",
+			now, now.Add(window)).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("ClientOwnership.ListExpiringWithin: %w", err)
+	}
+	return rows, nil
+}

@@ -34,8 +34,9 @@ const (
 	OrderCreated     = "order.created"
 	OrderCompleted   = "order.completed"
 	OrderFailed      = "order.failed"
-	ClientExpired    = "client.expired"
-	ClientOverLimit  = "client.over_limit"
+	ClientExpired      = "client.expired"
+	ClientExpiringSoon = "client.expiring_soon"
+	ClientOverLimit    = "client.over_limit"
 )
 
 // Handler is invoked once per matching Publish. Handlers should
