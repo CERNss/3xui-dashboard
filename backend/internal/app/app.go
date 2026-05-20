@@ -137,6 +137,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, logger)
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
+	userhandler.NewInboundHandler(inboundService).RegisterRoutes(apiUserAuthed)
 
 	// Webhooks.
 	webhookRepo := repository.NewWebhookRepo(db)

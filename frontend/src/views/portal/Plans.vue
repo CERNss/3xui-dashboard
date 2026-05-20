@@ -2,13 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { portalBillingApi, type Plan } from '@/api/portal/billing'
+import { portalBillingApi, type Plan, type PortalInbound } from '@/api/portal/billing'
 import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
 import { formatError } from '@/utils/format'
 
 const router = useRouter()
 
 const plans = ref<Plan[]>([])
+const inbounds = ref<PortalInbound[]>([])
 const profile = ref<UserProfile | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -16,13 +17,28 @@ const error = ref<string | null>(null)
 const buying = ref<number | null>(null) // plan id currently being purchased
 const flash = ref<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
+// Picker state — which (node, inbound) to provision onto. Sticky across
+// purchases in the same session: when the picker has just one option,
+// it stays auto-selected. We expose a key encoded as "nodeId|tag".
+const selectedInbound = ref<string>('')
+
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const [p, prof] = await Promise.all([portalBillingApi.listPlans(), portalProfileApi.get()])
+    const [p, prof, ib] = await Promise.all([
+      portalBillingApi.listPlans(),
+      portalProfileApi.get(),
+      portalBillingApi.listInbounds(),
+    ])
     plans.value = p
     profile.value = prof
+    inbounds.value = ib
+    if (ib.length > 0 && !selectedInbound.value) {
+      // Auto-pick the first option so single-inbound deployments don't
+      // require the user to click anything.
+      selectedInbound.value = `${ib[0].node_id}|${ib[0].inbound_tag}`
+    }
   } catch (e: any) {
     error.value = formatError(e, '加载失败')
   } finally {
@@ -60,11 +76,25 @@ function uuid(): string {
 }
 
 async function buy(plan: Plan) {
-  if (!confirm(`确认购买「${plan.name}」？\n将从余额扣除 ${formatYuan(plan.price_cents)}。`)) return
+  if (!selectedInbound.value) {
+    flash.value = { kind: 'err', text: '请先选择节点' }
+    return
+  }
+  const [nodeIDStr, inboundTag] = selectedInbound.value.split('|')
+  const nodeID = parseInt(nodeIDStr, 10)
+  const chosen = inbounds.value.find(ib => ib.node_id === nodeID && ib.inbound_tag === inboundTag)
+  const where = chosen ? `${chosen.node_name} · ${chosen.remark || chosen.inbound_tag}` : '所选节点'
+
+  if (!confirm(`确认购买「${plan.name}」？\n开通在「${where}」\n将从余额扣除 ${formatYuan(plan.price_cents)}。`)) return
   buying.value = plan.id
   flash.value = null
   try {
-    const order = await portalBillingApi.purchase({ plan_id: plan.id, idempotency_key: uuid() })
+    const order = await portalBillingApi.purchase({
+      plan_id: plan.id,
+      idempotency_key: uuid(),
+      node_id: nodeID,
+      inbound_tag: inboundTag,
+    })
     flash.value = { kind: 'ok', text: `订单 #${order.id} 已创建` }
     await load() // refresh balance
     setTimeout(() => router.push('/portal/orders'), 800)
@@ -113,7 +143,57 @@ onMounted(load)
 
     <div v-if="loading" class="text-sm text-surface-500">{{ $t('app.loading') }}</div>
 
-    <section v-else-if="sortedPlans.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <!-- Inbound picker (where to provision) — shown only when there's a choice -->
+    <div
+      v-if="!loading && inbounds.length > 0"
+      class="mb-5 rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900"
+    >
+      <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">开通在</h2>
+      <p class="mt-1 text-xs text-surface-500">选择一个节点 · 套餐会在这里给你创建客户端</p>
+      <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <label
+          v-for="ib in inbounds"
+          :key="ib.node_id + '|' + ib.inbound_tag"
+          class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all duration-150 ease-brand"
+          :class="selectedInbound === ib.node_id + '|' + ib.inbound_tag
+            ? 'border-accent-300 bg-accent-50 dark:border-accent-700 dark:bg-accent-950/40'
+            : 'border-surface-200 bg-surface-0 hover:border-surface-300 hover:bg-surface-50 dark:border-surface-700 dark:bg-surface-900 dark:hover:bg-surface-800'"
+        >
+          <input
+            type="radio"
+            :value="ib.node_id + '|' + ib.inbound_tag"
+            v-model="selectedInbound"
+            class="mt-0.5 h-4 w-4 border-surface-300 text-accent-600 focus:ring-accent-500/30"
+          />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm font-semibold text-ink-900 dark:text-surface-50">{{ ib.node_name }}</span>
+              <span class="rounded-md bg-surface-100 px-1.5 py-0.5 font-mono text-2xs text-surface-500 dark:bg-surface-800 dark:text-surface-400">:{{ ib.port }}</span>
+            </div>
+            <div class="mt-0.5 truncate text-xs text-surface-500">{{ ib.remark || ib.inbound_tag }}</div>
+            <div class="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium ring-1 ring-inset"
+              :class="{
+                'bg-accent-100 text-accent-800 ring-accent-200 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800': ib.protocol === 'vless',
+                'bg-primary-100 text-primary-800 ring-primary-200 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-800': ib.protocol === 'vmess',
+                'bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800': ib.protocol === 'trojan',
+                'bg-pink-100 text-pink-800 ring-pink-200 dark:bg-pink-950/40 dark:text-pink-300 dark:ring-pink-800': ib.protocol === 'shadowsocks',
+              }"
+            >
+              {{ ib.protocol }}
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div
+      v-else-if="!loading && inbounds.length === 0"
+      class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+    >
+      ⚠️ 当前没有可用的节点入站，请联系管理员先配置节点
+    </div>
+
+    <section v-if="!loading && inbounds.length > 0 && sortedPlans.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       <div
         v-for="plan in sortedPlans"
         :key="plan.id"

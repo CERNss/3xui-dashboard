@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import { portalBillingApi, type Order } from '@/api/portal/billing'
+import { portalBillingApi, type Order, type Plan } from '@/api/portal/billing'
 import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
 import { formatError } from '@/utils/format'
 
 const orders = ref<Order[]>([])
+const plansById = ref<Map<number, Plan>>(new Map())
 const profile = ref<UserProfile | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -14,14 +15,24 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const [o, p] = await Promise.all([portalBillingApi.listOrders(), portalProfileApi.get()])
+    const [o, p, pl] = await Promise.all([
+      portalBillingApi.listOrders(),
+      portalProfileApi.get(),
+      portalBillingApi.listPlans(),
+    ])
     orders.value = o
     profile.value = p
+    // Backend's Order doesn't denormalize plan_name — look it up.
+    plansById.value = new Map(pl.map(plan => [plan.id, plan]))
   } catch (e: any) {
     error.value = formatError(e, '加载失败')
   } finally {
     loading.value = false
   }
+}
+
+function planName(planId: number): string {
+  return plansById.value.get(planId)?.name ?? `Plan #${planId}`
 }
 
 function formatYuan(cents: number): string {
@@ -88,8 +99,8 @@ onMounted(load)
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
           <tr v-for="o in sortedOrders" :key="o.id" class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
             <td class="px-6 py-3.5 font-mono text-xs text-surface-400 tabular-nums">#{{ o.id }}</td>
-            <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ o.plan_name }}</td>
-            <td class="px-6 py-3.5 text-right tabular-nums font-medium text-ink-900 dark:text-surface-50">{{ formatYuan(o.amount_cents) }}</td>
+            <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ planName(o.plan_id) }}</td>
+            <td class="px-6 py-3.5 text-right tabular-nums font-medium text-ink-900 dark:text-surface-50">{{ formatYuan(o.price_cents) }}</td>
             <td class="px-6 py-3.5">
               <span
                 class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset"

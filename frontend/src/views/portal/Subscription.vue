@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 
 import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
+import { portalTrafficApi } from '@/api/portal/traffic'
 import { formatError } from '@/utils/format'
 
 type Format = 'base64' | 'json' | 'clash' | 'singbox' | 'sip008'
@@ -23,6 +24,7 @@ const formats: FormatInfo[] = [
 ]
 
 const profile = ref<UserProfile | null>(null)
+const clientCount = ref(0)
 const activeFormat = ref<Format>('base64')
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -39,7 +41,12 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    profile.value = await portalProfileApi.get()
+    const [p, clients] = await Promise.all([
+      portalProfileApi.get(),
+      portalTrafficApi.own(),
+    ])
+    profile.value = p
+    clientCount.value = clients.length
   } catch (e: any) {
     error.value = formatError(e, '加载失败')
   } finally {
@@ -96,6 +103,23 @@ watch([subURL, activeFormat], regenerateQR, { immediate: true })
     </p>
 
     <div v-if="loading" class="text-sm text-surface-500">{{ $t('app.loading') }}</div>
+
+    <!-- Empty state: no clients = nothing to subscribe to. Surface the
+         purchase CTA so users don't paste an empty URL into their app. -->
+    <div
+      v-else-if="profile && clientCount === 0"
+      class="rounded-2xl border border-surface-100 bg-surface-0 px-6 py-16 text-center dark:border-surface-800 dark:bg-surface-900"
+    >
+      <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-50 text-accent-600 dark:bg-accent-950 dark:text-accent-300">
+        <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /></svg>
+      </div>
+      <h3 class="mt-3 text-sm font-semibold text-surface-700 dark:text-surface-200">还没有活跃客户端</h3>
+      <p class="mt-1 text-xs text-surface-500">订阅 URL 已经生成，但当前没有节点开通 — 先买个套餐</p>
+      <router-link to="/portal/plans" class="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white shadow-card transition-all hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500">
+        去看套餐
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+      </router-link>
+    </div>
 
     <section v-else-if="profile" class="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <!-- Left: URL + format picker -->

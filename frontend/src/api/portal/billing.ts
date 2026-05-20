@@ -17,19 +17,37 @@ export type OrderStatus = 'created' | 'paid' | 'completed' | 'failed' | 'refunde
 
 export interface Order {
   id: number
+  user_id: number
   plan_id: number
-  plan_name: string
-  amount_cents: number
+  idempotency_key: string
+  price_cents: number
   status: OrderStatus
+  client_ownership_id?: number
+  error_message?: string
   created_at: string
   completed_at?: string | null
-  error?: string | null
 }
 
 export interface PurchaseInput {
   plan_id: number
   /** RFC 4122 UUID — same key on retries deduplicates server-side. */
   idempotency_key: string
+  /** Which node + inbound to provision the new client on. Backend
+   *  requires both — sspanel-style "user picks where", not auto-pick. */
+  node_id: number
+  inbound_tag: string
+}
+
+/** PortalInbound is one user-purchasable inbound surfaced by
+ *  GET /api/user/inbounds. Backend filters to enabled-only and strips
+ *  admin-only fields (settings JSON, traffic, etc.). */
+export interface PortalInbound {
+  node_id: number
+  node_name: string
+  inbound_tag: string
+  protocol: string
+  remark: string
+  port: number
 }
 
 export const portalBillingApi = {
@@ -49,4 +67,8 @@ export const portalBillingApi = {
    */
   purchase: (input: PurchaseInput) =>
     portalClient.post<Order>('/purchase', input).then((r) => r.data),
+
+  /** List inbounds the user may purchase a plan onto. */
+  listInbounds: () =>
+    portalClient.get<{ inbounds: PortalInbound[] }>('/inbounds').then((r) => r.data.inbounds),
 }
