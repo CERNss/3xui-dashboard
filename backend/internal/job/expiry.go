@@ -11,6 +11,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 )
 
 // ExpiryJob is the periodic worker that watches client ownerships for
@@ -74,33 +75,14 @@ func NewExpiryJob(
 	}
 }
 
-// ExpiredPayload is what subscribers see for client.expired events
-// fired by this job (distinct from the panel-reported expiry which
-// uses traffic/service.go::ClientExpiredPayload — they share the
-// type name across files but live in different packages).
-type ExpiredPayload struct {
-	OwnershipID int64      `json:"ownership_id"`
-	UserID      int64      `json:"user_id"`
-	UserEmail   string     `json:"user_email,omitempty"`
-	NodeID      int64      `json:"node_id"`
-	InboundTag  string     `json:"inbound_tag"`
-	ClientEmail string     `json:"client_email"`
-	ExpiredAt   time.Time  `json:"expired_at"`
-}
+// ExpiredPayload aliases payload.ClientExpired so the publisher's
+// own publishes stay readable. The canonical type is in
+// internal/service/event/payload — subscribers import that directly.
+type ExpiredPayload = payload.ClientExpired
 
-// ExpiringSoonPayload describes one client whose plan is about to
-// run out. Subscribers (mailer + telegram bot in the future) format
-// it into a renewal nudge.
-type ExpiringSoonPayload struct {
-	OwnershipID    int64     `json:"ownership_id"`
-	UserID         int64     `json:"user_id"`
-	UserEmail      string    `json:"user_email,omitempty"`
-	NodeID         int64     `json:"node_id"`
-	InboundTag     string    `json:"inbound_tag"`
-	ClientEmail    string    `json:"client_email"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	DaysRemaining  int       `json:"days_remaining"`
-}
+// ExpiringSoonPayload aliases payload.ClientExpiringSoon — see
+// ExpiredPayload for the alias rationale.
+type ExpiringSoonPayload = payload.ClientExpiringSoon
 
 // RunOnce performs one full pass. Cheap enough to run every 5 min.
 //

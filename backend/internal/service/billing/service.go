@@ -18,6 +18,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
 )
 
@@ -160,13 +161,13 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 		}
 		return nil, err
 	}
-	s.bus.PublishType(event.OrderCreated, OrderEventPayload{
+	s.bus.PublishType(event.OrderCreated, payload.Order{
 		OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
 	})
 
 	if user.BalanceCents < plan.PriceCents {
 		_ = s.orders.MarkFailed(ctx, order.ID, "insufficient balance")
-		s.bus.PublishType(event.OrderFailed, OrderEventPayload{
+		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
 			Reason: "insufficient_balance",
 		})
@@ -176,7 +177,7 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 	// Charge.
 	if _, err := s.users.AdjustBalance(ctx, user.ID, -plan.PriceCents, model.BalanceReasonOrderCharge, "", &order.ID); err != nil {
 		_ = s.orders.MarkFailed(ctx, order.ID, "charge failed: "+err.Error())
-		s.bus.PublishType(event.OrderFailed, OrderEventPayload{
+		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents, Reason: "charge_failed",
 		})
 		return order, fmt.Errorf("billing.Purchase: charge: %w", err)
@@ -199,7 +200,7 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 			)
 		}
 		_ = s.orders.MarkRefunded(ctx, order.ID, err.Error())
-		s.bus.PublishType(event.OrderFailed, OrderEventPayload{
+		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents, Reason: "provisioning_failed",
 		})
 		return order, fmt.Errorf("billing.Purchase: provision: %w", err)
@@ -208,7 +209,7 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 	if err := s.orders.MarkCompleted(ctx, order.ID, ownership.ID); err != nil {
 		s.log.Error("mark completed failed", slog.Int64("order_id", order.ID), slog.String("error", err.Error()))
 	}
-	s.bus.PublishType(event.OrderCompleted, OrderEventPayload{
+	s.bus.PublishType(event.OrderCompleted, payload.Order{
 		OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
 	})
 	// Refresh the in-memory order with the completion fields before
@@ -301,7 +302,7 @@ func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentI
 		}
 		return nil, err
 	}
-	s.bus.PublishType(event.OrderCreated, OrderEventPayload{
+	s.bus.PublishType(event.OrderCreated, payload.Order{
 		OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
 	})
 
@@ -311,7 +312,7 @@ func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentI
 		// Couldn't reach the gateway — mark the order failed so the
 		// user can retry (the idempotency_key has been consumed).
 		_ = s.orders.AdvanceStatusGuarded(ctx, order.ID, model.OrderStatusPaymentPending, model.OrderStatusPaymentFailed)
-		s.bus.PublishType(event.OrderPaymentFailed, OrderEventPayload{
+		s.bus.PublishType(event.OrderPaymentFailed, payload.Order{
 			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
 			Reason: "gateway_create_failed: " + err.Error(),
 		})
@@ -356,7 +357,7 @@ func (s *Service) ConfirmPayment(ctx context.Context, providerOrderID string) (*
 		}
 		return nil, fmt.Errorf("billing.ConfirmPayment: advance to paid: %w", err)
 	}
-	s.bus.PublishType(event.OrderPaymentConfirmed, OrderEventPayload{
+	s.bus.PublishType(event.OrderPaymentConfirmed, payload.Order{
 		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
 	})
 
@@ -384,7 +385,7 @@ func (s *Service) ConfirmPayment(ctx context.Context, providerOrderID string) (*
 	})
 	if err != nil {
 		_ = s.orders.MarkRefunded(ctx, order.ID, "provisioning failed: "+err.Error())
-		s.bus.PublishType(event.OrderFailed, OrderEventPayload{
+		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
 			Reason: "provisioning_failed_after_payment",
 		})
@@ -395,7 +396,7 @@ func (s *Service) ConfirmPayment(ctx context.Context, providerOrderID string) (*
 		s.log.Error("mark completed failed after payment",
 			slog.Int64("order_id", order.ID), slog.String("error", err.Error()))
 	}
-	s.bus.PublishType(event.OrderCompleted, OrderEventPayload{
+	s.bus.PublishType(event.OrderCompleted, payload.Order{
 		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
 	})
 	return s.orders.Get(ctx, order.ID)
@@ -420,7 +421,7 @@ func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason strin
 		}
 		return err
 	}
-	s.bus.PublishType(event.OrderPaymentFailed, OrderEventPayload{
+	s.bus.PublishType(event.OrderPaymentFailed, payload.Order{
 		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents, Reason: reason,
 	})
 	return nil
@@ -437,7 +438,7 @@ func (s *Service) ExpirePayment(ctx context.Context, orderID int64) error {
 		return err
 	}
 	if order, err := s.orders.Get(ctx, orderID); err == nil && order != nil {
-		s.bus.PublishType(event.OrderPaymentExpired, OrderEventPayload{
+		s.bus.PublishType(event.OrderPaymentExpired, payload.Order{
 			OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
 		})
 	}
@@ -509,12 +510,3 @@ func isUniqueViolation(err error) bool {
 }
 
 
-// OrderEventPayload is the per-event shape on event.OrderCreated /
-// .OrderCompleted / .OrderFailed.
-type OrderEventPayload struct {
-	OrderID    int64  `json:"order_id"`
-	UserID     int64  `json:"user_id"`
-	PlanID     int64  `json:"plan_id"`
-	PriceCents int64  `json:"price_cents"`
-	Reason     string `json:"reason,omitempty"` // set on OrderFailed only
-}

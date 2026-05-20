@@ -12,6 +12,7 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 	"github.com/cern/3xui-dashboard/internal/service/node"
 )
 
@@ -113,17 +114,8 @@ func (j *ProbeJob) probeOne(ctx context.Context, n model.Node) {
 	_ = res
 }
 
-// Payload shapes published on the bus. Subscribers decode by event
-// type → struct.
-type NodeStatusChangedPayload struct {
-	NodeID int64  `json:"node_id"`
-	Name   string `json:"name"`
-	Prior  string `json:"prior_status"`
-	Now    string `json:"new_status"`
-}
-
-type NodeProbeFailedPayload struct {
-	NodeID int64  `json:"node_id"`
-	Name   string `json:"name"`
-	Error  string `json:"error"`
-}
+// Type aliases for the canonical payloads in
+// internal/service/event/payload. Subscribers (notify, webhook)
+// import those directly.
+type NodeStatusChangedPayload = payload.NodeStatusChanged
+type NodeProbeFailedPayload = payload.NodeProbeFailed

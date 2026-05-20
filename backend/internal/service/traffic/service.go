@@ -13,6 +13,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/event"
+	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 )
 
 // NodeListSource enumerates enabled nodes for the collection job.
@@ -304,24 +305,10 @@ func (s *Service) ResetNode(ctx context.Context, nodeID int64) error {
 
 func strPtr(s string) *string { return &s }
 
-// PublishClientPayloads — kept exported so subscribers can typecast.
-type ClientThresholdPayload struct {
-	NodeID      int64  `json:"node_id"`
-	NodeName    string `json:"node_name"`
-	InboundTag  string `json:"inbound_tag"`
-	ClientEmail string `json:"client_email"`
-	Up          int64  `json:"up"`
-	Down        int64  `json:"down"`
-	Limit       int64  `json:"limit"`
-}
-
-type ClientExpiredPayload struct {
-	NodeID      int64     `json:"node_id"`
-	NodeName    string    `json:"node_name"`
-	InboundTag  string    `json:"inbound_tag"`
-	ClientEmail string    `json:"client_email"`
-	ExpiredAt   time.Time `json:"expired_at"`
-}
+// Type aliases for the canonical payloads in
+// internal/service/event/payload. Subscribers import those directly.
+type ClientThresholdPayload = payload.ClientThreshold
+type ClientExpiredPayload = payload.TrafficClientExpired
 
 // Helpful sentinel re-exports so handlers don't import runtime
 // directly for error checks.

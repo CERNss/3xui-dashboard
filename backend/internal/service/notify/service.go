@@ -33,8 +33,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/event"
-	"github.com/cern/3xui-dashboard/internal/service/traffic"
-	jobpkg "github.com/cern/3xui-dashboard/internal/job"
+	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 )
 
 // Service wires the bus subscriber + channels + router + repos.
@@ -102,13 +101,13 @@ func (s *Service) onExpired(e event.Event) {
 	var ownership *model.ClientOwnership
 	var expiredAt time.Time
 	switch p := e.Data.(type) {
-	case jobpkg.ExpiredPayload:
+	case payload.ClientExpired:
 		ownership = &model.ClientOwnership{
 			ID: p.OwnershipID, UserID: p.UserID,
 			NodeID: p.NodeID, InboundTag: p.InboundTag, ClientEmail: p.ClientEmail,
 		}
 		expiredAt = p.ExpiredAt
-	case traffic.ClientExpiredPayload:
+	case payload.TrafficClientExpired:
 		o, err := s.lookupOwnership(ctx, p.NodeID, p.InboundTag, p.ClientEmail)
 		if err != nil || o == nil {
 			s.log.Warn("client.expired without resolvable ownership", "node_id", p.NodeID, "client_email", p.ClientEmail, "err", err)
@@ -141,7 +140,7 @@ func (s *Service) onExpired(e event.Event) {
 func (s *Service) onExpiringSoon(e event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	p, ok := e.Data.(jobpkg.ExpiringSoonPayload)
+	p, ok := e.Data.(payload.ClientExpiringSoon)
 	if !ok {
 		s.log.Warn("client.expiring_soon with unknown payload type", "type", fmt.Sprintf("%T", e.Data))
 		return
@@ -168,7 +167,7 @@ func (s *Service) onExpiringSoon(e event.Event) {
 func (s *Service) onOverLimit(e event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	p, ok := e.Data.(traffic.ClientThresholdPayload)
+	p, ok := e.Data.(payload.ClientThreshold)
 	if !ok {
 		s.log.Warn("client.over_limit with unknown payload type", "type", fmt.Sprintf("%T", e.Data))
 		return
@@ -259,34 +258,42 @@ func (s *Service) dispatchOnce(ctx context.Context, ch Channel, kind string, ded
 func (s *Service) onNodeOffline(e event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	nodeID, nodeName := nodePayloadFields(e.Data)
-	s.dispatchOpsEvent(ctx, event.NodeOffline, fmt.Sprintf("node_offline_%d", nodeID), Message{
+	p, ok := e.Data.(payload.NodeStatusChanged)
+	if !ok {
+		s.log.Warn("node.offline with unknown payload type", "type", fmt.Sprintf("%T", e.Data))
+		return
+	}
+	s.dispatchOpsEvent(ctx, event.NodeOffline, fmt.Sprintf("node_offline_%d_%d", p.NodeID, e.Time.Unix()), Message{
 		Level: LevelError,
-		Title: fmt.Sprintf("节点离线：%s", nonEmpty(nodeName, fmt.Sprintf("#%d", nodeID))),
+		Title: fmt.Sprintf("节点离线：%s", nonEmpty(p.Name, fmt.Sprintf("#%d", p.NodeID))),
 		Body:  "节点连续两次探测失败，已标记为 offline。",
 		Fields: []Field{
-			{Key: "Node ID", Value: strconv.FormatInt(nodeID, 10)},
+			{Key: "Node ID", Value: strconv.FormatInt(p.NodeID, 10)},
 			{Key: "Time", Value: e.Time.Format(time.RFC3339)},
 		},
 		EventType: event.NodeOffline,
-		DedupKey:  fmt.Sprintf("node_offline_%d_%d", nodeID, e.Time.Unix()),
+		DedupKey:  fmt.Sprintf("node_offline_%d_%d", p.NodeID, e.Time.Unix()),
 	})
 }
 
 func (s *Service) onNodeRecovered(e event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	nodeID, nodeName := nodePayloadFields(e.Data)
-	s.dispatchOpsEvent(ctx, event.NodeRecovered, fmt.Sprintf("node_recovered_%d", nodeID), Message{
+	p, ok := e.Data.(payload.NodeStatusChanged)
+	if !ok {
+		s.log.Warn("node.recovered with unknown payload type", "type", fmt.Sprintf("%T", e.Data))
+		return
+	}
+	s.dispatchOpsEvent(ctx, event.NodeRecovered, fmt.Sprintf("node_recovered_%d_%d", p.NodeID, e.Time.Unix()), Message{
 		Level: LevelInfo,
-		Title: fmt.Sprintf("节点恢复：%s", nonEmpty(nodeName, fmt.Sprintf("#%d", nodeID))),
+		Title: fmt.Sprintf("节点恢复：%s", nonEmpty(p.Name, fmt.Sprintf("#%d", p.NodeID))),
 		Body:  "节点已恢复在线状态。",
 		Fields: []Field{
-			{Key: "Node ID", Value: strconv.FormatInt(nodeID, 10)},
+			{Key: "Node ID", Value: strconv.FormatInt(p.NodeID, 10)},
 			{Key: "Time", Value: e.Time.Format(time.RFC3339)},
 		},
 		EventType: event.NodeRecovered,
-		DedupKey:  fmt.Sprintf("node_recovered_%d_%d", nodeID, e.Time.Unix()),
+		DedupKey:  fmt.Sprintf("node_recovered_%d_%d", p.NodeID, e.Time.Unix()),
 	})
 }
 
@@ -306,21 +313,26 @@ func (s *Service) onOrderFailed(e event.Event) {
 func (s *Service) opsOrderEvent(e event.Event, eventType string, lvl Level, title string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	orderID, userID, planID, priceCents, reason := orderPayloadFields(e.Data)
+	p, ok := e.Data.(payload.Order)
+	if !ok {
+		s.log.Warn("order event with unknown payload type",
+			"event", eventType, "type", fmt.Sprintf("%T", e.Data))
+		return
+	}
 	msg := Message{
 		Level: lvl,
 		Title: title,
 		Fields: []Field{
-			{Key: "Order ID", Value: strconv.FormatInt(orderID, 10)},
-			{Key: "User ID", Value: strconv.FormatInt(userID, 10)},
-			{Key: "Plan ID", Value: strconv.FormatInt(planID, 10)},
-			{Key: "Amount", Value: fmt.Sprintf("%.2f", float64(priceCents)/100)},
+			{Key: "Order ID", Value: strconv.FormatInt(p.OrderID, 10)},
+			{Key: "User ID", Value: strconv.FormatInt(p.UserID, 10)},
+			{Key: "Plan ID", Value: strconv.FormatInt(p.PlanID, 10)},
+			{Key: "Amount", Value: fmt.Sprintf("%.2f", float64(p.PriceCents)/100)},
 		},
 		EventType: eventType,
-		DedupKey:  fmt.Sprintf("%s_%d", eventType, orderID),
+		DedupKey:  fmt.Sprintf("%s_%d", eventType, p.OrderID),
 	}
-	if reason != "" {
-		msg.Fields = append(msg.Fields, Field{Key: "Reason", Value: reason})
+	if p.Reason != "" {
+		msg.Fields = append(msg.Fields, Field{Key: "Reason", Value: p.Reason})
 	}
 	s.dispatchOpsEvent(ctx, eventType, msg.DedupKey, msg)
 }
@@ -372,36 +384,6 @@ func (s *Service) lookupOwnership(ctx context.Context, nodeID int64, inboundTag,
 		return nil, err
 	}
 	return o, nil
-}
-
-// nodePayloadFields extracts NodeID + Name from one of the several
-// node-event payload shapes the bus carries. Returns zero values
-// when unrecognized — the channel still gets a message; just less
-// pretty.
-func nodePayloadFields(data any) (int64, string) {
-	type withNode interface {
-		nodeFields() (int64, string)
-	}
-	if v, ok := data.(withNode); ok {
-		return v.nodeFields()
-	}
-	// Fall through to a couple of well-known concrete shapes. We
-	// don't import the publisher's packages here to avoid a circular
-	// import — instead reflect on the struct's first int64 field
-	// named NodeID and string field named NodeName. Simple but loose.
-	return reflectNodeID(data), reflectNodeName(data)
-}
-
-// orderPayloadFields extracts the fields from billing.OrderEventPayload
-// without importing the billing package (circular). Falls back to
-// zeros on unrecognized shapes.
-func orderPayloadFields(data any) (orderID, userID, planID, priceCents int64, reason string) {
-	orderID = reflectInt64(data, "OrderID")
-	userID = reflectInt64(data, "UserID")
-	planID = reflectInt64(data, "PlanID")
-	priceCents = reflectInt64(data, "PriceCents")
-	reason = reflectString(data, "Reason")
-	return
 }
 
 func nonEmpty(s, fallback string) string {
