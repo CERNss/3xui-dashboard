@@ -245,7 +245,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 		channels.NewEmail(mailerSvc, cfg.Notify.OpsRecipient),
 		channels.NewTelegram(cfg.Notify.Telegram.BotToken, cfg.Notify.Telegram.ChatID),
 		channels.NewDiscord(cfg.Notify.Discord.WebhookURL),
-		channels.NewFeishu(cfg.Notify.Feishu.WebhookURL),
+		channels.NewFeishu(cfg.Notify.Feishu.WebhookURL, cfg.Notify.Feishu.CardTemplate),
 	}
 	// Warn for channels referenced in routes but unconfigured — helps
 	// operators catch missing env vars without crashing the app.

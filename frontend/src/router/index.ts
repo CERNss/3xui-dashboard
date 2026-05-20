@@ -65,6 +65,12 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, titleKey: 'nav.stats' },
       },
       {
+        path: 'webhooks',
+        name: 'admin.webhooks',
+        component: () => import('@/views/admin/Webhooks.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.webhooks' },
+      },
+      {
         path: 'settings',
         name: 'admin.settings',
         component: () => import('@/views/admin/Settings.vue'),

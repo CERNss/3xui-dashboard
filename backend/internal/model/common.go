@@ -44,6 +44,41 @@ func (s *StringSlice) Scan(value any) error {
 	return json.Unmarshal(bytes, (*[]string)(s))
 }
 
+// StringMap serializes map[string]string as JSONB. Used for columns
+// holding arbitrary admin-defined key/value pairs — currently just
+// webhooks.headers, but reusable for future similar shapes.
+type StringMap map[string]string
+
+// Value implements driver.Valuer.
+func (m StringMap) Value() (driver.Value, error) {
+	if m == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(map[string]string(m))
+}
+
+// Scan implements sql.Scanner.
+func (m *StringMap) Scan(value any) error {
+	if value == nil {
+		*m = nil
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return fmt.Errorf("model.StringMap: unsupported scan type %T", value)
+	}
+	if len(bytes) == 0 {
+		*m = nil
+		return nil
+	}
+	return json.Unmarshal(bytes, (*map[string]string)(m))
+}
+
 // User account status values.
 const (
 	UserStatusActive    = "active"

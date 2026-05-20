@@ -71,6 +71,19 @@ type NotifyDiscord struct {
 
 type NotifyFeishu struct {
 	WebhookURL string
+	// CardTemplate is an optional Go text/template that produces
+	// the full JSON payload POSTed to the Feishu webhook. When
+	// non-empty, it replaces the default interactive-card builder.
+	//
+	// Template context (notify.Message-derived):
+	//   {{.Title}} {{.Body}} {{.Level}} {{.URL}}
+	//   {{range .Fields}}{{.Key}}: {{.Value}}{{end}}
+	//
+	// Use case: admins on locked-down Feishu apps that mandate a
+	// specific card_link / template_id, or who want a simpler
+	// text-only `{"msg_type":"text","content":{"text":"..."}}`
+	// payload. Leave empty to use the default rich card.
+	CardTemplate string
 }
 
 type Server struct {
@@ -311,7 +324,8 @@ func Load(envFile string) (*Config, error) {
 				WebhookURL: v.GetString("DISCORD_WEBHOOK_URL"),
 			},
 			Feishu: NotifyFeishu{
-				WebhookURL: v.GetString("FEISHU_WEBHOOK_URL"),
+				WebhookURL:   v.GetString("FEISHU_WEBHOOK_URL"),
+				CardTemplate: v.GetString("FEISHU_CARD_TEMPLATE"),
 			},
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),

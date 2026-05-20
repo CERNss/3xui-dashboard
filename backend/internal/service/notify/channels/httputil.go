@@ -23,6 +23,13 @@ type PostJSONOptions struct {
 	RetryAfterCap  time.Duration
 }
 
+// PostJSONRaw is the byte-payload variant of PostJSON: callers that
+// already have a marshaled / templated JSON document skip the
+// json.Marshal step. Same retry / status semantics.
+func PostJSONRaw(ctx context.Context, client *http.Client, url string, raw []byte, opts PostJSONOptions) (statusCode int, body []byte, err error) {
+	return postJSONInner(ctx, client, url, raw, opts)
+}
+
 // PostJSON sends `payload` as JSON to `url`. On HTTP 5xx / network
 // error it retries once after BaseRetryDelay; on HTTP 429 it honors
 // Retry-After up to RetryAfterCap; on HTTP 4xx it returns the error
@@ -32,6 +39,14 @@ type PostJSONOptions struct {
 // can surface the server's error message in logs. Beyond 1 KiB
 // gets discarded to bound memory under spammy 4xx loops.
 func PostJSON(ctx context.Context, client *http.Client, url string, payload any, opts PostJSONOptions) (statusCode int, body []byte, err error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return 0, nil, fmt.Errorf("marshal: %w", err)
+	}
+	return postJSONInner(ctx, client, url, raw, opts)
+}
+
+func postJSONInner(ctx context.Context, client *http.Client, url string, raw []byte, opts PostJSONOptions) (statusCode int, body []byte, err error) {
 	maxRetries := opts.MaxRetries
 	if maxRetries < 0 {
 		maxRetries = 0
@@ -46,11 +61,6 @@ func PostJSON(ctx context.Context, client *http.Client, url string, payload any,
 	cap429 := opts.RetryAfterCap
 	if cap429 <= 0 {
 		cap429 = 30 * time.Second
-	}
-
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return 0, nil, fmt.Errorf("marshal: %w", err)
 	}
 
 	var lastErr error

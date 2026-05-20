@@ -5,6 +5,7 @@
 package mailer
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
@@ -18,9 +19,18 @@ import (
 	"github.com/cern/3xui-dashboard/internal/config"
 )
 
+// Outbox is the persistent-queue interface SendAsync delegates to
+// when configured. Implementations live in internal/repository
+// (concrete EmailOutboxRepo); the dependency is inverted here so
+// the mailer package doesn't pull in gorm.
+type Outbox interface {
+	Enqueue(ctx context.Context, to, subject, body string) error
+}
+
 // Mailer sends emails over SMTP. Zero-value is unusable — construct via New().
 type Mailer struct {
 	cfg    config.SMTP
+	outbox Outbox
 	logger *slog.Logger
 }
 
@@ -30,8 +40,30 @@ func New(cfg config.SMTP, logger *slog.Logger) *Mailer {
 	return &Mailer{cfg: cfg, logger: logger}
 }
 
+// SetOutbox enables the async-queue path. Once set, SendAsync()
+// enqueues instead of doing direct SMTP delivery. Idempotent.
+// Called by app.Build when the dashboard has DB access.
+func (m *Mailer) SetOutbox(o Outbox) { m.outbox = o }
+
 // Enabled reports whether real SMTP delivery is available.
 func (m *Mailer) Enabled() bool { return m.cfg.Enabled() }
+
+// SendAsync queues an email for delivery via the EmailQueueJob
+// worker. Returns once the row is persisted — actual SMTP delivery
+// happens within the next worker tick (default 30s). If no outbox
+// is wired (test fixtures / dev without DB), falls back to
+// synchronous Send so verification flows still work.
+//
+// ctx threads request cancellation through to the DB insert. If
+// the SMTP layer ends up being called synchronously (no outbox),
+// ctx is NOT enforced on the SMTP dial — that uses the mailer's
+// own 10s timeout.
+func (m *Mailer) SendAsync(ctx context.Context, to, subject, body string) error {
+	if m.outbox != nil {
+		return m.outbox.Enqueue(ctx, to, subject, body)
+	}
+	return m.Send(to, subject, body)
+}
 
 // Send delivers a UTF-8 plain-text email. When SMTP is disabled, the
 // message is logged at INFO level instead — sufficient for dev where

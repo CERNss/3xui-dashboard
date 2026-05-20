@@ -13,7 +13,7 @@ import (
 )
 
 func TestFeishu_DisabledNoConfig(t *testing.T) {
-	c := NewFeishu("")
+	c := NewFeishu("", "")
 	if c.Enabled() {
 		t.Error("empty webhook should be disabled")
 	}
@@ -31,7 +31,7 @@ func TestFeishu_SendBuildsCard(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := NewFeishu(server.URL)
+	c := NewFeishu(server.URL, "")
 	err := c.Send(context.Background(), notify.Message{
 		Level: notify.LevelWarn,
 		Title: "Pending order expired",
@@ -84,7 +84,7 @@ func TestFeishu_APIErrorSurfaced(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := NewFeishu(server.URL)
+	c := NewFeishu(server.URL, "")
 	err := c.Send(context.Background(), notify.Message{Title: "x"})
 	if err == nil {
 		t.Fatal("expected error")

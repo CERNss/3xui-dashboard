@@ -17,9 +17,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/cern/3xui-dashboard/internal/model"
@@ -111,6 +113,12 @@ func (s *Service) Create(ctx context.Context, w *model.Webhook) error {
 	}
 	if w.Events == nil {
 		w.Events = []string{}
+	}
+	if w.Headers == nil {
+		w.Headers = map[string]string{}
+	}
+	if err := normalizeWebhook(w); err != nil {
+		return err
 	}
 	return s.hooks.Create(ctx, w)
 }
@@ -207,9 +215,9 @@ func (s *Service) queueAndDispatch(ctx context.Context, wh *model.Webhook, event
 		Timestamp: time.Now().UTC(),
 		Data:      data,
 	}
-	payload, err := json.Marshal(envelope)
+	payload, err := renderWebhookPayload(wh, envelope)
 	if err != nil {
-		return nil, fmt.Errorf("marshal envelope: %w", err)
+		return nil, fmt.Errorf("render payload: %w", err)
 	}
 	now := time.Now().UTC()
 	delivery := &model.WebhookDelivery{
@@ -323,18 +331,59 @@ func (s *Service) deliverOnce(wh *model.Webhook, d *model.WebhookDelivery) (int,
 	if wh.AllowPrivate {
 		client = s.httpPrivate
 	}
-	req, err := http.NewRequest(http.MethodPost, wh.URL, bytes.NewReader(d.Payload))
+
+	method := strings.ToUpper(wh.Method)
+	if method == "" {
+		method = http.MethodPost
+	}
+	targetURL := wh.URL
+	var body []byte
+	// For GET / DELETE / HEAD: payload goes in the query string
+	// (since they conventionally have no body). For POST/PUT/PATCH:
+	// payload is the request body.
+	if method == http.MethodGet || method == http.MethodDelete || method == http.MethodHead {
+		if len(d.Payload) > 0 {
+			sep := "?"
+			if strings.Contains(targetURL, "?") {
+				sep = "&"
+			}
+			targetURL = targetURL + sep + "payload=" + url.QueryEscape(string(d.Payload))
+		}
+	} else {
+		body = d.Payload
+	}
+
+	req, err := http.NewRequest(method, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, "", err
 	}
+
+	// Default Content-Type per template_format. Admin-set headers
+	// (further down) win over this, so the "raw" format with a
+	// custom Content-Type header works.
+	switch wh.TemplateFormat {
+	case "form":
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	case "text":
+		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	case "raw":
+		// no default — admin supplies Content-Type via Headers
+	default:
+		req.Header.Set("Content-Type", "application/json")
+	}
+
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sig := sign(wh.Secret, ts, d.Payload)
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "3xui-dashboard-webhook/"+s.envelopeVer)
 	req.Header.Set("X-Dashboard-Event", d.EventType)
 	req.Header.Set("X-Dashboard-Timestamp", ts)
 	req.Header.Set("X-Dashboard-Signature", sig)
 	req.Header.Set("X-Dashboard-Delivery-Id", strconv.FormatInt(d.ID, 10))
+	// Admin-defined headers override (use case: pre-shared Bearer
+	// tokens, custom Content-Type for "raw" format, etc.).
+	for k, v := range wh.Headers {
+		req.Header.Set(k, v)
+	}
 
 	ctx := context.Background()
 	if wh.AllowPrivate {
@@ -347,8 +396,8 @@ func (s *Service) deliverOnce(wh *model.Webhook, d *model.WebhookDelivery) (int,
 		return 0, "", err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10)) // cap 64 KiB
-	return resp.StatusCode, string(body), nil
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10)) // cap 64 KiB
+	return resp.StatusCode, string(respBody), nil
 }
 
 // Envelope is the versioned shape every webhook receives.
@@ -357,6 +406,84 @@ type Envelope struct {
 	Event     string    `json:"event"`
 	Timestamp time.Time `json:"timestamp"`
 	Data      any       `json:"data,omitempty"`
+}
+
+// normalizeWebhook validates + defaults the admin-tunable fields.
+// Returns an error on bad method / unknown template_format so the
+// admin's create call fails loudly instead of producing a webhook
+// that 404s on delivery.
+func normalizeWebhook(w *model.Webhook) error {
+	w.Method = strings.ToUpper(strings.TrimSpace(w.Method))
+	if w.Method == "" {
+		w.Method = http.MethodPost
+	}
+	switch w.Method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+		// ok
+	default:
+		return fmt.Errorf("webhook: method %q not supported (use GET/POST/PUT/DELETE/PATCH)", w.Method)
+	}
+	if w.TemplateFormat == "" {
+		w.TemplateFormat = "json"
+	}
+	switch w.TemplateFormat {
+	case "json", "form", "text", "raw":
+		// ok
+	default:
+		return fmt.Errorf("webhook: template_format %q not supported (use json/form/text/raw)", w.TemplateFormat)
+	}
+	// Validate template at create-time so admins get immediate
+	// feedback rather than discovering a typo on first delivery.
+	if strings.TrimSpace(w.BodyTemplate) != "" {
+		if _, err := template.New("v").Parse(w.BodyTemplate); err != nil {
+			return fmt.Errorf("webhook: body_template parse: %w", err)
+		}
+	}
+	return nil
+}
+
+// renderWebhookPayload produces the byte payload sent on the wire.
+// When BodyTemplate is empty, the standard JSON Envelope is used
+// (backward-compat default). Otherwise the template renders with
+// `.Version`, `.Event`, `.Timestamp`, and `.Data` (a generic map
+// for dotted access like {{.Data.user_id}}) as the dot.
+//
+// Template errors fall back to the envelope JSON + a logged warning
+// — admins can break their own webhooks with bad templates, but
+// the dashboard's outbound queue keeps moving.
+func renderWebhookPayload(wh *model.Webhook, env Envelope) ([]byte, error) {
+	if strings.TrimSpace(wh.BodyTemplate) == "" {
+		return json.Marshal(env)
+	}
+	tmpl, err := template.New("webhook").Option("missingkey=zero").Parse(wh.BodyTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("parse template: %w", err)
+	}
+	// Convert .Data to map[string]any so dotted access works
+	// regardless of the concrete payload struct.
+	dataMap := map[string]any{}
+	if env.Data != nil {
+		b, mErr := json.Marshal(env.Data)
+		if mErr == nil {
+			_ = json.Unmarshal(b, &dataMap)
+		}
+	}
+	ctx := struct {
+		Version   string
+		Event     string
+		Timestamp time.Time
+		Data      map[string]any
+	}{
+		Version:   env.Version,
+		Event:     env.Event,
+		Timestamp: env.Timestamp,
+		Data:      dataMap,
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, ctx); err != nil {
+		return nil, fmt.Errorf("execute template: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // sign returns hex-encoded HMAC-SHA256 of timestamp + "." + body
