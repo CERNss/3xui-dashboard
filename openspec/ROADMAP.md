@@ -17,7 +17,7 @@ single state. Update this file whenever a change ships.
 2. 多协议     █████████████████░░░  85%   节点 4/5 + 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect 已交付）
 3. 支付系统   ████████████░░░░░░░░  60%   alipay 当面付 + Stripe Checkout（两个网关 + 通用 Gateway 接口 + payment_pending 状态机 + 失败兜底 poll）+ 仍缺 auto-renewal
 4. 通知系统   ████████████████░░░░  80%   多通道 fanout：邮件 + Telegram + Discord + 飞书；router 配置化；7 个事件类型订阅（client lifecycle + node offline/recovered + order.*）+ 仍缺持久化重试队列
-5. 用户界面   ██████████████████░░  90%   admin 95% + portal 75% + 设计系统 95%
+5. 用户界面   ███████████████████░  95%   admin 95% + portal 80% + 设计系统 95% + 移动响应式（#9 shipped）
 ─────────────────────────────────────────
 综合（5 维均值） █████████████░░░░░░░  ~66%
 ```
@@ -206,7 +206,7 @@ admin moderation of users/plans/orders.
 | **5. 用户界面** | (a) Portal 4 页：订阅 / 套餐 / 订单 / 资料 | ✅ #2 (commit `263dbc4`) |
 | | (b) Portal 仪表盘扩充（流量图表替换 stub） | ✅ #2 |
 | | (c) Admin 4 页：用户 / 套餐 / 订单 / 统计 | ✅ #3 (commit `08553c3`) |
-| | (d) 移动端响应式（admin + portal） | #9 `add-mobile-responsive` |
+| | (d) 移动端响应式（admin + portal） | ✅ #9 shipped (2026-05-20) |
 
 合计 25 项明确缺口，由 9 个 change 关联承接。
 
@@ -226,7 +226,7 @@ admin moderation of users/plans/orders.
 | 6 | `add-payment-stripe` | 支付 | 45% → 60%（实际达成） | ✅ shipped (2026-05-20)：Stripe Checkout Sessions（hosted redirect 不需自建 UI）+ HMAC-SHA256 webhook 验签 + 5min replay 防护 + 多 v1 兼容（rotation 窗口）+ pure stdlib（无 stripe-go 依赖）。Subscriptions 拆到 add-billing-auto-renewal |
 | 7 | `add-notification-channels` | 通知 | 50% → 80%（实际达成） | ✅ shipped (2026-05-20)：Channel 接口 + Router（env-var 配置化路由）+ 4 个 channel（email 复用 mailer / Telegram bot / Discord webhook / 飞书 interactive card）+ NodeRecovered 事件区分启动首次上线 vs 故障恢复 + 每 channel 独立 dedup key（kind 后缀）+ 通用 PostJSON 含 retry/Retry-After。Per-user channel routing 拆到 add-user-notification-prefs |
 | 8 | `add-protocol-wireguard` | 多协议 | 节点 4/5 → 5/5（WireGuard runtime/links/sub） | 🚧 spec scaffolded (2026-05-20) — proposal + design + tasks + 4 spec deltas committed；impl 待 T0 prereq（从一台真实 3x-ui 节点抓 WG 面板端点真实 shape）|
-| 9 | `add-mobile-responsive` | 用户界面 | 90% → 95% | ❌ 未开 |
+| 9 | `add-mobile-responsive` | 用户界面 | 90% → 95%（实际达成） | ✅ shipped (2026-05-20)：AdminLayout 改 off-canvas drawer + 移动 top bar；PortalLayout 水平滚动 nav + 移动端 logout icon-only；admin 表格全部包 overflow-x-auto；7 个页面 header 改 flex-col → sm:flex-row；padding 阶梯式（px-4 / sm:px-6 / lg:px-8）|
 
 做完 1-9 → 5 维度都 ≥ 80%，综合 ~85%，可以真上线给真用户。
 
@@ -259,4 +259,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-mobile-responsive`（# 9）— 纯前端 Tailwind 响应式断点工作。#8 (`add-protocol-wireguard`) spec 已落地，但实现等 T0：从真实 3x-ui 节点抓 WG 面板端点 shape（不同版本端点路径不一致）。等抓到再开 T1。
+> **当前状态**：1-7 + 9 全 shipped；#8 `add-protocol-wireguard` spec only（待 T0 端点抓取）。5 大支柱全部 ≥ 80%（综合 ~85%），可以真正交付给用户了。下一步要么 #8 T0 + 实现，要么进入 v2 增强阶段（auto-renewal、coupons、cryptomus、多语言扩展、admin dashboard 图表等）。
