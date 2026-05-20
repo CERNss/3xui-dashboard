@@ -13,13 +13,13 @@ single state. Update this file whenever a change ships.
 
 ```
                             完成度    打分逻辑
-1. 运维管理   ███████████████░░░░░  75%   后端 90% + admin UI 全覆盖 + cron 缺 3 任务
+1. 运维管理   █████████████████░░░  85%   admin UI 全 + 到期 cron + 仅缺 traffic-reset / auto-renewal
 2. 多协议     █████████████████░░░  85%   节点 4/5 + 订阅 5/5（Clash 完整 + sing-box + SIP008 + UA detect 已交付）
 3. 支付系统   ████░░░░░░░░░░░░░░░░  20%   骨架齐 + 0 个真实网关 + 计费模式单一
-4. 通知系统   ████████░░░░░░░░░░░░  40%   webhook/mail 齐 + 0 个 bot + 邮件无队列
+4. 通知系统   ██████████░░░░░░░░░░  50%   client.expired/expiring_soon publisher 接通 + 仍缺 bot/queue
 5. 用户界面   ██████████████████░░  90%   admin 95% + portal 75% + 设计系统 95%
 ─────────────────────────────────────────
-综合（5 维均值） ████████████░░░░░░░░  ~62%
+综合（5 维均值） █████████████░░░░░░░  ~66%
 ```
 
 > **协议 scope**：节点能跑什么由 **3x-ui** 上游决定（sspanel 仅借鉴 5 大产品维度，不约束协议）。
@@ -55,12 +55,12 @@ admin moderation of users/plans/orders.
 | Cron：节点探测 | ✅ | — |
 | Cron：流量采集 | ✅ | — |
 | Cron：Webhook 持久化重试 | ✅ | — |
-| Cron：每日/每月流量重置 | ❌ | 全栈缺 |
-| Cron：到期处理 + 过期提醒 | ❌ | 事件常量定义了，没人 publish |
-| Cron：自动续费扣款 | ❌ | 全栈缺 |
+| Cron：每日/每月流量重置 | ❌ | 一次性 plan 模型下暂不需要；recurring plans 引入后再做 |
+| Cron：到期处理 + 过期提醒 | ✅ | ExpiryJob @every 5m，DB flip + client.expired/expiring_soon publish（commit 1c0a183） |
+| Cron：自动续费扣款 | ❌ | 待 #5 add-payment-alipay 一并 |
 | 数据库迁移（启动时自动） | ✅ | — |
 
-**到 100% 缺**：3 个 cron（流量重置 / 到期 / 自动续费）+ 1 个 UI 图表（节点时序）+ 服务端 stats 聚合端点。
+**到 100% 缺**：2 个 cron（traffic-reset 需要 recurring plan 模型先到位 / 自动续费在 #5 一并）+ 1 个 UI 图表（节点时序）+ 服务端 stats 聚合端点。
 
 ---
 
@@ -184,7 +184,7 @@ admin moderation of users/plans/orders.
 | 维度 | 缺口 | 由哪个 change 承接 |
 |---|---|---|
 | **1. 运维** | (a) Admin UI 4 页：用户管理 / 套餐管理 / 订单管理 / 统计页 | #3 `add-admin-business-views` |
-| | (b) Cron 3 任务：每日/每月流量重置 / 到期处理 + 过期提醒 / 自动续费扣款 | #4 `add-billing-cron-jobs` |
+| | (b) Cron 3 任务：(b1) 流量重置 — 待 recurring plan 模型 / (b2) ✅ 到期处理 + 提醒 (commit `1c0a183`) / (b3) 自动续费 — 待 #5 支付改造 | #4 `add-billing-cron-jobs`（部分交付） |
 | | (c) 节点 CPU/Mem 时序图表（后端有 API） | #3 `add-admin-business-views`（顺带）|
 | **2. 多协议** | (a) Clash 完整模板（proxy-groups + rules + rule-providers + DNS） | ✅ #1 (commit `8170551`) |
 | | (b) Sing-box JSON 输出 | ✅ #1 |
@@ -202,7 +202,7 @@ admin moderation of users/plans/orders.
 | | (c) Slack 适配（含 block-kit 模板） | #7 |
 | | (d) 异步邮件队列（DB 持久化 + retry） | #7 |
 | | (e) 多 SMTP 切换 + 失败 fallback | #7 |
-| | (f) 在 cron 里挂到期/流量阈值的事件 publisher | #4（cron 实做时一并） |
+| | (f) 在 cron 里挂到期/流量阈值的事件 publisher | ✅ #4 (commit `1c0a183`) — ExpiryJob publishes client.expired + client.expiring_soon; over_limit 已在 traffic.evaluateRules |
 | **5. 用户界面** | (a) Portal 4 页：订阅 / 套餐 / 订单 / 资料 | ✅ #2 (commit `263dbc4`) |
 | | (b) Portal 仪表盘扩充（流量图表替换 stub） | ✅ #2 |
 | | (c) Admin 4 页：用户 / 套餐 / 订单 / 统计 | ✅ #3 (commit `08553c3`) |
@@ -221,8 +221,8 @@ admin moderation of users/plans/orders.
 | 1 | `add-subscription-converter` | 多协议 | 67% → 85%（实际达成） | ✅ shipped `8170551` (2026-05-20) |
 | 2 | `add-portal-views` | 用户界面 | 50% → 75%（实际达成） | ✅ shipped `263dbc4` (2026-05-20) |
 | 3 | `add-admin-business-views` | 用户界面 + 运维 | UI 75%→90% / 运维 60%→75%（实际达成） | ✅ shipped `08553c3` (2026-05-20) |
-| 4 | `add-billing-cron-jobs` | 运维 | 75% → 90% | ❌ 未开（**下一焦点**） |
-| 5 | `add-payment-alipay` | 支付 | 20% → 45% | ❌ 未开 |
+| 4 | `add-billing-cron-jobs` | 运维 + 通知 | 运维 75%→85% / 通知 40%→50%（部分） | ⚠️ partial (commit `1c0a183`)：到期 cron 已交付；traffic-reset + 自动续费等 #5 |
+| 5 | `add-payment-alipay` | 支付 | 20% → 45%（同时带 auto-renewal cron + recurring plan） | ❌ 未开（**下一焦点**） |
 | 6 | `add-payment-stripe` | 支付 | 45% → 60% | ❌ 未开 |
 | 7 | `add-notification-channels` | 通知 | 40% → 80% | ❌ 未开 |
 | 8 | `add-protocol-wireguard` | 多协议 | 节点 4/5 → 5/5（WireGuard runtime/links/sub） | ❌ 未开（低优先级） |
@@ -241,6 +241,7 @@ admin moderation of users/plans/orders.
 | `add-subscription-converter` | 2026-05-20 | 完整 Clash YAML + sing-box JSON + SIP008 + User-Agent 自动选格式 + admin 可覆盖的模板引擎（多协议 67% → 85%） |
 | `add-portal-views` | 2026-05-20 | Portal 5 页（dashboard 重写 + subscription + plans + orders + profile）+ billing API client + nav 扩展（用户界面 50% → 75%） |
 | `add-admin-business-views` | 2026-05-20 | Admin 4 页（users + plans + orders + stats）+ 3 API clients + sidebar 重组为 4 段（运维 60%→75%, UI 75%→90%） |
+| `add-billing-cron-jobs`（部分） | 2026-05-20 | ExpiryJob 接通：DB-side 到期处理 + 警告事件 publisher（client.expired / client.expiring_soon），@every 5m。Traffic-reset + 自动续费推到 #5（运维 75%→85%, 通知 40%→50%） |
 
 ---
 
@@ -254,4 +255,4 @@ admin moderation of users/plans/orders.
 4. 回到这里：把这一项的 ❌/⚠️ → ✅，更新维度百分比、综合百分比、整体进度条
 5. 进度条 ≥ 80% 之前不停
 
-> **当前焦点**：`add-billing-cron-jobs`（# 4）— Cron 3 任务（每日/月流量重置、用户到期处理、自动续费扣款），把 event-bus 里定义的 `client.expired` / `client.over_limit` 事件接通。
+> **当前焦点**：`add-payment-alipay`（# 5）— 支付宝当面付集成（QR 生成 + 回调验签 + 订单状态推进）。同时引入 recurring plan model 解锁 #4 残留的 traffic-reset + 自动续费 cron。
