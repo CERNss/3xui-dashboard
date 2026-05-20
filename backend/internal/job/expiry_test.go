@@ -83,6 +83,8 @@ func newJobWithRealBus(t *testing.T, db *gorm.DB) (*ExpiryJob, *recordingBus) {
 		repository.NewClientOwnershipRepo(db),
 		repository.NewSettingRepo(db),
 		repository.NewUserRepo(db),
+		repository.NewNotificationLogRepo(db),
+		nil, // runtime.Manager nil — tests don't push to real node
 		bus,
 		logger,
 	)

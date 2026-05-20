@@ -29,6 +29,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
+	"github.com/cern/3xui-dashboard/internal/service/notify"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
@@ -153,8 +154,15 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	_ = scheduler.Add("traffic", "@every 60s", trafficJob.RunOnce)
 	webhookRetryJob := job.NewWebhookRetryJob(webhookService, 0, logger)
 	_ = scheduler.Add("webhook-retry", "@every 15s", webhookRetryJob.RunOnce)
-	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, bus, logger)
+	notifyLogRepo := repository.NewNotificationLogRepo(db)
+	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, notifyLogRepo, rtManager, bus, logger)
 	_ = scheduler.Add("expiry", "@every 5m", expiryJob.RunOnce)
+
+	// Notify service — subscribes to client lifecycle events and
+	// dispatches emails to the owning user via mailer. Wired AFTER
+	// the bus + mailer + repos exist; subscriptions register on
+	// Start() and live for the process lifetime.
+	notify.New(bus, mailerSvc, userRepo, ownershipRepo, notifyLogRepo, logger).Start()
 
 	// SPA.
 	web.Register(engine)
