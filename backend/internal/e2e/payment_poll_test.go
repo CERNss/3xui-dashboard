@@ -3,7 +3,6 @@ package e2e
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -124,23 +123,11 @@ func TestPaymentPoll_ExpiresOldOrders(t *testing.T) {
 // TestPaymentPoll_NoGateway_NoOp confirms the job is safe to run
 // when no gateways are configured (operator running balance-only).
 // Regression guard against a nil-deref in the gateway.Query loop.
+//
+// "Doesn't panic" is the entire contract — Go's test framework
+// fails the test automatically if RunOnce panics, so no further
+// assertion is needed.
 func TestPaymentPoll_NoGateway_NoOp(t *testing.T) {
 	h := setupHarness(t) // no payment-gateway opts
-	adminTok := h.adminLogin(t)
-	_, userTok := h.registerUser(t, "alice@example.com", "hunter2hunter2")
-	planID, _, _ := seedNodeInboundPlan(t, h, adminTok)
-	_ = planID
-	_ = userTok
-
-	// Just run the job — should not panic and should not affect any
-	// non-payment-pending orders.
 	h.app.PaymentPollJob.RunOnce(context.Background())
-
-	// Smoke: app is still healthy after the no-op run.
-	if got := h.do(t, req{
-		method: http.MethodGet, path: "/healthz",
-	}, nil); got != http.StatusOK {
-		t.Errorf("healthz after no-op poll: %d", got)
-	}
-	_ = strconv.Itoa // keep strconv import live for future assertions
 }

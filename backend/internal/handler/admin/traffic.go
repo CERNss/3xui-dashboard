@@ -2,7 +2,6 @@ package admin
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -139,6 +138,3 @@ func parseDuration(c *gin.Context, key string, fallback time.Duration) time.Dura
 	}
 	return fallback
 }
-
-// keep go happy on unused imports if a method gets removed
-var _ = strconv.Itoa
