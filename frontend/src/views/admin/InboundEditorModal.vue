@@ -140,7 +140,7 @@ const emit = defineEmits<{
 // Local model — every field 3x-ui's add-inbound modal exposes
 // =========================================================================
 
-type ProtocolName = 'vless' | 'vmess' | 'trojan' | 'shadowsocks'
+type ProtocolName = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard'
 type TransmissionName = 'tcp' | 'ws' | 'grpc' | 'httpupgrade' | 'h2' | 'xhttp' | 'kcp' | 'quic'
 type SecurityName = 'none' | 'tls' | 'reality'
 
@@ -307,6 +307,28 @@ const tabs = [
   { key: 'advanced', label: '高级配置' },
 ] as const
 
+// WireGuard inbounds don't have streamSettings or sniffing —
+// the protocol carries its own UDP transport. Hide those tabs
+// so admins don't fill out fields the panel will ignore.
+const visibleTabs = computed(() => {
+  if (m.value.protocol === 'wireguard') {
+    return tabs.filter((t) => t.key !== 'stream' && t.key !== 'sniffing')
+  }
+  return tabs
+})
+
+// If the protocol flips to wireguard while the user is on a
+// hidden tab, bounce them back to basic — otherwise they see
+// an empty pane.
+watch(
+  () => m.value.protocol,
+  (p) => {
+    if (p === 'wireguard' && (activeTab.value === 'stream' || activeTab.value === 'sniffing')) {
+      activeTab.value = 'basic'
+    }
+  },
+)
+
 // =========================================================================
 // Lifecycle / prefill
 // =========================================================================
@@ -459,6 +481,12 @@ function buildSettings(): object {
   }
   if (mv.protocol === 'shadowsocks') {
     return { clients: [], method: mv.ssMethod, network: mv.ssNetwork }
+  }
+  if (mv.protocol === 'wireguard') {
+    // Empty shell — node generates the server keypair and writes
+    // it back into settings.secretKey on first POST. Peers are
+    // managed by the dashboard's RMW provisioning flow, not here.
+    return { mtu: 1420, secretKey: '', peers: [], noKernelTun: false }
   }
   return { clients: [] }
 }
@@ -669,7 +697,7 @@ const expiryDisplay = computed({
       <!-- Tab bar -->
       <nav class="flex border-b border-surface-200 px-6 dark:border-surface-800">
         <button
-          v-for="t in tabs"
+          v-for="t in visibleTabs"
           :key="t.key"
           class="-mb-px border-b-2 px-4 py-3 text-sm font-medium transition-brand transition"
           :class="
@@ -710,8 +738,12 @@ const expiryDisplay = computed({
               <option value="vmess">vmess</option>
               <option value="trojan">trojan</option>
               <option value="shadowsocks">shadowsocks</option>
+              <option value="wireguard">wireguard</option>
             </select>
           </Row>
+          <p v-if="m.protocol === 'wireguard'" class="text-xs text-surface-500 pl-32">
+            WireGuard：节点端自动生成 server 密钥对；客户端 peer 通过订阅流程下发，无需在此手动管理 clients。
+          </p>
           <Row label="地址">
             <input v-model="m.listen" type="text" class="input" placeholder="留空表示监听所有 IP" />
           </Row>
@@ -778,6 +810,16 @@ const expiryDisplay = computed({
 
           <template v-else-if="m.protocol === 'trojan'">
             <p class="text-xs text-surface-500">Trojan 没有协议级专属配置 — 直接去 Stream tab 配 TLS</p>
+          </template>
+
+          <template v-else-if="m.protocol === 'wireguard'">
+            <p class="text-sm text-surface-700 dark:text-surface-300">
+              WireGuard 没有 Stream / Sniffing 概念 — 节点本身就是 UDP listener。
+              端口 ↑ Basic tab 里填，peers 走订阅 +「下载配置」按钮自动下发。
+            </p>
+            <p class="text-xs text-surface-500">
+              提示：dashboard 要求节点运行 MHSanaei/3x-ui fork（含 WG 模块）+ <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">WG_MASTER_KEY</code> 已配置。
+            </p>
           </template>
         </div>
 

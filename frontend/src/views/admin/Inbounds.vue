@@ -26,7 +26,7 @@ const nodes = ref<Node[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const query = ref('')
-const protocolFilter = ref<'all' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks'>('all')
+const protocolFilter = ref<'all' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard'>('all')
 const expanded = ref<Set<string>>(new Set()) // "nodeID|tag"
 const snapshots = ref<Record<number, NodeSnapshot>>({}) // by node id
 
@@ -563,6 +563,7 @@ function protoColor(p: string): string {
     vmess: 'bg-primary-100 text-primary-800 ring-primary-200',
     trojan: 'bg-amber-100 text-amber-800 ring-amber-200',
     shadowsocks: 'bg-pink-100 text-pink-800 ring-pink-200',
+    wireguard: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
   } as Record<string, string>)[p.toLowerCase()] ?? 'bg-surface-200 text-surface-800 ring-surface-300'
 }
 
@@ -682,7 +683,7 @@ onMounted(reload)
       </div>
       <div class="flex h-9 items-center gap-0.5 rounded-xl border border-surface-200 bg-surface-0 p-1 text-xs dark:border-surface-700 dark:bg-surface-900">
         <button
-          v-for="p in (['all','vless','vmess','trojan','shadowsocks'] as const)"
+          v-for="p in (['all','vless','vmess','trojan','shadowsocks','wireguard'] as const)"
           :key="p"
           class="rounded-lg px-3 py-1 font-medium transition-all duration-150 ease-brand"
           :class="protocolFilter === p

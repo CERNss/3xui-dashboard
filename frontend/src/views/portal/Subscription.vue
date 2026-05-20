@@ -6,21 +6,25 @@ import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
 import { portalTrafficApi } from '@/api/portal/traffic'
 import { formatError } from '@/utils/format'
 
-type Format = 'base64' | 'json' | 'clash' | 'singbox' | 'sip008'
+type Format = 'base64' | 'json' | 'clash' | 'singbox' | 'sip008' | 'wireguard' | 'wireguard-zip'
 
 interface FormatInfo {
   key: Format
   label: string
   hint: string
   apps: string  // suggested apps for this format
+  // downloadOnly: true → suppress copy/QR (binary or attach-only)
+  downloadOnly?: boolean
 }
 
 const formats: FormatInfo[] = [
-  { key: 'base64',  label: 'Base64',   hint: '默认链接束',          apps: 'V2RayN · Shadowrocket' },
-  { key: 'clash',   label: 'Clash',    hint: '完整 Mihomo 配置',    apps: 'Clash Verge · Mihomo · Stash' },
-  { key: 'singbox', label: 'Sing-box', hint: 'sing-box JSON',       apps: 'Sing-box 官方客户端' },
-  { key: 'sip008',  label: 'SIP008',   hint: 'Shadowsocks-only',    apps: 'Shadowsocks 原版应用' },
-  { key: 'json',    label: 'JSON',     hint: 'Xray 原始 config',    apps: '高级用户 / 自托管 Xray' },
+  { key: 'base64',         label: 'Base64',    hint: '默认链接束',          apps: 'V2RayN · Shadowrocket' },
+  { key: 'clash',          label: 'Clash',     hint: '完整 Mihomo 配置',    apps: 'Clash Verge · Mihomo · Stash' },
+  { key: 'singbox',        label: 'Sing-box',  hint: 'sing-box JSON',       apps: 'Sing-box 官方客户端' },
+  { key: 'sip008',         label: 'SIP008',    hint: 'Shadowsocks-only',    apps: 'Shadowsocks 原版应用' },
+  { key: 'wireguard',      label: 'WireGuard', hint: 'wg-quick .conf',      apps: 'WireGuard App · TunSafe' },
+  { key: 'wireguard-zip',  label: 'WG (ZIP)',  hint: '多 peer 打包下载',     apps: 'WireGuard App （每节点单文件）', downloadOnly: true },
+  { key: 'json',           label: 'JSON',      hint: 'Xray 原始 config',    apps: '高级用户 / 自托管 Xray' },
 ]
 
 const profile = ref<UserProfile | null>(null)
@@ -36,6 +40,8 @@ const subURL = computed(() => {
   const base = location.origin + '/sub/' + profile.value.sub_id
   return activeFormat.value === 'base64' ? base : base + '?format=' + activeFormat.value
 })
+
+const activeFormatInfo = computed(() => formats.find((f) => f.key === activeFormat.value))
 
 async function load() {
   loading.value = true
@@ -65,6 +71,10 @@ async function regenerateQR() {
   // Clear immediately so the user sees the placeholder during regen
   // instead of a stale QR with the wrong format label below it.
   qrDataURL.value = ''
+  // Download-only formats don't roundtrip through QR — the binary
+  // body can't be scanned and the URL is the same one the download
+  // button already exposes.
+  if (activeFormatInfo.value?.downloadOnly) return
   try {
     const url = await QRCode.toDataURL(subURL.value, {
       width: 260,
@@ -159,11 +169,21 @@ watch([subURL, activeFormat], regenerateQR, { immediate: true })
           </div>
         </div>
 
-        <!-- URL display + copy -->
+        <!-- URL display + copy / download -->
         <div class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
           <div class="flex items-center justify-between">
-            <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">订阅 URL</h2>
+            <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ activeFormatInfo?.downloadOnly ? '下载链接' : '订阅 URL' }}</h2>
+            <a
+              v-if="activeFormatInfo?.downloadOnly"
+              :href="subURL"
+              download
+              class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500"
+            >
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+              下载文件
+            </a>
             <button
+              v-else
               type="button"
               class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500"
               @click="copyURL"
@@ -188,15 +208,24 @@ watch([subURL, activeFormat], regenerateQR, { immediate: true })
         </div>
       </div>
 
-      <!-- Right: QR -->
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
+      <!-- Right: QR (hidden for download-only formats where scanning makes no sense) -->
+      <div v-if="!activeFormatInfo?.downloadOnly" class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
         <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">扫描二维码</h2>
         <p class="mt-1 text-xs text-surface-500">手机客户端直接扫码导入</p>
         <div class="mt-4 flex aspect-square items-center justify-center rounded-2xl border border-surface-100 bg-surface-50 p-3 dark:border-surface-800 dark:bg-surface-800">
           <img v-if="qrDataURL" :src="qrDataURL" alt="subscription QR" class="h-full w-full rounded-lg" />
           <div v-else class="text-2xs text-surface-400">生成中…</div>
         </div>
-        <p class="mt-3 text-center text-2xs text-surface-400">{{ formats.find(f => f.key === activeFormat)?.label }} 格式</p>
+        <p class="mt-3 text-center text-2xs text-surface-400">{{ activeFormatInfo?.label }} 格式</p>
+      </div>
+      <!-- Download-only fallback: gentle prompt to use the download button -->
+      <div v-else class="rounded-2xl border border-surface-100 bg-surface-0 p-5 dark:border-surface-800 dark:bg-surface-900">
+        <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">下载即用</h2>
+        <p class="mt-1 text-xs text-surface-500">这是个二进制 / 多文件格式，点左侧「下载文件」保存到本地</p>
+        <div class="mt-4 flex aspect-square items-center justify-center rounded-2xl border border-surface-100 bg-surface-50 p-6 dark:border-surface-800 dark:bg-surface-800">
+          <svg class="h-16 w-16 text-surface-300 dark:text-surface-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+        </div>
+        <p class="mt-3 text-center text-2xs text-surface-400">{{ activeFormatInfo?.label }} 格式</p>
       </div>
     </section>
   </div>
