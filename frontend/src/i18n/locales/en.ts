@@ -8,6 +8,10 @@ export default {
     portal: 'Portal',
     logout: 'Log out',
     dashboard: 'Dashboard',
+    status: 'Status',
+    nodes: 'Nodes',
+    inbounds: 'Inbounds',
+    settings: 'Settings',
   },
   auth: {
     login: 'Log in',

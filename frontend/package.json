@@ -14,6 +14,8 @@
     "e2e:install": "playwright install chromium"
   },
   "dependencies": {
+    "@fontsource/geist-mono": "^5.2.8",
+    "@fontsource/geist-sans": "^5.2.5",
     "@vueuse/core": "^10.7.0",
     "axios": "^1.7.0",
     "pinia": "^2.1.7",

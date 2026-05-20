@@ -11,9 +11,36 @@
 
   body {
     @apply bg-surface-50 text-surface-900 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
   }
 
   :root.dark body {
     @apply bg-surface-950 text-surface-100;
+  }
+
+  /* Consistent focus ring — keyboard only, never removed. */
+  :focus-visible {
+    outline: 2px solid theme('colors.accent.500');
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Reduced-motion: kill every animation/transition. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Brand-eased transitions for hand-rolled UI elements. */
+  .transition-brand {
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   }
 }

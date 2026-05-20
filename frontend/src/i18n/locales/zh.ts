@@ -8,6 +8,10 @@ export default {
     portal: '用户中心',
     logout: '退出登录',
     dashboard: '概览',
+    status: '系统状态',
+    nodes: '节点列表',
+    inbounds: '入站列表',
+    settings: '面板设置',
   },
   auth: {
     login: '登录',

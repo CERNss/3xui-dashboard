@@ -10,23 +10,41 @@ import { usePortalAuthStore } from '@/stores/portalAuth'
 
 // ---- Admin route tree ------------------------------------------------------
 const adminRoutes: RouteRecordRaw[] = [
+  // Legacy alias — preserve old bookmarks. Redirects to unified /login.
   {
     path: '/admin/login',
-    name: 'admin.login',
-    component: () => import('@/views/admin/Login.vue'),
-    meta: { titleKey: 'auth.login' },
+    redirect: (to) => ({ path: '/login', query: { ...to.query, hint: 'admin' } }),
   },
   {
     path: '/admin',
     component: () => import('@/components/layout/AdminLayout.vue'),
     meta: { requiresAdmin: true },
     children: [
-      { path: '', redirect: { name: 'admin.dashboard' } },
+      { path: '', redirect: { name: 'admin.status' } },
+      { path: 'dashboard', redirect: { name: 'admin.status' } }, // legacy bookmark
       {
-        path: 'dashboard',
-        name: 'admin.dashboard',
-        component: () => import('@/views/admin/Dashboard.vue'),
-        meta: { requiresAdmin: true, titleKey: 'nav.dashboard' },
+        path: 'status',
+        name: 'admin.status',
+        component: () => import('@/views/admin/Status.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.status' },
+      },
+      {
+        path: 'nodes',
+        name: 'admin.nodes',
+        component: () => import('@/views/admin/Nodes.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.nodes' },
+      },
+      {
+        path: 'inbounds',
+        name: 'admin.inbounds',
+        component: () => import('@/views/admin/Inbounds.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.inbounds' },
+      },
+      {
+        path: 'settings',
+        name: 'admin.settings',
+        component: () => import('@/views/admin/Settings.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.settings' },
       },
     ],
   },
@@ -34,11 +52,10 @@ const adminRoutes: RouteRecordRaw[] = [
 
 // ---- Portal route tree -----------------------------------------------------
 const portalRoutes: RouteRecordRaw[] = [
+  // Legacy alias — preserve old bookmarks. Redirects to unified /login.
   {
     path: '/portal/login',
-    name: 'portal.login',
-    component: () => import('@/views/portal/Login.vue'),
-    meta: { titleKey: 'auth.login' },
+    redirect: (to) => ({ path: '/login', query: { ...to.query, hint: 'portal' } }),
   },
   {
     path: '/portal/register',
@@ -63,7 +80,17 @@ const portalRoutes: RouteRecordRaw[] = [
 ]
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/portal' },
+  // Unified login — single entrypoint for both admin and portal users.
+  // Picks which auth endpoint to hit based on credentials + optional ?hint=.
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/Login.vue'),
+    meta: { titleKey: 'auth.login' },
+  },
+  // Root — admin store has priority since fleet operators are the heavy users.
+  // Unauthenticated visitors get bounced to /login by the guard below.
+  { path: '/', redirect: '/admin' },
   ...adminRoutes,
   ...portalRoutes,
   {
@@ -82,13 +109,13 @@ const authGuard: NavigationGuardWithThis<undefined> = (to) => {
   if (to.meta.requiresAdmin) {
     const adminAuth = useAdminAuthStore()
     if (!adminAuth.isAuthenticated) {
-      return { name: 'admin.login', query: { next: to.fullPath } }
+      return { name: 'login', query: { next: to.fullPath, hint: 'admin' } }
     }
   }
   if (to.meta.requiresUser) {
     const portalAuth = usePortalAuthStore()
     if (!portalAuth.isAuthenticated) {
-      return { name: 'portal.login', query: { next: to.fullPath } }
+      return { name: 'login', query: { next: to.fullPath, hint: 'portal' } }
     }
   }
   return true
