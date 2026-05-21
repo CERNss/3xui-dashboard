@@ -107,6 +107,27 @@ async function copyURL() {
   }
 }
 
+// Sub URL rotation — invalidates the old /sub/<id> immediately.
+// No confirm modal beyond the inline hint; the action is reversible
+// only by re-rotating (no recovery of the previous URL), but the
+// blast radius is limited to "user re-imports URL on their devices".
+const rotating = ref(false)
+const rotateErr = ref<string | null>(null)
+
+async function rotateSubID() {
+  if (!confirm('确认重新生成订阅 URL？旧链接立即失效，所有设备需要重新导入。')) return
+  rotating.value = true
+  rotateErr.value = null
+  try {
+    const { sub_id } = await portalProfileApi.rotateSubID()
+    if (profile.value) profile.value.sub_id = sub_id
+  } catch (e: any) {
+    rotateErr.value = formatError(e, '重新生成失败')
+  } finally {
+    rotating.value = false
+  }
+}
+
 onMounted(load)
 watch([subURL, activeFormat], regenerateQR, { immediate: true })
 </script>
@@ -194,6 +215,18 @@ watch([subURL, activeFormat], regenerateQR, { immediate: true })
             </button>
           </div>
           <p class="mt-3 break-all rounded-xl bg-surface-50 px-3.5 py-3 font-mono text-xs text-surface-600 dark:bg-surface-800 dark:text-surface-300">{{ subURL }}</p>
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <p class="text-2xs text-surface-500">URL 泄露后可重新生成 — 旧链接立即失效，需要重新分发给所有设备</p>
+            <button
+              type="button"
+              :disabled="rotating"
+              class="shrink-0 rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/40"
+              @click="rotateSubID"
+            >
+              {{ rotating ? '处理中…' : '重新生成' }}
+            </button>
+          </div>
+          <p v-if="rotateErr" class="mt-2 rounded-lg bg-red-50 px-2.5 py-1.5 text-2xs text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300">{{ rotateErr }}</p>
         </div>
 
         <!-- Quick how-to -->

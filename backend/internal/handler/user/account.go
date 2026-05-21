@@ -28,6 +28,7 @@ func (h *AccountHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/profile", h.Profile)
 	rg.POST("/change-password", h.ChangePassword)
 	rg.POST("/bind-email", h.BindEmail)
+	rg.POST("/rotate-sub-id", h.RotateSubID)
 }
 
 // Profile returns the authenticated user's row.
@@ -107,6 +108,22 @@ func (h *AccountHandler) BindEmail(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// RotateSubID rotates the authenticated user's sub_id. The old
+// /sub/:oldID immediately 404s; clients need to re-import the URL.
+// Empty body — no params to send.
+func (h *AccountHandler) RotateSubID(c *gin.Context) {
+	userID, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	newID, err := h.users.RotateSubID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sub_id": newID})
 }
 
 func (h *AccountHandler) subject(c *gin.Context) (int64, bool) {

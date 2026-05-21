@@ -109,12 +109,20 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// attacker can't brute-force from a single source. Defaults:
 	// 10 attempts/min/IP. Other routes are unthrottled; auth
 	// failures past the limit return 429 with Retry-After.
-	loginLimiter := middleware.LoginRateLimiter(10, 10, time.Minute)
+	loginLimiter := middleware.IPRateLimiter(10, 10, time.Minute)
 	apiAdmin := engine.Group("/api/admin", loginLimiter)
 	adminAuth.RegisterRoutes(apiAdmin)
 	apiAdminAuthed := engine.Group("/api/admin", middleware.RequireAdmin(authSvc))
 	apiUser := engine.Group("/api/user", loginLimiter)
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireUser(authSvc))
+
+	// /sub/:subId is unauthenticated — anyone holding a sub_id
+	// gets the user's WG private keys + full link bundle. sub_id
+	// is 8 hex chars (32 bits) so theoretical bruteforce takes
+	// long, but a leaked one needs to be hard to keep scraping.
+	// 60/min per IP gives legit clients (apps refresh ~every 12h)
+	// huge headroom while still rate-limiting a bruteforce.
+	subLimiter := middleware.IPRateLimiter(60, 60, time.Minute)
 
 	// Event bus.
 	bus := event.New()
@@ -174,7 +182,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	if wgProvisioner != nil {
 		subAsm.SetWGPeerSource(&subWGAdapter{prov: wgProvisioner})
 	}
-	publichandler.NewSubHandler(subAsm, settingRepo, "", logger).RegisterRoutes(engine)
+	publichandler.NewSubHandler(subAsm, settingRepo, "", logger).RegisterRoutes(engine, subLimiter)
 
 	// User accounts.
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)

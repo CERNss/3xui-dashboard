@@ -207,6 +207,37 @@ func (s *Service) BindEmail(ctx context.Context, userID int64, email string) err
 // trigger a token email and only set verified=true after the link is
 // clicked.
 
+// RotateSubID gives the user a fresh sub_id and invalidates the old
+// one. Used when a sub URL has been shared / leaked: the old
+// /sub/:oldID immediately starts returning 404 because the assembler
+// looks up by sub_id and no row matches.
+//
+// Side effects:
+//   - Any cached subscription on the user's existing devices breaks
+//     until they re-import the new URL. That's intentional — the
+//     whole point is to revoke the old surface.
+//   - Existing ClientOwnership rows are NOT touched; the panel-side
+//     clients use email (subID-derived) but the email column on
+//     those rows is the OLD sub_id and stays valid. So WG peers,
+//     Hysteria auth, etc. on the node keep working — only the
+//     /sub URL changes.
+//   - Returns the new sub_id so the handler can echo it back.
+func (s *Service) RotateSubID(ctx context.Context, userID int64) (string, error) {
+	newID, err := generateSubID()
+	if err != nil {
+		return "", err
+	}
+	if err := s.users.Update(ctx, userID, map[string]any{
+		"sub_id": newID,
+	}); err != nil {
+		return "", fmt.Errorf("RotateSubID: %w", err)
+	}
+	s.log.Info("rotated sub_id",
+		slog.Int64("user_id", userID),
+	)
+	return newID, nil
+}
+
 // ---- OIDC stubs ----------------------------------------------------------
 
 // OIDCStart would generate state + PKCE verifier and return the

@@ -19,4 +19,6 @@ export const portalProfileApi = {
     }),
   bindEmail: (email: string) =>
     portalClient.post<{ status: string }>('/bind-email', { email }),
+  rotateSubID: () =>
+    portalClient.post<{ sub_id: string }>('/rotate-sub-id').then((r) => r.data),
 }

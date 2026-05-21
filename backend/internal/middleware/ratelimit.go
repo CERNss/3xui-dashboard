@@ -8,21 +8,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// LoginRateLimiter returns a per-IP rate-limit middleware suitable
-// for /login endpoints. It uses a simple token bucket — `burst`
-// tokens replenish at `refill` over `window`. Callers above the
-// rate get HTTP 429 with a Retry-After hint.
+// IPRateLimiter returns a per-IP rate-limit middleware. Token
+// bucket: `burst` tokens replenish at `refill` over `window`.
+// Callers above the rate get HTTP 429 with a Retry-After hint.
+//
+// Used by:
+//   - /login (block password-spray)
+//   - /sub/:subId (block sub_id enumeration — leaking sub_id =
+//     handing out a user's WG private keys + traffic stats,
+//     so the bruteforce surface needs to be slow)
 //
 // The bucket map is unbounded (one entry per source IP) but each
 // entry is small and self-prunes on access — older entries are
 // evicted on the next sweep that finds them idle for >2×window.
-// For a login endpoint that's fine; for a high-fan-in API we'd
+// For these endpoints that's fine; for a high-fan-in API we'd
 // want a proper LRU.
-//
-// Defaults sized for login: 10 attempts per minute per IP. That
-// blocks an obvious password-spray attempt while not interrupting
-// a user who legitimately mistyped 3 times in a row.
-func LoginRateLimiter(burst int, refill int, window time.Duration) gin.HandlerFunc {
+func IPRateLimiter(burst int, refill int, window time.Duration) gin.HandlerFunc {
 	if burst <= 0 {
 		burst = 10
 	}
@@ -109,6 +110,13 @@ func LoginRateLimiter(burst int, refill int, window time.Duration) gin.HandlerFu
 
 		c.Next()
 	}
+}
+
+// LoginRateLimiter is the legacy alias for IPRateLimiter; kept so
+// existing callers don't churn. New call sites should use the
+// generic name.
+func LoginRateLimiter(burst int, refill int, window time.Duration) gin.HandlerFunc {
+	return IPRateLimiter(burst, refill, window)
 }
 
 // itoa is a tiny strconv.Itoa replacement so we don't pull strconv

@@ -60,15 +60,25 @@ func NewSubHandler(a *sub.Assembler, settings *repository.SettingRepo, remarkFmt
 // Two access patterns supported:
 //   /sub/:subId          — format selected by ?format= or User-Agent
 //   /sub/<format>/:subId — explicit format in the path (legacy + clarity)
-func (h *SubHandler) RegisterRoutes(r *gin.Engine) {
-	r.GET("/sub/:subId", h.Auto)
+//
+// `limiter` is an optional per-IP rate-limit middleware. nil falls
+// back to no limit (test fixtures); production wires the same
+// middleware.IPRateLimiter the login endpoint uses, since a
+// successful sub fetch hands out the user's WG private keys + the
+// full traffic snapshot — abuse surface that warrants throttling.
+func (h *SubHandler) RegisterRoutes(r *gin.Engine, limiter gin.HandlerFunc) {
+	group := r.Group("/sub")
+	if limiter != nil {
+		group.Use(limiter)
+	}
+	group.GET("/:subId", h.Auto)
 	// Explicit-format routes for direct linking.
-	r.GET("/sub/json/:subId", h.bind(FormatJSON))
-	r.GET("/sub/clash/:subId", h.bind(FormatClash))
-	r.GET("/sub/singbox/:subId", h.bind(FormatSingBox))
-	r.GET("/sub/sip008/:subId", h.bind(FormatSIP008))
-	r.GET("/sub/wireguard/:subId", h.bind(FormatWireGuard))
-	r.GET("/sub/wireguard-zip/:subId", h.bind(FormatWGZip))
+	group.GET("/json/:subId", h.bind(FormatJSON))
+	group.GET("/clash/:subId", h.bind(FormatClash))
+	group.GET("/singbox/:subId", h.bind(FormatSingBox))
+	group.GET("/sip008/:subId", h.bind(FormatSIP008))
+	group.GET("/wireguard/:subId", h.bind(FormatWireGuard))
+	group.GET("/wireguard-zip/:subId", h.bind(FormatWGZip))
 }
 
 // Auto picks the format from ?format= or User-Agent and dispatches.
