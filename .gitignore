@@ -9,6 +9,9 @@
 /backend/bin/
 /backend/data/
 /backend/tmp/
+# Stray `go build ./cmd/dashboard` artifact (the binary lands in
+# backend/ if -o isn't passed). Don't track.
+/backend/dashboard
 # Embedded frontend build output produced into backend/internal/web/dist
 # (keep the directory + .gitkeep so go:embed compiles even before a build)
 /backend/internal/web/dist/*
