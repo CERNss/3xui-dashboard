@@ -1,0 +1,477 @@
+name: Release
+
+# Crossed DAG: init → validate → (build-binaries, publish-docker) → publish-github.
+#
+# Triggered by pushing a v* tag (e.g. `v1.0.0`) or by manual dispatch
+# with an explicit tag input. The same release_ref is used end-to-end
+# so a mid-flight push to main can't poison the release.
+#
+# Validate + build stages run inside the operator-provided
+# cernss/git-action-* images (hermetic, same image set as
+# sub2api-sidecar's release pipeline — Go variant). PR-feedback CI
+# uses native actions/setup-go for speed instead.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.0.0)'
+        required: true
+        type: string
+      platforms:
+        description: 'Docker platforms (blank = use DOCKER_PLATFORMS var; default linux/amd64,linux/arm64)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  PUBLISH_LATEST_TAG: ${{ vars.PUBLISH_LATEST_TAG || secrets.PUBLISH_LATEST_TAG || 'true' }}
+  VALIDATION_IMAGE: ${{ vars.VALIDATION_IMAGE || secrets.VALIDATION_IMAGE || 'cernss/git-action-golang-cicd-validate' }}
+  BUILD_IMAGE: ${{ vars.BUILD_IMAGE || secrets.BUILD_IMAGE || 'cernss/git-action-golang-cicd-build' }}
+  FRONTEND_VALIDATE_IMAGE: ${{ vars.FRONTEND_VALIDATE_IMAGE || secrets.FRONTEND_VALIDATE_IMAGE || 'cernss/git-action-typescript-cicd-validate' }}
+  FRONTEND_BUILD_IMAGE: ${{ vars.FRONTEND_BUILD_IMAGE || secrets.FRONTEND_BUILD_IMAGE || 'cernss/git-action-typescript-cicd-build' }}
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    outputs:
+      release_ref: ${{ steps.release.outputs.release_ref }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      release_version: ${{ steps.release.outputs.release_version }}
+      platforms: ${{ steps.platforms.outputs.platforms }}
+      image_name: ${{ steps.meta.outputs.image_name }}
+      bundle_name: ${{ steps.meta.outputs.bundle_name }}
+      ghcr_registry: ${{ steps.meta.outputs.ghcr_registry }}
+      ghcr_repository: ${{ steps.meta.outputs.ghcr_repository }}
+      ghcr_username: ${{ steps.meta.outputs.ghcr_username }}
+      dockerhub_repository: ${{ steps.meta.outputs.dockerhub_repository }}
+      dockerhub_username: ${{ steps.meta.outputs.dockerhub_username }}
+    steps:
+      - name: Resolve release context
+        id: release
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG_NAME="${INPUT_TAG}"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+          fi
+          TAG_NAME="${TAG_NAME#refs/tags/}"
+          if [ -z "${TAG_NAME}" ]; then
+            echo "Release tag is required"; exit 1
+          fi
+          case "${TAG_NAME}" in
+            v*) ;;
+            *) echo "Release tag must start with v: ${TAG_NAME}"; exit 1 ;;
+          esac
+          {
+            echo "release_ref=${TAG_NAME}"
+            echo "release_tag=${TAG_NAME}"
+            echo "release_version=${TAG_NAME#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Docker platforms
+        id: platforms
+        shell: bash
+        env:
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+          VAR_PLATFORMS: ${{ vars.DOCKER_PLATFORMS || secrets.DOCKER_PLATFORMS }}
+        run: |
+          set -euo pipefail
+          PLATFORMS="${INPUT_PLATFORMS:-${VAR_PLATFORMS:-linux/amd64,linux/arm64}}"
+          echo "platforms=${PLATFORMS}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve image metadata
+        id: meta
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.release_version }}
+          RAW_IMAGE_NAME: ${{ vars.IMAGE_NAME || secrets.IMAGE_NAME }}
+          DEFAULT_IMAGE_NAME: ${{ github.event.repository.name }}
+          RAW_GHCR_NAMESPACE: ${{ vars.GHCR_NAMESPACE || secrets.GHCR_NAMESPACE }}
+          DEFAULT_GHCR_NAMESPACE: ${{ github.repository_owner }}
+          RAW_GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || vars.GHCR_USERNAME }}
+          DEFAULT_GHCR_USERNAME: ${{ github.repository_owner }}
+          RAW_DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_NAMESPACE }}
+          RAW_DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
+          RAW_DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN || vars.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
+          IMAGE_NAME="$(lower "${RAW_IMAGE_NAME:-$DEFAULT_IMAGE_NAME}")"
+          BUNDLE_NAME="${IMAGE_NAME}-${RELEASE_VERSION}.tar.gz"
+
+          GHCR_USERNAME="${RAW_GHCR_USERNAME:-$DEFAULT_GHCR_USERNAME}"
+          GHCR_NAMESPACE="$(lower "${RAW_GHCR_NAMESPACE:-$DEFAULT_GHCR_NAMESPACE}")"
+          GHCR_REPOSITORY="ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}"
+          GHCR_REGISTRY="ghcr.io"
+
+          DOCKERHUB_USERNAME="${RAW_DOCKERHUB_USERNAME:-}"
+          DOCKERHUB_NAMESPACE="${RAW_DOCKERHUB_NAMESPACE:-$DOCKERHUB_USERNAME}"
+          if [ -n "$DOCKERHUB_NAMESPACE" ] && [ -n "$DOCKERHUB_USERNAME" ] && [ -n "${RAW_DOCKERHUB_TOKEN:-}" ]; then
+            DOCKERHUB_REPOSITORY="$(lower "${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}")"
+          else
+            DOCKERHUB_REPOSITORY="skip"
+          fi
+
+          {
+            echo "image_name=${IMAGE_NAME}"
+            echo "bundle_name=${BUNDLE_NAME}"
+            echo "ghcr_registry=${GHCR_REGISTRY}"
+            echo "ghcr_repository=${GHCR_REPOSITORY}"
+            echo "ghcr_username=${GHCR_USERNAME}"
+            echo "dockerhub_repository=${DOCKERHUB_REPOSITORY}"
+            echo "dockerhub_username=${DOCKERHUB_USERNAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate GHCR credentials
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.meta.outputs.ghcr_registry }}
+          username: ${{ steps.meta.outputs.ghcr_username }}
+          password: ${{ secrets.GHCR_TOKEN || vars.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Validate DockerHub credentials
+        if: ${{ steps.meta.outputs.dockerhub_repository != 'skip' }}
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ steps.meta.outputs.dockerhub_username }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || vars.DOCKERHUB_TOKEN }}
+
+  validate:
+    needs: [init]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.init.outputs.release_ref }}
+
+      - name: Verify Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker info >/dev/null 2>&1; then
+            echo "Docker is required for validate stage."
+            exit 1
+          fi
+
+      # Hermetic validate: postgres + golang validate image on a
+      # private docker network. Mirrors sub2api-sidecar's pattern but
+      # swapped to the Go variant of the operator's CI image set.
+      - name: Validate backend in Go container
+        shell: bash
+        env:
+          GOLANG_VALIDATE_IMAGE: ${{ env.VALIDATION_IMAGE }}
+        run: |
+          set -euo pipefail
+
+          POSTGRES_IMAGE="postgres:16-alpine"
+          NETWORK="3xui-dashboard-validate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          POSTGRES_CONTAINER="3xui-dashboard-validate-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          cleanup() {
+            docker rm -f "${POSTGRES_CONTAINER}" >/dev/null 2>&1 || true
+            docker network rm "${NETWORK}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker pull "${GOLANG_VALIDATE_IMAGE}"
+          docker pull "${POSTGRES_IMAGE}"
+          docker network create "${NETWORK}"
+
+          docker run -d \
+            --name "${POSTGRES_CONTAINER}" \
+            --network "${NETWORK}" \
+            -e POSTGRES_DB=dashboard_ci \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=ci \
+            "${POSTGRES_IMAGE}"
+
+          for attempt in $(seq 1 30); do
+            if docker exec "${POSTGRES_CONTAINER}" pg_isready -U postgres -d dashboard_ci >/dev/null 2>&1; then
+              break
+            fi
+            if [ "${attempt}" -eq 30 ]; then
+              docker logs "${POSTGRES_CONTAINER}" || true
+              echo "PostgreSQL did not become ready for validation."
+              exit 1
+            fi
+            sleep 1
+          done
+
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            --network "${NETWORK}" \
+            -e HOME=/tmp/go-home \
+            -e GOCACHE=/tmp/go-cache \
+            -e GOMODCACHE=/tmp/go-modcache \
+            -e INTEGRATION_DB_URL="postgres://postgres:ci@${POSTGRES_CONTAINER}:5432/dashboard_ci?sslmode=disable" \
+            -v "${PWD}:/work" \
+            -w /work/backend \
+            "${GOLANG_VALIDATE_IMAGE}" \
+            bash -lc '
+              set -euo pipefail
+              go vet ./...
+              go build ./...
+              go test ./...
+              go test -p 1 \
+                ./internal/repository/... \
+                ./internal/job/... \
+                ./internal/service/billing/... \
+                ./internal/service/verification/... \
+                ./internal/service/messages/... \
+                ./internal/service/notify/...
+            '
+
+      - name: Validate frontend in TypeScript container
+        shell: bash
+        env:
+          FRONTEND_VALIDATE_IMAGE: ${{ env.FRONTEND_VALIDATE_IMAGE }}
+        run: |
+          set -euo pipefail
+          docker pull "${FRONTEND_VALIDATE_IMAGE}"
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp/npm-home \
+            -v "${PWD}:/work" \
+            -w /work/frontend \
+            "${FRONTEND_VALIDATE_IMAGE}" \
+            bash -lc '
+              set -euo pipefail
+              npm ci --no-audit --no-fund
+              npm test --silent
+            '
+
+  build-binaries:
+    needs: [init, validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.init.outputs.release_ref }}
+
+      - name: Verify Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker info >/dev/null 2>&1 || { echo "Docker required"; exit 1; }
+
+      # The SPA is embedded into the Go binary via //go:embed —
+      # frontend builds first, output lands at
+      # backend/internal/web/dist, then Go embeds it.
+      - name: Build frontend SPA in TypeScript container
+        shell: bash
+        env:
+          FRONTEND_BUILD_IMAGE: ${{ env.FRONTEND_BUILD_IMAGE }}
+        run: |
+          set -euo pipefail
+          docker pull "${FRONTEND_BUILD_IMAGE}"
+          rm -rf backend/internal/web/dist frontend/node_modules
+          mkdir -p backend/internal/web/dist
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp/npm-home \
+            -v "${PWD}:/work" \
+            -w /work/frontend \
+            "${FRONTEND_BUILD_IMAGE}" \
+            bash -lc '
+              set -euo pipefail
+              npm ci --no-audit --no-fund
+              npm run build
+            '
+          test -f backend/internal/web/dist/index.html
+
+      - name: Build Go binaries in Go build container
+        shell: bash
+        env:
+          GOLANG_BUILD_IMAGE: ${{ env.BUILD_IMAGE }}
+          RELEASE_VERSION: ${{ needs.init.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          docker pull "${GOLANG_BUILD_IMAGE}"
+          mkdir -p .release-binaries
+
+          # Cross-compile for both target arches in one container
+          # invocation. CGO disabled so the resulting binary is a
+          # fully static ELF with no glibc dependency.
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp/go-home \
+            -e GOCACHE=/tmp/go-cache \
+            -e GOMODCACHE=/tmp/go-modcache \
+            -e CGO_ENABLED=0 \
+            -e RELEASE_VERSION="${RELEASE_VERSION}" \
+            -v "${PWD}:/work" \
+            -w /work/backend \
+            "${GOLANG_BUILD_IMAGE}" \
+            bash -lc '
+              set -euo pipefail
+              for arch in amd64 arm64; do
+                bin="../.release-binaries/dashboard-linux-${arch}"
+                GOOS=linux GOARCH="${arch}" \
+                  go build \
+                    -trimpath \
+                    -ldflags="-s -w -X main.version=${RELEASE_VERSION}" \
+                    -o "${bin}" \
+                    ./cmd/dashboard
+                ( cd "$(dirname "${bin}")" && sha256sum "$(basename "${bin}")" > "$(basename "${bin}").sha256" )
+              done
+            '
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binaries
+          path: .release-binaries
+          retention-days: 7
+
+  publish-docker:
+    needs: [init, validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.init.outputs.release_ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.init.outputs.ghcr_registry }}
+          username: ${{ needs.init.outputs.ghcr_username }}
+          password: ${{ secrets.GHCR_TOKEN || vars.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Login to DockerHub
+        if: ${{ needs.init.outputs.dockerhub_repository != 'skip' }}
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ needs.init.outputs.dockerhub_username }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || vars.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        env:
+          GHCR_REPOSITORY: ${{ needs.init.outputs.ghcr_repository }}
+          DOCKERHUB_REPOSITORY: ${{ needs.init.outputs.dockerhub_repository }}
+          RELEASE_TAG: ${{ needs.init.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.init.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          TAGS="${GHCR_REPOSITORY}:${RELEASE_TAG},${GHCR_REPOSITORY}:${RELEASE_VERSION}"
+          if [ "${PUBLISH_LATEST_TAG}" != "false" ]; then
+            TAGS="${TAGS},${GHCR_REPOSITORY}:latest"
+          fi
+          if [ "${DOCKERHUB_REPOSITORY}" != "skip" ]; then
+            TAGS="${TAGS},${DOCKERHUB_REPOSITORY}:${RELEASE_TAG},${DOCKERHUB_REPOSITORY}:${RELEASE_VERSION}"
+            if [ "${PUBLISH_LATEST_TAG}" != "false" ]; then
+              TAGS="${TAGS},${DOCKERHUB_REPOSITORY}:latest"
+            fi
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: ${{ needs.init.outputs.platforms }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.init.outputs.release_version }}
+
+  publish-github:
+    needs: [init, build-binaries, publish-docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.init.outputs.release_ref }}
+
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: release-binaries
+          path: .release-binaries
+
+      - name: Compose release notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.init.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.init.outputs.release_version }}
+          PLATFORMS: ${{ needs.init.outputs.platforms }}
+          GHCR_REPOSITORY: ${{ needs.init.outputs.ghcr_repository }}
+          DOCKERHUB_REPOSITORY: ${{ needs.init.outputs.dockerhub_repository }}
+        run: |
+          set -euo pipefail
+          TAG_MESSAGE="$(git tag -l --format='%(contents:body)' "${RELEASE_TAG}" || true)"
+          {
+            echo "# ${RELEASE_TAG}"
+            echo
+            if [ -n "${TAG_MESSAGE}" ]; then
+              printf '%s\n' "${TAG_MESSAGE}"
+            else
+              echo "Automated release for ${RELEASE_TAG}."
+            fi
+            echo
+            echo "## Docker images"
+            echo
+            echo "Platforms: ${PLATFORMS}"
+            echo
+            echo "- \`${GHCR_REPOSITORY}:${RELEASE_TAG}\`"
+            echo "- \`${GHCR_REPOSITORY}:${RELEASE_VERSION}\`"
+            if [ "${PUBLISH_LATEST_TAG}" != "false" ]; then
+              echo "- \`${GHCR_REPOSITORY}:latest\`"
+            fi
+            if [ "${DOCKERHUB_REPOSITORY}" != "skip" ]; then
+              echo "- \`${DOCKERHUB_REPOSITORY}:${RELEASE_TAG}\`"
+              echo "- \`${DOCKERHUB_REPOSITORY}:${RELEASE_VERSION}\`"
+            fi
+            echo
+            echo "## Native binaries"
+            echo
+            echo "Static linux/amd64 and linux/arm64 binaries are attached below."
+            echo "SHA-256 sums are in the matching \`.sha256\` files."
+          } > release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.init.outputs.release_tag }}
+          name: ${{ needs.init.outputs.release_tag }}
+          body_path: release-notes.md
+          files: |
+            .release-binaries/dashboard-linux-amd64
+            .release-binaries/dashboard-linux-amd64.sha256
+            .release-binaries/dashboard-linux-arm64
+            .release-binaries/dashboard-linux-arm64.sha256

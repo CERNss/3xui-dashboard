@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: ${{ vars.GO_VERSION || secrets.GO_VERSION || '1.26' }}
+  NODE_VERSION: ${{ vars.NODE_VERSION || secrets.NODE_VERSION || '22' }}
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dashboard_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dashboard_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: Vet
+        working-directory: backend
+        run: go vet ./...
+
+      - name: Build
+        working-directory: backend
+        run: go build ./...
+
+      - name: Unit tests
+        working-directory: backend
+        run: go test ./...
+
+      # Integration tests need the Postgres service container.
+      # The test setup helpers DROP + CREATE the public schema per
+      # case, so -p 1 keeps them from racing on the same db.
+      - name: Integration tests
+        working-directory: backend
+        env:
+          INTEGRATION_DB_URL: postgres://postgres:ci@127.0.0.1:55432/dashboard_ci?sslmode=disable
+        run: >
+          go test -p 1
+          ./internal/repository/...
+          ./internal/job/...
+          ./internal/service/billing/...
+          ./internal/service/verification/...
+          ./internal/service/messages/...
+          ./internal/service/notify/...
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        working-directory: frontend
+        run: npm test --silent
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Verify the multi-stage Dockerfile builds end-to-end. No push
+      # on CI — that's release.yml's job. linux/amd64 only here to
+      # keep PR feedback fast; multi-arch is covered on tag.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          push: false
