@@ -191,7 +191,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.OIDC, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
-	adminhandler.NewSettingHandler(settingRepo, cfg).RegisterRoutes(apiAdminAuthed)
+	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)
 
 	// Billing + payment gateways.
 	orderRepo := repository.NewOrderRepo(db)

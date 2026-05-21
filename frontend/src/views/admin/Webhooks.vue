@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 import {
   adminWebhooksApi,
   type Webhook,
+  type WebhookDelivery,
   type WebhookInput,
   type WebhookFormat,
   type WebhookMethod,
@@ -160,6 +161,44 @@ async function destroy(w: Webhook) {
   }
 }
 
+// Deliveries panel: lazy-fetched per webhook on first expand. The
+// underlying endpoint returns the most-recent N rows (server-side
+// limit; client just renders what it gets). Closes by re-clicking
+// the toggle.
+const deliveries = ref<Record<number, WebhookDelivery[]>>({})
+const expandedID = ref<number | null>(null)
+const deliveriesLoading = ref<number | null>(null)
+const deliveriesErr = ref<string | null>(null)
+
+async function toggleDeliveries(w: Webhook) {
+  if (expandedID.value === w.id) {
+    expandedID.value = null
+    return
+  }
+  expandedID.value = w.id
+  if (deliveries.value[w.id]) return // already cached
+  deliveriesLoading.value = w.id
+  deliveriesErr.value = null
+  try {
+    deliveries.value[w.id] = await adminWebhooksApi.deliveries(w.id)
+  } catch (e: any) {
+    deliveriesErr.value = formatError(e, '加载 deliveries 失败')
+  } finally {
+    deliveriesLoading.value = null
+  }
+}
+
+function deliveryChipClass(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800'
+    case 'failed':
+      return 'bg-red-50 text-red-700 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800'
+    default:
+      return 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800'
+  }
+}
+
 async function testFire(w: Webhook) {
   try {
     await adminWebhooksApi.test(w.id)
@@ -216,7 +255,8 @@ onMounted(reload)
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
-          <tr v-for="w in rows" :key="w.id" class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
+          <template v-for="w in rows" :key="w.id">
+          <tr class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
             <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ w.name }}</td>
             <td class="px-6 py-3.5">
               <span class="inline-flex items-center rounded-md px-2 py-0.5 text-2xs font-medium ring-1 ring-inset" :class="chipForMethod(w.method)">{{ w.method }}</span>
@@ -232,12 +272,38 @@ onMounted(reload)
             </td>
             <td class="px-6 py-3.5 text-right">
               <div class="inline-flex items-center gap-1">
+                <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="toggleDeliveries(w)">{{ expandedID === w.id ? '收起' : '记录' }}</button>
                 <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="testFire(w)">test</button>
                 <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="openEdit(w)">编辑</button>
                 <button class="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40" type="button" @click="destroy(w)">删除</button>
               </div>
             </td>
           </tr>
+          <!-- Expanded deliveries subrow — fetched lazily on first
+               "记录" click, cached after that. Shows the N most-recent
+               attempts for this webhook so admin can verify the
+               receiver is actually getting hit. -->
+          <tr v-if="expandedID === w.id">
+            <td colspan="7" class="bg-surface-50/60 px-6 py-4 dark:bg-surface-800/40">
+              <div v-if="deliveriesLoading === w.id" class="text-xs text-surface-500">加载 deliveries…</div>
+              <p v-else-if="deliveriesErr" class="text-xs text-red-600">{{ deliveriesErr }}</p>
+              <div v-else-if="deliveries[w.id]?.length === 0" class="text-xs text-surface-500">还没有投递记录</div>
+              <div v-else class="space-y-1.5">
+                <div
+                  v-for="d in deliveries[w.id]"
+                  :key="d.id"
+                  class="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border border-surface-100 bg-surface-0 px-3 py-1.5 text-2xs dark:border-surface-700 dark:bg-surface-900"
+                >
+                  <span class="inline-flex items-center rounded-full px-1.5 py-0.5 font-medium ring-1 ring-inset" :class="deliveryChipClass(d.status)">{{ d.status }}</span>
+                  <span class="font-mono text-surface-600 dark:text-surface-300">{{ d.event_type }}</span>
+                  <span class="font-mono text-surface-500">attempt {{ d.attempt }} · HTTP {{ d.http_status || '—' }}</span>
+                  <span class="font-mono text-surface-400">{{ new Date(d.scheduled_at).toLocaleString() }}</span>
+                  <p v-if="d.error" class="col-span-4 truncate font-mono text-red-600">err: {{ d.error }}</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          </template>
         </tbody>
       </table>
     </div>

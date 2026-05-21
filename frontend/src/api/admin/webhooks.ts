@@ -36,12 +36,13 @@ export interface WebhookDelivery {
   webhook_id: number
   event_type: string
   status: string
+  http_status: number
+  response_body?: string
   attempt: number
   scheduled_at: string
   next_attempt_at: string
-  response_status?: number
-  response_body?: string
-  error_message?: string
+  delivered_at?: string | null
+  error?: string
 }
 
 export const adminWebhooksApi = {

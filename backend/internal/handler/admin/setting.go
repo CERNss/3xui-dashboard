@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 
 	"github.com/cern/3xui-dashboard/internal/config"
+	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 )
@@ -23,13 +25,14 @@ import (
 // per key so the admin UI can submit free-form input without exotic
 // guard rails on the client side.
 type SettingHandler struct {
-	repo *repository.SettingRepo
-	cfg  *config.Config
+	repo   *repository.SettingRepo
+	cfg    *config.Config
+	mailer *mailer.Mailer
 }
 
 // NewSettingHandler wires the handler.
-func NewSettingHandler(repo *repository.SettingRepo, cfg *config.Config) *SettingHandler {
-	return &SettingHandler{repo: repo, cfg: cfg}
+func NewSettingHandler(repo *repository.SettingRepo, cfg *config.Config, m *mailer.Mailer) *SettingHandler {
+	return &SettingHandler{repo: repo, cfg: cfg, mailer: m}
 }
 
 // RegisterRoutes mounts /settings under rg.
@@ -38,6 +41,35 @@ func (h *SettingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.GET("", h.List)
 	g.PUT("/:key", h.Put)
 	g.DELETE("/:key", h.Delete)
+	g.POST("/smtp-test", h.SMTPTest)
+}
+
+// SMTPTest sends a one-shot test email so the admin can verify
+// SMTP config without waiting for a real user verification flow.
+// Body: {"to": "admin@example.com"}.
+//   - 400 if `to` missing or invalid
+//   - 503 if SMTP is not enabled (cfg.SMTP.Enabled() == false)
+//   - 502 if delivery failed — error message in the body
+//   - 200 if accepted by the upstream SMTP relay
+func (h *SettingHandler) SMTPTest(c *gin.Context) {
+	var req struct {
+		To string `json:"to"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.To == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "to is required"})
+		return
+	}
+	if h.mailer == nil || !h.mailer.Enabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "SMTP not configured"})
+		return
+	}
+	subject := "3xui-dashboard SMTP test"
+	body := "If you received this, the dashboard's SMTP config is working.\n\nSent at " + time.Now().UTC().Format(time.RFC3339)
+	if err := h.mailer.Send(req.To, subject, body); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "to": req.To})
 }
 
 // settingDescriptor enumerates the well-known keys the UI knows how to

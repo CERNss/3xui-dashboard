@@ -23,4 +23,9 @@ export const settingsApi = {
 
   clear: (key: string) =>
     adminClient.delete<void>(`/settings/${encodeURIComponent(key)}`),
+
+  smtpTest: (to: string) =>
+    adminClient
+      .post<{ status: string; to: string }>('/settings/smtp-test', { to })
+      .then((r) => r.data),
 }

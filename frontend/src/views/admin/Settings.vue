@@ -78,6 +78,25 @@ function groupLabel(g: string): string {
   } as Record<string, string>)[g] ?? g
 }
 
+// SMTP test bench state — ops affordance, not part of the settings
+// repo (no DB row, just a one-shot send).
+const smtpTo = ref('')
+const smtpBusy = ref(false)
+const smtpFlash = ref<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+async function sendSMTPTest() {
+  smtpBusy.value = true
+  smtpFlash.value = null
+  try {
+    await settingsApi.smtpTest(smtpTo.value)
+    smtpFlash.value = { kind: 'ok', text: '已发送到 ' + smtpTo.value }
+  } catch (e: any) {
+    smtpFlash.value = { kind: 'err', text: formatError(e, '发送失败') }
+  } finally {
+    smtpBusy.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -181,6 +200,31 @@ onMounted(load)
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- SMTP test bench. Pure ops affordance: admin enters a
+           recipient + clicks "send" to verify SMTP env-vars are
+           wired correctly without waiting for a real user
+           verification flow to fail. -->
+      <section class="rounded-lg border border-surface-200 bg-surface-0 p-4 dark:border-surface-700 dark:bg-surface-900">
+        <h3 class="text-base font-semibold text-ink-900 dark:text-surface-50">SMTP 测试</h3>
+        <p class="mt-1 text-xs text-surface-500">确认配置后填一个收件邮箱，发一封测试邮件。SMTP 未配置时返回 503。</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            v-model="smtpTo"
+            type="email"
+            placeholder="admin@example.com"
+            class="w-72 rounded-md border border-surface-300 bg-surface-0 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-surface-700 dark:bg-surface-900"
+          />
+          <button
+            class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+            :disabled="smtpBusy || !smtpTo"
+            @click="sendSMTPTest"
+          >
+            {{ smtpBusy ? '发送中…' : '发送测试' }}
+          </button>
+          <span v-if="smtpFlash" class="text-xs" :class="smtpFlash.kind === 'ok' ? 'text-accent-600' : 'text-red-600'">{{ smtpFlash.text }}</span>
         </div>
       </section>
     </div>
