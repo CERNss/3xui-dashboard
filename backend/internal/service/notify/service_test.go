@@ -222,7 +222,7 @@ func TestExpired_UserWithNoEmail_NoMailButLogsDedup(t *testing.T) {
 		t.Errorf("user without email should NOT receive mail, got %d delivered", got)
 	}
 	// Dedup row IS written so we don't recheck on every tick.
-	already, _ := repository.NewNotificationLogRepo(db).AlreadySent(context.Background(), "expired_email", o.ID)
+	already, _ := repository.NewNotificationLogRepo(db).AlreadySent(context.Background(), model.SurfaceNotification, "expired_email", o.ID)
 	if !already {
 		t.Errorf("expected dedup row even when email skipped")
 	}

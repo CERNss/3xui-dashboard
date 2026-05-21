@@ -113,7 +113,7 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 	// plan can renew once each cycle without us hammering them on
 	// every cron tick.
 	dedupKind := autoRenewDedupKind(o)
-	already, err := j.logs.AlreadySent(ctx, dedupKind, o.ID)
+	already, err := j.logs.AlreadySent(ctx, model.SurfaceNotification, dedupKind, o.ID)
 	if err != nil {
 		j.log.Warn("dedup check failed (proceeding may double-charge)",
 			slog.Int64("ownership_id", o.ID), slog.String("err", err.Error()))
@@ -144,7 +144,7 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 	if user.Email != nil {
 		recipient = *user.Email
 	}
-	if err := j.logs.MarkSent(ctx, dedupKind, o.ID, recipient); err != nil {
+	if err := j.logs.MarkSent(ctx, model.SurfaceNotification, dedupKind, o.ID, recipient); err != nil {
 		j.log.Warn("dedup record failed", slog.Int64("ownership_id", o.ID), slog.String("err", err.Error()))
 		// Don't proceed — risk of double-charge outweighs missing one renewal.
 		return

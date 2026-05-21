@@ -248,7 +248,7 @@ func (j *ExpiryJob) processExpiringSoon(ctx context.Context, o *model.ClientOwne
 	// publishes, notify dedups email sends. A future Telegram
 	// subscriber would dedup with its own "expiring_soon_telegram".
 	const publishKind = "expiring_soon_published"
-	already, err := j.logs.AlreadySent(ctx, publishKind, o.ID)
+	already, err := j.logs.AlreadySent(ctx, model.SurfaceNotification, publishKind, o.ID)
 	if err != nil {
 		j.log.Warn("AlreadySent check failed, proceeding (may double-notify)", "err", err)
 	}
@@ -270,7 +270,7 @@ func (j *ExpiryJob) processExpiringSoon(ctx context.Context, o *model.ClientOwne
 		DaysRemaining: days,
 	})
 	// Mark the publish dedup BEFORE returning so the next tick sees it.
-	if err := j.logs.MarkSent(ctx, publishKind, o.ID, ""); err != nil {
+	if err := j.logs.MarkSent(ctx, model.SurfaceNotification, publishKind, o.ID, ""); err != nil {
 		j.log.Warn("MarkSent failed (may double-publish next tick)", "err", err)
 	}
 	j.log.Info("client expiring soon",

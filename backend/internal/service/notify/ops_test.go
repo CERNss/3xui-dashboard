@@ -28,22 +28,22 @@ func newStubLogStore() *stubLogStore {
 	return &stubLogStore{sent: map[string]bool{}}
 }
 
-func (s *stubLogStore) AlreadySent(_ context.Context, kind string, ownershipID int64) (bool, error) {
+func (s *stubLogStore) AlreadySent(_ context.Context, surface, kind string, ownershipID int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.sent[s.key(kind, ownershipID)], nil
+	return s.sent[s.key(surface, kind, ownershipID)], nil
 }
 
-func (s *stubLogStore) MarkSent(_ context.Context, kind string, ownershipID int64, _ string) error {
+func (s *stubLogStore) MarkSent(_ context.Context, surface, kind string, ownershipID int64, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sent[s.key(kind, ownershipID)] = true
+	s.sent[s.key(surface, kind, ownershipID)] = true
 	s.calls = append(s.calls, logCall{kind, ownershipID})
 	return nil
 }
 
-func (s *stubLogStore) key(kind string, ownershipID int64) string {
-	return kind + ":" + boxInt(ownershipID)
+func (s *stubLogStore) key(surface, kind string, ownershipID int64) string {
+	return surface + ":" + kind + ":" + boxInt(ownershipID)
 }
 
 func boxInt(n int64) string {

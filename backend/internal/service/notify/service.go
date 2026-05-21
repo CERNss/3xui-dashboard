@@ -40,9 +40,14 @@ import (
 // locally as an interface so unit tests can stub it without standing
 // up a Postgres instance — the production impl is
 // repository.NotificationLogRepo.
+//
+// `surface` is model.SurfaceMessage or model.SurfaceNotification —
+// dedup is per-surface so a "low_balance" sent to the user
+// (message) and a "low_balance" sent to ops (notification) don't
+// block each other.
 type NotificationLogStore interface {
-	AlreadySent(ctx context.Context, kind string, ownershipID int64) (bool, error)
-	MarkSent(ctx context.Context, kind string, ownershipID int64, userEmail string) error
+	AlreadySent(ctx context.Context, surface, kind string, ownershipID int64) (bool, error)
+	MarkSent(ctx context.Context, surface, kind string, ownershipID int64, userEmail string) error
 }
 
 // Service wires the bus subscriber + channels + router + repos.
@@ -234,7 +239,7 @@ func (s *Service) dispatchClientEvent(ctx context.Context, eventType, baseKind s
 		// email channel entirely but still log dedup so we don't
 		// re-check every tick.
 		if chanName == "email" && recipient == "" {
-			_ = s.logs.MarkSent(ctx, baseKind+"_"+chanName, o.ID, "")
+			_ = s.logs.MarkSent(ctx, model.SurfaceNotification, baseKind+"_"+chanName, o.ID, "")
 			continue
 		}
 		s.dispatchOnce(ctx, ch, baseKind+"_"+chanName, o.ID, recipient, msg)
@@ -242,9 +247,12 @@ func (s *Service) dispatchClientEvent(ctx context.Context, eventType, baseKind s
 }
 
 // dispatchOnce runs the dedup check + send + mark for one channel.
-// kind is the channel-specific log key suffix.
+// kind is the channel-specific log key suffix. All notify.Service
+// dispatches book under model.SurfaceNotification — the ops-facing
+// surface. User-facing messages go through service/messages with
+// model.SurfaceMessage.
 func (s *Service) dispatchOnce(ctx context.Context, ch Channel, kind string, dedupID int64, recipient string, msg Message) {
-	already, err := s.logs.AlreadySent(ctx, kind, dedupID)
+	already, err := s.logs.AlreadySent(ctx, model.SurfaceNotification, kind, dedupID)
 	if err != nil {
 		s.log.Error("dedup check failed", "kind", kind, "err", err)
 		// Fall through — better to risk a dup than miss a critical notice
@@ -257,7 +265,7 @@ func (s *Service) dispatchOnce(ctx context.Context, ch Channel, kind string, ded
 			"channel", ch.Name(), "kind", kind, "err", err)
 		return
 	}
-	if err := s.logs.MarkSent(ctx, kind, dedupID, recipient); err != nil {
+	if err := s.logs.MarkSent(ctx, model.SurfaceNotification, kind, dedupID, recipient); err != nil {
 		s.log.Warn("MarkSent failed (delivery already done)", "kind", kind, "err", err)
 	}
 	s.log.Info("notify delivered", "channel", ch.Name(), "kind", kind, "to", recipient)
