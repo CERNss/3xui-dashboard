@@ -23,6 +23,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/repository"
+	"github.com/cern/3xui-dashboard/internal/service/messages"
 )
 
 const (
@@ -64,9 +65,11 @@ func setupDB(t *testing.T) (*gorm.DB, *Service) {
 
 	t.Cleanup(func() { _ = repository.Close(db) })
 
-	// Mailer in disabled mode — Send always succeeds via log path.
+	// Mailer in disabled mode — messages.Service then short-circuits
+	// Send to a no-op so tests don't try to dial SMTP.
 	m := mailer.New(config.SMTP{}, logger)
-	return db, New(db, m, logger)
+	msgs := messages.New(m, repository.NewNotificationLogRepo(db), logger)
+	return db, New(db, msgs, logger)
 }
 
 // firstActiveRow returns the most recent unconsumed row for an email so

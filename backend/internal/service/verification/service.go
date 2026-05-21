@@ -23,7 +23,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/cern/3xui-dashboard/internal/mailer"
+	"github.com/cern/3xui-dashboard/internal/service/messages"
 )
 
 // Purpose enumerates what a code is good for. Scoped so a register code
@@ -66,16 +66,17 @@ func (record) TableName() string { return "email_verification_codes" }
 
 // Service is the verification-code engine.
 type Service struct {
-	db     *gorm.DB
-	mailer *mailer.Mailer
-	logger *slog.Logger
+	db       *gorm.DB
+	messages *messages.Service
+	logger   *slog.Logger
 }
 
-// New constructs a Service. mailer may be a no-op stub when SMTP is
-// disabled — SendCode still works, the operator just sees the code in
-// dashboard logs instead of inbox.
-func New(db *gorm.DB, m *mailer.Mailer, logger *slog.Logger) *Service {
-	return &Service{db: db, mailer: m, logger: logger}
+// New constructs a Service. msgs delivers the email via the unified
+// user-message surface — when SMTP is disabled the underlying send
+// is a no-op and SendCode still records the row, so the operator
+// can read the generated code from dashboard logs.
+func New(db *gorm.DB, msgs *messages.Service, logger *slog.Logger) *Service {
+	return &Service{db: db, messages: msgs, logger: logger}
 }
 
 // SendCode generates a new code, stores its hash, and dispatches the
@@ -118,7 +119,10 @@ func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) e
 
 	subject := emailSubject(purpose)
 	body := emailBody(purpose, code, codeTTL)
-	if err := s.mailer.Send(email, subject, body); err != nil {
+	// Transactional one-shot: no dedup (verification self-rate-limits
+	// upstream via the resendCooldown check). Empty kind + zero
+	// ownership ID tell messages.Send to skip the dedup log.
+	if err := s.messages.Send(ctx, email, subject, body, "", 0); err != nil {
 		// Don't roll back the row — operator can re-send after cooldown,
 		// or read the code from logs (dev) and use it directly.
 		s.logger.Warn("verification: mail send failed", "err", err, "email", email)

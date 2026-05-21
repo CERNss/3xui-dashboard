@@ -30,6 +30,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/metrics"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
+	"github.com/cern/3xui-dashboard/internal/service/messages"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
 	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
 	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
@@ -195,7 +196,12 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// User accounts.
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
 	mailerSvc := mailer.New(cfg.SMTP, logger)
-	verifyService := verification.New(db, mailerSvc, logger)
+	notifyLogRepo := repository.NewNotificationLogRepo(db)
+	// messages.Service is the user-facing SMTP surface — verification
+	// codes, low-balance alerts to user, password reset. notify-side
+	// ops fanout uses a separate surface via service/notify.
+	messagesSvc := messages.New(mailerSvc, notifyLogRepo, logger)
+	verifyService := verification.New(db, messagesSvc, logger)
 	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.OIDC, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
@@ -238,7 +244,6 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	_ = scheduler.Add("traffic", "@every 60s", trafficJob.RunOnce)
 	webhookRetryJob := job.NewWebhookRetryJob(webhookService, 0, logger)
 	_ = scheduler.Add("webhook-retry", "@every 15s", webhookRetryJob.RunOnce)
-	notifyLogRepo := repository.NewNotificationLogRepo(db)
 	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, notifyLogRepo, rtManager, bus, logger)
 	if wgProvisioner != nil {
 		expiryJob.SetWGRemover(wgProvisioner)
@@ -249,12 +254,14 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	// Auto-renewal — picks up ownerships expiring within 24h whose
 	// owning user has admin-set auto_renew=true; charges via the
-	// usual billing.Purchase flow. Insufficient-balance cases email
-	// the ops recipient (NOT the user — auto-renewal is invisible
-	// to end users per design).
+	// usual billing.Purchase flow. Insufficient-balance cases dual-
+	// notify: an ops alert via mailerSvc (admin can top up / disable
+	// auto-renew), AND a user-facing low-balance message via
+	// messagesSvc (user can top up themselves). The successful
+	// renewal path stays invisible to the user by design.
 	autoRenewJob := job.NewAutoRenewJob(
 		ownershipRepo, userRepo, planRepo, notifyLogRepo,
-		billingService, mailerSvc, cfg.Notify.OpsRecipient, logger,
+		billingService, mailerSvc, cfg.Notify.OpsRecipient, messagesSvc, logger,
 	)
 	_ = scheduler.Add("auto-renew", "@every 1h", autoRenewJob.RunOnce)
 

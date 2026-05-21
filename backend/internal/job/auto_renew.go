@@ -12,6 +12,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/billing"
+	"github.com/cern/3xui-dashboard/internal/service/messages"
 )
 
 // AutoRenewJob scans for ownerships about to expire that the
@@ -24,8 +25,13 @@ import (
 // #141.
 //
 // When the user has auto_renew enabled but insufficient balance,
-// the job emits an admin-only notification. End-users get
-// nothing — auto-renewal is intentionally invisible to them.
+// the job emits two parallel signals: an ops-side admin alert
+// (so the operator can decide whether to top up or disable
+// auto-renew), and a user-side "balance too low" message via
+// service/messages so the user gets a chance to top up before
+// the ownership lapses. Both dedup per (ownership, expiry-day)
+// independently on their respective surfaces. The successful
+// renewal path itself stays invisible to the user.
 //
 // Runs at @every 1h. The 24h lookahead window covers a 1h cron
 // missing one tick. Each ownership is locked against double-
@@ -39,8 +45,9 @@ type AutoRenewJob struct {
 	plans     *repository.PlanRepo
 	logs      *repository.NotificationLogRepo
 	billing   *billing.Service
-	mailer    *mailer.Mailer // optional; nil/disabled → admin alerts logged only
-	opsEmail  string         // recipient for admin alerts
+	mailer    *mailer.Mailer    // optional; nil/disabled → admin alerts logged only
+	opsEmail  string            // recipient for admin alerts
+	messages  *messages.Service // optional; nil → user low-balance email dropped
 	log       *slog.Logger
 
 	// Window the cron looks ahead. Default 24h matches "scan
@@ -50,6 +57,8 @@ type AutoRenewJob struct {
 
 // NewAutoRenewJob constructs the worker. mailer + opsEmail can be
 // nil/empty — admin alerts then just become a WARN log line.
+// msgs can be nil — user low-balance emails are silently dropped
+// in that case (the admin alert still fires via mailer).
 func NewAutoRenewJob(
 	ownership *repository.ClientOwnershipRepo,
 	users *repository.UserRepo,
@@ -58,6 +67,7 @@ func NewAutoRenewJob(
 	billing *billing.Service,
 	m *mailer.Mailer,
 	opsEmail string,
+	msgs *messages.Service,
 	lg *slog.Logger,
 ) *AutoRenewJob {
 	return &AutoRenewJob{
@@ -68,6 +78,7 @@ func NewAutoRenewJob(
 		billing:   billing,
 		mailer:    m,
 		opsEmail:  opsEmail,
+		messages:  msgs,
 		log:       lg.With(slog.String("component", "job.auto_renew")),
 		Window:    24 * time.Hour,
 	}
@@ -190,7 +201,7 @@ func (j *AutoRenewJob) handleInsufficientBalance(ctx context.Context, user *mode
 	if o.ExpiresAt != nil {
 		expiresAt = o.ExpiresAt.Format(time.RFC3339)
 	}
-	msg := fmt.Sprintf(
+	opsBody := fmt.Sprintf(
 		"User #%d (%s) is enrolled in auto-renewal but balance "+
 			"is insufficient.\n\nPlan: %s (¥%.2f)\nBalance: ¥%.2f\nOwnership expires: %s\n\n"+
 			"Decide whether to top up the user's balance or disable their auto-renew flag.",
@@ -203,8 +214,52 @@ func (j *AutoRenewJob) handleInsufficientBalance(ctx context.Context, user *mode
 		slog.Int64("need_cents", plan.PriceCents),
 		slog.Int64("have_cents", user.BalanceCents),
 	)
-	j.alertAdmin(ctx, msg)
+	j.alertAdmin(ctx, opsBody)
+	j.notifyUserLowBalance(ctx, user, plan, o)
 	_ = now
+}
+
+// notifyUserLowBalance sends the user-facing "your balance is too
+// low for the upcoming renewal" message. Dedup keys per
+// (ownership, expiry-day) on SurfaceMessage so a single renewal
+// cycle generates exactly one user email regardless of how many
+// hourly ticks fire before the ownership expires.
+func (j *AutoRenewJob) notifyUserLowBalance(ctx context.Context, user *model.User, plan *model.Plan, o *model.ClientOwnership) {
+	if j.messages == nil || !j.messages.Enabled() {
+		return
+	}
+	if user.Email == nil || *user.Email == "" {
+		return
+	}
+	expiresAt := "?"
+	if o.ExpiresAt != nil {
+		expiresAt = o.ExpiresAt.Format("2006-01-02 15:04 MST")
+	}
+	subject := "您的订阅即将到期，余额不足无法自动续费"
+	body := fmt.Sprintf(
+		"您好，\n\n"+
+			"您订阅的「%s」套餐将于 %s 到期，但当前余额（¥%.2f）"+
+			"不足以支付续费金额（¥%.2f）。\n\n"+
+			"请登录控制台充值，否则到期后服务将自动停用。\n",
+		plan.Name, expiresAt,
+		float64(user.BalanceCents)/100, float64(plan.PriceCents)/100,
+	)
+	if err := j.messages.Send(ctx, *user.Email, subject, body, lowBalanceDedupKind(o), o.ID); err != nil {
+		j.log.Warn("auto-renew: user low-balance email failed",
+			slog.Int64("user_id", user.ID), slog.String("err", err.Error()))
+	}
+}
+
+// lowBalanceDedupKind keys the SurfaceMessage notification_log
+// row per ownership + expiry-day, matching the cadence of
+// autoRenewDedupKind so user and ops surfaces emit on the same
+// boundary.
+func lowBalanceDedupKind(o *model.ClientOwnership) string {
+	day := "no-expiry"
+	if o.ExpiresAt != nil {
+		day = o.ExpiresAt.UTC().Format("2006-01-02")
+	}
+	return "low_balance_" + day
 }
 
 // alertAdmin sends a one-shot ops email. ctx is unused — the
