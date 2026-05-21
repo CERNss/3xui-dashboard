@@ -56,12 +56,20 @@ Shipped post-v1:
 - **Messages / notifications split** — `service/messages` is the
   user-facing SMTP surface; `service/notify` + `service/webhook`
   cover ops fanout.
+- **Clash / sing-box subscription formats** — `FormatClash` and
+  `FormatSingBox` in `internal/sub/assembler.go`, dispatched on
+  `?format=clash` / `?format=singbox` or User-Agent sniffing.
+- **CI workflows + OIDC E2E** — `.github/workflows/{ci,release,security-scan}.yml`
+  cover backend/frontend tests + multi-arch publish; OIDC full
+  browser chain verified against Zitadel v2.71.10 (see
+  `docs/operator/oidc-t2-notes.md`).
 
 Still deferred (operator opt-in / future):
 
-- Clash YAML subscription format (base64 + JSON ship today).
-- CI workflow (`.github/workflows/`).
-- Headless browser E2E for the full OIDC redirect chain.
+- Localization beyond the partial `zh.ts` index (most UI strings
+  are hardcoded Chinese today).
+- Mobile responsive layouts for the admin tables (designed
+  desktop-first).
 
 ## Prerequisites
 
