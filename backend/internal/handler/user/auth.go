@@ -218,16 +218,66 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	})
 }
 
-// OIDCStart is a v1 stub — returns 501 until OIDC lands.
+// OIDCStart returns the IDP's authorize URL. Frontend navigates
+// the user there via window.location.href. Body optional:
+// {redirect_after: "/portal/subscription"} preserves a post-login
+// target if the user was deep-linked.
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"error": "OIDC login is not implemented in this build",
-	})
+	var req struct {
+		RedirectAfter string `json:"redirect_after"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	authURL, err := h.users.OIDCStart(c.Request.Context(), req.RedirectAfter)
+	if err != nil {
+		if errors.Is(err, usersvc.ErrNotImplemented) {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"authorize_url": authURL})
 }
 
-// OIDCCallback is a v1 stub.
+// OIDCCallback is called by the frontend's callback route after
+// the IDP redirected with ?code=&state=. Returns the issued JWT
+// so the SPA can store it + navigate to the portal.
 func (h *AuthHandler) OIDCCallback(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"error": "OIDC login is not implemented in this build",
+	var req struct {
+		Code  string `json:"code"  binding:"required"`
+		State string `json:"state" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code+state required"})
+		return
+	}
+	u, err := h.users.OIDCCallback(c.Request.Context(), req.Code, req.State)
+	if err != nil {
+		switch {
+		case errors.Is(err, usersvc.ErrOIDCStateInvalid):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, usersvc.ErrOIDCBadIDToken):
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		case errors.Is(err, usersvc.ErrNotImplemented):
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	token, exp, err := h.auth.IssueUserToken(u.ID, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
+		return
+	}
+	email := ""
+	if u.Email != nil {
+		email = *u.Email
+	}
+	c.JSON(http.StatusOK, tokenResponse{
+		Token:     token,
+		ExpiresAt: exp.Unix(),
+		UserID:    u.ID,
+		Email:     email,
 	})
 }

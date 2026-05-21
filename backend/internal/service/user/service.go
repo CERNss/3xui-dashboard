@@ -7,12 +7,16 @@ package user
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/mail"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -42,16 +46,28 @@ type Service struct {
 	bus      *event.Bus
 	cfg      *config.Config
 	log      *slog.Logger
+
+	// OIDC state — only used when cfg.OIDC.Enabled().
+	oidcSessions     *oidcSessions
+	oidcHTTP         *http.Client
+	oidcDiscoMu      sync.Mutex
+	oidcDiscoCache   *oidcDiscovery
+	oidcDiscoFetched time.Time
+	oidcJWKSMu       sync.Mutex
+	oidcJWKSCache    map[string]*rsa.PublicKey
+	oidcJWKSFetched  time.Time
 }
 
 // New constructs the service.
 func New(users *repository.UserRepo, settings *repository.SettingRepo, bus *event.Bus, cfg *config.Config, lg *slog.Logger) *Service {
 	return &Service{
-		users:    users,
-		settings: settings,
-		bus:      bus,
-		cfg:      cfg,
-		log:      lg.With(slog.String("component", "service.user")),
+		users:        users,
+		settings:     settings,
+		bus:          bus,
+		cfg:          cfg,
+		log:          lg.With(slog.String("component", "service.user")),
+		oidcSessions: newOIDCSessions(),
+		oidcHTTP:     &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -240,21 +256,25 @@ func (s *Service) RotateSubID(ctx context.Context, userID int64) (string, error)
 
 // ---- OIDC stubs ----------------------------------------------------------
 
-// OIDCStart would generate state + PKCE verifier and return the
-// authorize URL. v1 returns ErrNotImplemented; the wiring is in
-// place so the upgrade is a localized change.
+// OIDCStart generates a state + PKCE verifier, stashes them in the
+// in-memory session store, and returns the IDP's authorize URL.
+// Callers (handler) hand the URL to the frontend which navigates
+// the user there.
 func (s *Service) OIDCStart(ctx context.Context, redirectAfter string) (string, error) {
 	if !s.cfg.OIDC.Enabled() {
 		return "", ErrNotImplemented
 	}
-	return "", ErrNotImplemented
+	return s.oidcStartImpl(ctx, redirectAfter)
 }
 
-// OIDCCallback would exchange the code, verify the ID token, and
-// provision-or-link the matching User row. v1 returns
-// ErrNotImplemented.
+// OIDCCallback exchanges the IDP-returned code for tokens, verifies
+// the id_token against the JWKS, and provisions-or-links the
+// matching User row keyed on `sub` (oidc_subject column).
 func (s *Service) OIDCCallback(ctx context.Context, code, state string) (*model.User, error) {
-	return nil, ErrNotImplemented
+	if !s.cfg.OIDC.Enabled() {
+		return nil, ErrNotImplemented
+	}
+	return s.oidcCallbackImpl(ctx, code, state)
 }
 
 // ---- Admin ----------------------------------------------------------------

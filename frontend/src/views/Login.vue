@@ -75,13 +75,21 @@ async function loadOIDC() {
   }
 }
 
-function startOIDC(p: OIDCProvider) {
-  // The backend OIDC start endpoint redirects the browser into the IdP flow.
-  // We honor `next` so post-OIDC the user lands back on their target page.
-  const next = typeof route.query.next === 'string' ? route.query.next : '/portal'
-  const url = new URL(p.login_url, window.location.origin)
-  url.searchParams.set('next', next)
-  window.location.assign(url.toString())
+async function startOIDC(_p: OIDCProvider) {
+  // POST /auth/oidc/start → returns the IDP's authorize URL.
+  // Frontend navigates the browser there; the IDP eventually
+  // redirects back to /oidc/callback?code=&state= which the
+  // OIDCCallback.vue route handles.
+  loading.value = true
+  error.value = null
+  try {
+    const next = typeof route.query.next === 'string' ? route.query.next : '/portal'
+    const { authorize_url } = await portalAuthApi.oidcStart(next)
+    window.location.assign(authorize_url)
+  } catch (e: any) {
+    loading.value = false
+    error.value = formatError(e, 'OIDC 启动失败')
+  }
 }
 
 onMounted(loadOIDC)

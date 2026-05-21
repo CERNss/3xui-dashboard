@@ -153,6 +153,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Login.vue'),
     meta: { titleKey: 'auth.login' },
   },
+  // OIDC callback — IDP redirects here with ?code=&state= once the
+  // user finishes the IDP login. The view immediately calls
+  // /api/user/auth/oidc/callback to exchange them for a JWT.
+  {
+    path: '/oidc/callback',
+    name: 'oidc.callback',
+    component: () => import('@/views/OIDCCallback.vue'),
+  },
   // Root — admin store has priority since fleet operators are the heavy users.
   // Unauthenticated visitors get bounced to /login by the guard below.
   { path: '/', redirect: '/admin' },

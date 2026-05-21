@@ -34,4 +34,17 @@ export const portalAuthApi = {
    *  in the backend config — login UI hides the "或使用 X 登录" section. */
   oidcProviders: () =>
     portalClient.get<OIDCProvider[]>('/auth/oidc/providers').then((r) => r.data ?? []),
+
+  /** Start the OIDC dance. Returns the IDP's authorize URL; the
+   *  caller is expected to navigate there via window.location.href. */
+  oidcStart: (redirectAfter?: string) =>
+    portalClient
+      .post<{ authorize_url: string }>('/auth/oidc/start', { redirect_after: redirectAfter ?? '' })
+      .then((r) => r.data),
+
+  /** Exchange the IDP-returned code + state for a portal JWT. */
+  oidcCallback: (code: string, state: string) =>
+    portalClient
+      .post<UserTokenResponse>('/auth/oidc/callback', { code, state })
+      .then((r) => r.data),
 }
