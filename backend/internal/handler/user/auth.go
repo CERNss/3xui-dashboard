@@ -258,6 +258,8 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, usersvc.ErrOIDCBadIDToken):
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		case errors.Is(err, usersvc.ErrOIDCEmailConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, usersvc.ErrNotImplemented):
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
 		default:

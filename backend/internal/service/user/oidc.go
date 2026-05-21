@@ -46,6 +46,14 @@ var ErrOIDCStateInvalid = errors.New("oidc: state mismatch or expired")
 // failure → 401 at the handler.
 var ErrOIDCBadIDToken = errors.New("oidc: id_token verification failed")
 
+// ErrOIDCEmailConflict fires when an OIDC login arrives with an
+// email that's already bound to a different account AND the IDP
+// hasn't asserted email_verified=true. The dashboard refuses to
+// auto-link in that case — an attacker who can register an OIDC
+// identity with someone else's address would otherwise take over
+// the existing account. Handler maps to 409.
+var ErrOIDCEmailConflict = errors.New("oidc: email already linked to a different account")
+
 // oidcState is one in-flight login: state parameter + PKCE verifier
 // + post-login redirect target.
 type oidcState struct {
@@ -291,27 +299,71 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, code, state string) (*mo
 		return nil, fmt.Errorf("oidc: id_token missing sub claim")
 	}
 	email, _ := claims["email"].(string)
+	emailVerifiedClaim, _ := claims["email_verified"].(bool)
 
-	// Upsert by oidc_subject. Email is informational only — many
-	// IDPs return it, some don't; keep email_verified=false until
-	// the dashboard's own verification flow confirms (or the IDP's
-	// email_verified=true claim is present).
+	return s.upsertOIDCUser(ctx, sub, email, emailVerifiedClaim)
+}
+
+// upsertOIDCUser resolves verified IDP claims to a User row.
+// Three paths in order: (1) oidc_subject already linked → refresh
+// email; (2) sub is new but the email matches an existing account
+// → auto-link if IDP asserts email_verified, else refuse; (3) no
+// match → create fresh. Extracted from oidcCallbackImpl so the
+// upsert table can be tested without the IDP roundtrip.
+func (s *Service) upsertOIDCUser(ctx context.Context, sub, email string, emailVerified bool) (*model.User, error) {
+	// Path 1: oidc_subject already linked. Refresh email if the IDP
+	// rotated it; tolerate failures from a unique-email collision
+	// (the user is correctly identified by sub, not email).
 	user, err := s.users.GetByOIDCSubject(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
 	if user != nil {
 		if email != "" && (user.Email == nil || *user.Email != email) {
-			emailVerifiedClaim, _ := claims["email_verified"].(bool)
 			updates := map[string]any{"email": email}
-			if emailVerifiedClaim {
+			if emailVerified {
 				updates["email_verified"] = true
 			}
-			_ = s.users.Update(ctx, user.ID, updates)
+			if err := s.users.Update(ctx, user.ID, updates); err != nil {
+				s.log.Warn("oidc: email refresh failed (keeping existing)",
+					"user_id", user.ID, "new_email", email, "err", err.Error())
+			}
 		}
 		return s.users.Get(ctx, user.ID)
 	}
-	// New user — generate sub_id, link oidc_subject, copy email.
+
+	// Path 2: oidc_subject is new. If the email matches an existing
+	// account, auto-link IFF the IDP asserts email_verified AND the
+	// existing row isn't already linked to a DIFFERENT oidc_subject.
+	// Refusing the unverified-email case prevents an attacker who
+	// registers an IDP account with someone else's address from
+	// hijacking that user.
+	if email != "" {
+		existing, err := s.users.GetByEmail(ctx, email)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			if !emailVerified {
+				return nil, ErrOIDCEmailConflict
+			}
+			if existing.OIDCSubject != nil && *existing.OIDCSubject != "" {
+				return nil, ErrOIDCEmailConflict
+			}
+			updates := map[string]any{
+				"oidc_subject":   sub,
+				"email_verified": true,
+			}
+			if err := s.users.Update(ctx, existing.ID, updates); err != nil {
+				return nil, fmt.Errorf("oidc auto-link: %w", err)
+			}
+			s.log.Info("oidc: auto-linked existing email to new oidc_subject",
+				"user_id", existing.ID, "email", email)
+			return s.users.Get(ctx, existing.ID)
+		}
+	}
+
+	// Path 3: brand-new account.
 	subID, err := generateSubID()
 	if err != nil {
 		return nil, err
@@ -320,10 +372,9 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, code, state string) (*mo
 	if email != "" {
 		emailPtr = &email
 	}
-	emailVerifiedClaim, _ := claims["email_verified"].(bool)
 	created := &model.User{
 		Email:         emailPtr,
-		EmailVerified: emailVerifiedClaim,
+		EmailVerified: emailVerified,
 		OIDCSubject:   &sub,
 		SubID:         subID,
 		Status:        model.UserStatusActive,
