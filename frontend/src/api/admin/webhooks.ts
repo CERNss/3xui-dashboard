@@ -66,4 +66,12 @@ export const adminWebhooksApi = {
     adminClient
       .get<{ deliveries: WebhookDelivery[] }>(`/webhooks/${id}/deliveries`)
       .then((r) => r.data.deliveries),
+
+  // Replay queues a fresh delivery for the same (event_type, payload)
+  // as the original. The historical row stays as audit trail; the new
+  // delivery has its own id and retry cycle.
+  replay: (deliveryID: number) =>
+    adminClient
+      .post<WebhookDelivery>(`/webhooks/deliveries/${deliveryID}/replay`)
+      .then((r) => r.data),
 }

@@ -40,8 +40,8 @@ func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/register", h.Register)
 	rg.POST("/auth/send-code", h.SendCode)
 	rg.GET("/auth/oidc/providers", h.OIDCProviders)
-	rg.POST("/auth/oidc/start", h.OIDCStart)       // 501 in v1
-	rg.POST("/auth/oidc/callback", h.OIDCCallback) // 501 in v1
+	rg.POST("/auth/oidc/start", h.OIDCStart)
+	rg.POST("/auth/oidc/callback", h.OIDCCallback)
 }
 
 // oidcProvider mirrors the frontend's OIDCProvider shape. Keep in sync

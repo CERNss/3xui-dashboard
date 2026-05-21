@@ -226,6 +226,24 @@ async function testFire(w: Webhook) {
   }
 }
 
+// Per-row state for the replay action on individual delivery rows.
+const replayBusy = ref<number | null>(null)
+const replayErr = ref<string | null>(null)
+
+async function replayDelivery(w: Webhook, deliveryID: number) {
+  replayBusy.value = deliveryID
+  replayErr.value = null
+  try {
+    await adminWebhooksApi.replay(deliveryID)
+    // Refresh the deliveries list so admin sees the new attempt row.
+    deliveries.value[w.id] = await adminWebhooksApi.deliveries(w.id)
+  } catch (e: any) {
+    replayErr.value = formatError(e, '重放失败')
+  } finally {
+    replayBusy.value = null
+  }
+}
+
 function chipForMethod(m: WebhookMethod): string {
   return ({
     GET: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800',
@@ -321,16 +339,25 @@ onMounted(reload)
               <p v-else-if="deliveriesErr" class="text-xs text-red-600">{{ deliveriesErr }}</p>
               <div v-else-if="deliveries[w.id]?.length === 0" class="text-xs text-surface-500">还没有投递记录</div>
               <div v-else class="space-y-1.5">
+                <p v-if="replayErr" class="text-2xs text-red-600">{{ replayErr }}</p>
                 <div
                   v-for="d in deliveries[w.id]"
                   :key="d.id"
-                  class="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border border-surface-100 bg-surface-0 px-3 py-1.5 text-2xs dark:border-surface-700 dark:bg-surface-900"
+                  class="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 rounded-lg border border-surface-100 bg-surface-0 px-3 py-1.5 text-2xs dark:border-surface-700 dark:bg-surface-900"
                 >
                   <span class="inline-flex items-center rounded-full px-1.5 py-0.5 font-medium ring-1 ring-inset" :class="deliveryChipClass(d.status)">{{ d.status }}</span>
                   <span class="font-mono text-surface-600 dark:text-surface-300">{{ d.event_type }}</span>
                   <span class="font-mono text-surface-500">attempt {{ d.attempt }} · HTTP {{ d.http_status || '—' }}</span>
                   <span class="font-mono text-surface-400">{{ new Date(d.scheduled_at).toLocaleString() }}</span>
-                  <p v-if="d.error" class="col-span-4 truncate font-mono text-red-600">err: {{ d.error }}</p>
+                  <button
+                    type="button"
+                    class="rounded border border-surface-200 px-1.5 py-0.5 font-medium text-surface-600 hover:bg-surface-50 disabled:opacity-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
+                    :disabled="replayBusy === d.id"
+                    @click="replayDelivery(w, d.id)"
+                  >
+                    {{ replayBusy === d.id ? '重放中…' : '重放' }}
+                  </button>
+                  <p v-if="d.error" class="col-span-5 truncate font-mono text-red-600">err: {{ d.error }}</p>
                 </div>
               </div>
             </td>

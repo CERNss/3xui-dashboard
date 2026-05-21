@@ -41,16 +41,27 @@ surface with the panel's own Bearer token.
   (with per-webhook `allow_private` override), exponential-backoff
   retry, full delivery log + test + replay.
 
-Deferred in v1 — backend endpoints exist as stubs (501) so the UI
-ships ready to upgrade:
+Shipped post-v1:
 
-- OIDC SSO (`/api/user/auth/oidc/*`) — 10.3–10.5
-- SMTP / email verification — 10.8 (email-binding just stores
-  `email_verified=false`)
-- Most admin frontend pages beyond Nodes — 14.3–14.9 (REST API works
-  from any client)
-- Portal pages beyond Login / Register / Dashboard — 15.2, 15.5, 15.6
-- Clash YAML subscription format — 9.4 (base64 + JSON ship)
+- **OIDC SSO** (`/api/user/auth/oidc/*`) — authorization-code + PKCE,
+  RS256 verification, JWKS cache with refetch-on-kid-miss. Verified
+  against Zitadel v2.71.10; see `docs/operator/oidc-setup.md`.
+- **SMTP / email verification** — 6-digit code with 10m TTL, hashed
+  at rest, 60s resend cooldown. Email-binding now sets
+  `email_verified=true` after a successful Consume.
+- **Admin frontend** — Nodes / Inbounds / Users / Plans / Orders /
+  Stats / Webhooks / Audit Log / Settings all shipped.
+- **Portal pages** — Subscription / Usage / Plans / Orders / Profile
+  + OIDC callback.
+- **Messages / notifications split** — `service/messages` is the
+  user-facing SMTP surface; `service/notify` + `service/webhook`
+  cover ops fanout.
+
+Still deferred (operator opt-in / future):
+
+- Clash YAML subscription format (base64 + JSON ship today).
+- CI workflow (`.github/workflows/`).
+- Headless browser E2E for the full OIDC redirect chain.
 
 ## Prerequisites
 
