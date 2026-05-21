@@ -199,12 +199,30 @@ function deliveryChipClass(status: string): string {
   }
 }
 
+// Per-row pending state so admin sees "test 中…" feedback while
+// the call is in flight, and a transient flash on completion.
+const testBusy = ref<number | null>(null)
+const testFlash = ref<{ id: number; kind: 'ok' | 'err'; text: string } | null>(null)
+
 async function testFire(w: Webhook) {
+  testBusy.value = w.id
+  testFlash.value = null
   try {
     await adminWebhooksApi.test(w.id)
-    // No flash UI here; admin checks the deliveries list / receiver side.
+    testFlash.value = { id: w.id, kind: 'ok', text: '已派发，查看下方记录' }
+    // Auto-expand the deliveries panel + refresh — admin almost
+    // always wants to see the result of the test fire, not just
+    // a "sent" confirmation.
+    deliveries.value[w.id] = await adminWebhooksApi.deliveries(w.id)
+    expandedID.value = w.id
   } catch (e: any) {
-    error.value = formatError(e, 'test 发送失败')
+    testFlash.value = { id: w.id, kind: 'err', text: formatError(e, 'test 发送失败') }
+  } finally {
+    testBusy.value = null
+    // Auto-clear after 4s so the table doesn't accumulate stale notices.
+    setTimeout(() => {
+      if (testFlash.value?.id === w.id) testFlash.value = null
+    }, 4000)
   }
 }
 
@@ -273,7 +291,21 @@ onMounted(reload)
             <td class="px-6 py-3.5 text-right">
               <div class="inline-flex items-center gap-1">
                 <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="toggleDeliveries(w)">{{ expandedID === w.id ? '收起' : '记录' }}</button>
-                <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="testFire(w)">test</button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 disabled:opacity-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
+                  :disabled="testBusy === w.id"
+                  @click="testFire(w)"
+                >
+                  {{ testBusy === w.id ? '发送中…' : 'test' }}
+                </button>
+                <span
+                  v-if="testFlash && testFlash.id === w.id"
+                  class="ml-1 text-2xs"
+                  :class="testFlash.kind === 'ok' ? 'text-accent-600' : 'text-red-600'"
+                >
+                  {{ testFlash.text }}
+                </span>
                 <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="openEdit(w)">编辑</button>
                 <button class="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40" type="button" @click="destroy(w)">删除</button>
               </div>
