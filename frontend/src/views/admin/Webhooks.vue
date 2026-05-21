@@ -385,8 +385,13 @@ onMounted(reload)
           </label>
 
           <label class="block">
-            <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">事件订阅（逗号分隔，<code>*</code> 表示全部，<code>order.*</code> 表示前缀匹配）</span>
-            <input v-model="eventsText" type="text" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="order.*, node.offline, client.expired" />
+            <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">
+              事件订阅（运营通知 surface，逗号分隔；<code>*</code> = 全部，<code>order.*</code> = 前缀匹配）
+            </span>
+            <input v-model="eventsText" type="text" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="order.*, node.offline, client.expired, user.registered" />
+            <span class="mt-1 block text-2xs text-surface-500">
+              常见事件：<code>node.online</code> / <code>node.offline</code> / <code>node.recovered</code> / <code>client.expired</code> / <code>client.expiring_soon</code> / <code>client.over_limit</code> / <code>order.created</code> / <code>order.completed</code> / <code>order.failed</code> / <code>order.payment_confirmed</code> / <code>order.payment_failed</code> / <code>order.payment_expired</code> / <code>order.refunded</code> / <code>user.registered</code>。Webhook 只用于运营通知，用户向消息走 SMTP（参见 Settings → 消息）。
+            </span>
           </label>
 
           <div class="grid grid-cols-2 gap-3">

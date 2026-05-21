@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 const apiStubs = vi.hoisted(() => ({
   list: vi.fn(),
@@ -28,8 +29,16 @@ afterEach(() => {
 })
 
 async function mountSettings() {
+  // RouterLink in the 通知 tab needs a router instance to resolve.
+  // A memory-history stub is enough — tests don't exercise navigation.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/admin/webhooks', component: { template: '<div/>' } }],
+  })
+  await router.push('/admin/settings')
+  await router.isReady()
   const w = mount(Settings, {
-    global: { mocks: { $t: (k: string) => k } },
+    global: { plugins: [router], mocks: { $t: (k: string) => k } },
     attachTo: document.body,
   })
   await flushPromises()

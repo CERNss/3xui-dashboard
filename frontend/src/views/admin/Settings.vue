@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { formatError } from '@/utils/format'
 
 import { settingsApi, type SettingItem } from '@/api/admin/settings'
@@ -97,6 +98,12 @@ async function sendSMTPTest() {
   }
 }
 
+// Tab state — three surfaces for the messages/notifications split:
+// general runtime settings, user-facing messages (SMTP), and
+// ops-facing notifications (multi-channel + admin webhooks).
+type Tab = 'general' | 'messages' | 'notifications'
+const tab = ref<Tab>('general')
+
 onMounted(load)
 </script>
 
@@ -129,8 +136,39 @@ onMounted(load)
     <div v-if="loading" class="text-sm text-surface-500">Loading…</div>
 
     <div v-else class="space-y-6">
+      <!-- Surface tabs. The messages/notifications split is a
+           conceptual one: 消息 = user-facing SMTP-only (codes,
+           low-balance, password reset), 通知 = ops-facing multi-
+           channel (email/discord/feishu/telegram + admin-
+           configured webhooks). Runtime overrides live under
+           通用 since they aren't surface-specific. -->
+      <nav
+        class="flex items-center gap-1 border-b border-surface-200 dark:border-surface-800"
+        role="tablist"
+        aria-label="Settings surfaces"
+      >
+        <button
+          v-for="t in (['general', 'messages', 'notifications'] as Tab[])"
+          :key="t"
+          type="button"
+          role="tab"
+          :aria-selected="tab === t"
+          :class="[
+            'border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+            tab === t
+              ? 'border-primary-600 text-primary-600 dark:text-primary-300'
+              : 'border-transparent text-surface-500 hover:text-surface-700 dark:hover:text-surface-200',
+          ]"
+          @click="tab = t"
+        >
+          {{ t === 'general' ? '通用' : t === 'messages' ? '消息' : '通知' }}
+        </button>
+      </nav>
+
+      <!-- 通用 tab — runtime overrides grouped by category. -->
       <section
         v-for="(rows, group) in grouped"
+        v-show="tab === 'general'"
         :key="group"
         class="rounded-lg border border-surface-200 bg-surface-0 shadow-card dark:border-surface-800 dark:bg-surface-900"
       >
@@ -203,29 +241,72 @@ onMounted(load)
         </div>
       </section>
 
-      <!-- SMTP test bench. Pure ops affordance: admin enters a
-           recipient + clicks "send" to verify SMTP env-vars are
-           wired correctly without waiting for a real user
-           verification flow to fail. -->
-      <section class="rounded-lg border border-surface-200 bg-surface-0 p-4 dark:border-surface-700 dark:bg-surface-900">
-        <h3 class="text-base font-semibold text-ink-900 dark:text-surface-50">SMTP 测试</h3>
-        <p class="mt-1 text-xs text-surface-500">确认配置后填一个收件邮箱，发一封测试邮件。SMTP 未配置时返回 503。</p>
-        <div class="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            v-model="smtpTo"
-            type="email"
-            placeholder="admin@example.com"
-            class="w-72 rounded-md border border-surface-300 bg-surface-0 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-surface-700 dark:bg-surface-900"
-          />
-          <button
-            class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
-            :disabled="smtpBusy || !smtpTo"
-            @click="sendSMTPTest"
-          >
-            {{ smtpBusy ? '发送中…' : '发送测试' }}
-          </button>
-          <span v-if="smtpFlash" class="text-xs" :class="smtpFlash.kind === 'ok' ? 'text-accent-600' : 'text-red-600'">{{ smtpFlash.text }}</span>
+      <!-- 消息 tab — user-facing SMTP. The only channel is mail to
+           the user's verified email. -->
+      <section
+        v-show="tab === 'messages'"
+        class="rounded-lg border border-surface-200 bg-surface-0 p-4 dark:border-surface-700 dark:bg-surface-900"
+      >
+        <h3 class="text-base font-semibold text-ink-900 dark:text-surface-50">用户消息（SMTP）</h3>
+        <p class="mt-2 text-sm text-surface-600 dark:text-surface-300">
+          用户向的事务性邮件：注册验证码、密码重置、余额不足提醒等。仅 SMTP 单通道，收件人为用户绑定邮箱。
+          其他渠道（飞书 / Discord / Telegram / admin 配置的 webhook）只用于运营通知，不会发到用户。
+        </p>
+        <p class="mt-2 text-xs text-surface-500">
+          SMTP 主机、账号密码、TLS 模式等通过环境变量 <code class="font-mono">SMTP_*</code> 配置；下方为发送测试。
+        </p>
+        <div class="mt-4 border-t border-surface-200 pt-4 dark:border-surface-700">
+          <h4 class="text-sm font-semibold text-ink-900 dark:text-surface-50">SMTP 测试</h4>
+          <p class="mt-1 text-xs text-surface-500">填一个收件邮箱，发一封测试邮件。SMTP 未配置时返回 503。</p>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              v-model="smtpTo"
+              type="email"
+              placeholder="admin@example.com"
+              class="w-72 rounded-md border border-surface-300 bg-surface-0 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-surface-700 dark:bg-surface-900"
+            />
+            <button
+              class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+              :disabled="smtpBusy || !smtpTo"
+              @click="sendSMTPTest"
+            >
+              {{ smtpBusy ? '发送中…' : '发送测试' }}
+            </button>
+            <span v-if="smtpFlash" class="text-xs" :class="smtpFlash.kind === 'ok' ? 'text-accent-600' : 'text-red-600'">{{ smtpFlash.text }}</span>
+          </div>
         </div>
+      </section>
+
+      <!-- 通知 tab — ops-facing fanout. 4 env-configured channels
+           (email/discord/feishu/telegram) plus admin-configured
+           webhooks under /admin/webhooks. -->
+      <section
+        v-show="tab === 'notifications'"
+        class="rounded-lg border border-surface-200 bg-surface-0 p-4 dark:border-surface-700 dark:bg-surface-900"
+      >
+        <h3 class="text-base font-semibold text-ink-900 dark:text-surface-50">运营通知</h3>
+        <p class="mt-2 text-sm text-surface-600 dark:text-surface-300">
+          面向运维 / 管理员的事件通知。包含两类后端：
+        </p>
+        <ul class="mt-3 space-y-2 text-sm text-surface-600 dark:text-surface-300">
+          <li class="flex gap-2">
+            <span class="font-mono text-xs text-surface-400">[env]</span>
+            <div>
+              <strong>内置通道</strong>：email（ops 收件人）、Discord、飞书、Telegram，通过环境变量配置。
+              事件路由由 <code class="font-mono">NOTIFY_ROUTES</code> 决定（如 <code class="font-mono">node.offline:feishu,telegram</code>）。
+            </div>
+          </li>
+          <li class="flex gap-2">
+            <span class="font-mono text-xs text-surface-400">[ui]</span>
+            <div>
+              <strong>Admin 配置的 Webhook</strong>：自定义 URL、模板、HMAC 签名、重试。
+              <RouterLink to="/admin/webhooks" class="text-primary-600 hover:underline dark:text-primary-300">前往 Webhooks →</RouterLink>
+            </div>
+          </li>
+        </ul>
+        <p class="mt-4 text-xs text-surface-500">
+          dedup 与「消息」surface 独立 —— 同名事件（例如「low_balance」）发给用户的邮件不会阻塞发给 ops 的告警。
+        </p>
       </section>
     </div>
   </div>
