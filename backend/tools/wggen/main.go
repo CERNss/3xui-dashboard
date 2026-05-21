@@ -1,6 +1,8 @@
-// Tool: wggen — generate WireGuard keypairs via wgcrypto for T1 probing.
-// Not shipped in the production binary; lives under cmd/ purely for
-// `go run` access to the internal/ packages.
+// Tool: wggen — generate WireGuard keypairs via wgcrypto for T1
+// probing / manual testing. Lives under tools/ (separate from
+// cmd/dashboard, the production binary) so `go build ./cmd/...`
+// doesn't sweep it into release artifacts. Run with
+// `go run ./tools/wggen` from the backend root.
 package main
 
 import (
