@@ -76,7 +76,7 @@ func quietLogger() *slog.Logger {
 // Send drops cleanly without touching dedup.
 func TestSend_DisabledMailerNoOp(t *testing.T) {
 	store := newStubLog()
-	svc := New(nil, store, quietLogger())
+	svc := New(nil, store, nil, nil, nil, quietLogger())
 	if svc.Enabled() {
 		t.Errorf("Enabled() with nil mailer must be false")
 	}

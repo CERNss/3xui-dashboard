@@ -10,11 +10,11 @@ import (
 )
 
 // Email wraps the existing mailer.Mailer as a notify.Channel.
-// `opsRecipient` is the fallback address ops alerts (events
-// without a per-user Recipient) get sent to. Empty fallback means
-// the channel silently drops ops messages — operators see a
-// startup warning when EMAIL is routed but MAIL_OPS_ADDRESS isn't
-// set.
+// `opsRecipient` is the address every ops alert is sent to. Empty
+// recipient means the channel silently drops messages — operators
+// see a startup warning when EMAIL is routed but
+// MAIL_OPS_ADDRESS isn't set. User-facing email goes through
+// service/messages, not here.
 type Email struct {
 	mailer       *mailer.Mailer
 	opsRecipient string
@@ -36,12 +36,9 @@ func (e *Email) Send(_ context.Context, msg notify.Message) error {
 	if !e.Enabled() {
 		return nil
 	}
-	to := msg.Recipient
+	to := e.opsRecipient
 	if to == "" {
-		to = e.opsRecipient
-	}
-	if to == "" {
-		// Routed here but no recipient configured. Don't error —
+		// Routed here but no ops recipient configured. Don't error —
 		// the operator's choice — just skip.
 		return nil
 	}

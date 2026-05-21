@@ -10,12 +10,14 @@ func TestParseRoutes_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("empty: %v", err)
 	}
-	got := r.Channels("client.expired")
-	if len(got) != 1 || got[0] != "email" {
-		t.Errorf("default for client.expired = %v, want [email]", got)
+	// After the messages/notifications split there are no default
+	// routes — ops fanout is opt-in via NOTIFY_ROUTES, user-facing
+	// client lifecycle goes through service/messages.
+	if got := r.Channels("client.expired"); got != nil {
+		t.Errorf("expected no default route for client.expired, got %v", got)
 	}
-	if r.Channels("node.offline") != nil {
-		t.Error("default rules should NOT route node.offline anywhere")
+	if got := r.Channels("node.offline"); got != nil {
+		t.Errorf("expected no default route for node.offline, got %v", got)
 	}
 }
 

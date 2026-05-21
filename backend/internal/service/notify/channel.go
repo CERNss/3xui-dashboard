@@ -106,6 +106,11 @@ type Field struct {
 
 // Message is the channel-agnostic payload the notify service builds
 // from an event. Channels translate this into their wire format.
+//
+// No Recipient field: notify is ops-only, and each channel sends
+// to its own configured target (ops mailbox via opsRecipient,
+// Telegram chat ID, Discord/Feishu webhook URL). User-facing
+// per-recipient delivery lives in service/messages.
 type Message struct {
 	// Level controls severity styling per channel.
 	Level Level
@@ -123,19 +128,8 @@ type Message struct {
 	// EventType is the bus type that triggered this message. Used
 	// by the dedup log key + structured logs. Not user-visible.
 	EventType string
-	// OwnershipID is the dedup boundary when the event is per-client.
-	// 0 means "no per-ownership dedup" (e.g. node.offline alerts —
-	// we dedup on node ID instead via DedupKey).
-	OwnershipID int64
-	// DedupKey is the override for the dedup log key when OwnershipID
-	// isn't the right boundary. Empty → use OwnershipID.
+	// DedupKey hashes onto a stable int64 for the
+	// notification_log.ownership_id column — the dedup boundary
+	// per (surface, kind, dedup_key_hash).
 	DedupKey string
-	// Recipient is a channel-specific routing hint, used by per-user
-	// channels (email) where the dispatch loop needs to tell the
-	// channel WHO to send to. Webhook-style channels (telegram,
-	// discord, feishu) ignore this field — their target is baked
-	// into the channel config. Empty means "use the channel's
-	// configured default target" (e.g. ops alerts go to
-	// MAIL_OPS_ADDRESS).
-	Recipient string
 }

@@ -68,7 +68,7 @@ func setupDB(t *testing.T) (*gorm.DB, *Service) {
 	// Mailer in disabled mode — messages.Service then short-circuits
 	// Send to a no-op so tests don't try to dial SMTP.
 	m := mailer.New(config.SMTP{}, logger)
-	msgs := messages.New(m, repository.NewNotificationLogRepo(db), logger)
+	msgs := messages.New(m, repository.NewNotificationLogRepo(db), nil, nil, nil, logger)
 	return db, New(db, msgs, logger)
 }
 

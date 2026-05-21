@@ -198,9 +198,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	mailerSvc := mailer.New(cfg.SMTP, logger)
 	notifyLogRepo := repository.NewNotificationLogRepo(db)
 	// messages.Service is the user-facing SMTP surface — verification
-	// codes, low-balance alerts to user, password reset. notify-side
-	// ops fanout uses a separate surface via service/notify.
-	messagesSvc := messages.New(mailerSvc, notifyLogRepo, logger)
+	// codes, low-balance alerts to user, client lifecycle (expired /
+	// expiring_soon / over_limit) sent to the user's bound email.
+	// notify-side ops fanout uses a separate surface via service/notify.
+	messagesSvc := messages.New(mailerSvc, notifyLogRepo, bus, userRepo, ownershipRepo, logger)
+	messagesSvc.Start()
 	verifyService := verification.New(db, messagesSvc, logger)
 	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.OIDC, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
@@ -313,7 +315,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 			}
 		}
 	}
-	notify.New(bus, notifyRouter, notifyChannels, userRepo, ownershipRepo, notifyLogRepo, logger).Start()
+	notify.New(bus, notifyRouter, notifyChannels, notifyLogRepo, logger).Start()
 
 	// Configured payment-provider currencies — surface at INFO so an
 	// operator who forgot STRIPE_CURRENCY=cny sees the active value

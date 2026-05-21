@@ -206,11 +206,10 @@ func messageToMap(m notify.Message) map[string]any {
 		})
 	}
 	return map[string]any{
-		"Title":     m.Title,
-		"Body":      m.Body,
-		"Level":     m.Level.String(),
-		"URL":       m.URL,
-		"Recipient": m.Recipient,
-		"Fields":    fields,
+		"Title":  m.Title,
+		"Body":   m.Body,
+		"Level":  m.Level.String(),
+		"URL":    m.URL,
+		"Fields": fields,
 	}
 }

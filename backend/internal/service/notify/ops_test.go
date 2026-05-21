@@ -11,6 +11,36 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 )
 
+// stubChannel is the test double for Channel. Records every Send so
+// tests can assert call count + message shape. (Was previously in
+// the now-removed service_test.go user-lifecycle suite.)
+type stubChannel struct {
+	mu      sync.Mutex
+	name    string
+	enabled bool
+	sends   []Message
+	sendErr error
+}
+
+func newStubChannel(name string) *stubChannel { return &stubChannel{name: name, enabled: true} }
+
+func (s *stubChannel) Name() string  { return s.name }
+func (s *stubChannel) Enabled() bool { return s.enabled }
+func (s *stubChannel) Send(_ context.Context, msg Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sendErr != nil {
+		return s.sendErr
+	}
+	s.sends = append(s.sends, msg)
+	return nil
+}
+func (s *stubChannel) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sends)
+}
+
 // stubLogStore is a memory-backed NotificationLogStore. Records each
 // MarkSent so tests can assert dedup keys.
 type stubLogStore struct {
@@ -78,7 +108,7 @@ func newOpsService(channels []Channel, routerRaw string) (*Service, *stubLogStor
 	bus := event.New()
 	router, _ := ParseRoutes(routerRaw)
 	logs := newStubLogStore()
-	svc := New(bus, router, channels, nil, nil, logs, logger)
+	svc := New(bus, router, channels, logs, logger)
 	svc.Start()
 	return svc, logs
 }

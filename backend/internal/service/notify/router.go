@@ -15,15 +15,14 @@ type Router struct {
 	rules map[string][]string
 }
 
-// defaultRoutes encodes the legacy behavior: client lifecycle
-// events go to email, nothing else. Used when the env var is
-// empty so a fresh deployment behaves like v1.
+// defaultRoutes is empty by design after the messages/notifications
+// split. Ops fanout is opt-in: admins set NOTIFY_ROUTES to wire
+// specific ops events to specific env channels (e.g.
+// `node.offline:feishu,telegram`). User-facing client lifecycle
+// no longer routes here — it goes to service/messages which
+// always sends to the user's bound email.
 func defaultRoutes() map[string][]string {
-	return map[string][]string{
-		"client.expired":       {"email"},
-		"client.expiring_soon": {"email"},
-		"client.over_limit":    {"email"},
-	}
+	return map[string][]string{}
 }
 
 // ParseRoutes parses the env-var format. Empty input returns the
@@ -74,15 +73,11 @@ func (r *Router) Channels(eventType string) []string {
 	return r.rules[eventType]
 }
 
-// OpsEventTypes returns the bus event types the service treats as
-// "ops alerts" — events without an inherent per-user recipient.
-// Exported so the app wiring can boot-check that the email channel
-// (if routed for any of these) has a configured fallback recipient.
-//
-// Kept aligned with the set of events Service.Start subscribes to
-// via opsOrderEvent / dispatchOpsEvent; the lifecycle events
-// (client.*) are NOT in this list because they always have a
-// per-user recipient.
+// OpsEventTypes returns the bus event types Service.Start subscribes
+// to. Exported so the app wiring can boot-check that the email
+// channel (if routed for any of these) has an ops recipient set.
+// All notify events are ops-only now — user-facing client lifecycle
+// dispatches go through service/messages.
 func OpsEventTypes() []string {
 	return []string{
 		"node.offline",
