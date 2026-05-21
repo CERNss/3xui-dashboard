@@ -45,6 +45,23 @@ async function reload() {
   }
 }
 
+// Auto-renew toggle — inline, no confirmation modal. Flipping
+// this is reversible and admin-driven, not destructive.
+const autoRenewBusy = ref<number | null>(null)
+
+async function toggleAutoRenew(u: AdminUser) {
+  autoRenewBusy.value = u.id
+  try {
+    const updated = await adminUsersApi.update(u.id, { auto_renew: !u.auto_renew })
+    const i = users.value.findIndex(x => x.id === u.id)
+    if (i >= 0) users.value.splice(i, 1, updated)
+  } catch (e: any) {
+    error.value = formatError(e, '切换自动续费失败')
+  } finally {
+    autoRenewBusy.value = null
+  }
+}
+
 async function toggleSuspend(u: AdminUser) {
   const verb = u.status === 'suspended' ? '解封' : '封停'
   const ok = await askConfirm({
@@ -181,6 +198,7 @@ onMounted(reload)
             <th class="px-6 py-3 font-medium">邮箱</th>
             <th class="px-6 py-3 font-medium">状态</th>
             <th class="px-6 py-3 text-right font-medium">余额</th>
+            <th class="px-6 py-3 font-medium">自动续费</th>
             <th class="px-6 py-3 font-medium">注册</th>
             <th class="px-6 py-3 text-right font-medium">操作</th>
           </tr>
@@ -210,6 +228,21 @@ onMounted(reload)
               </span>
             </td>
             <td class="px-6 py-3.5 text-right tabular-nums font-medium text-ink-900 dark:text-surface-50">{{ formatYuan(u.balance_cents) }}</td>
+            <td class="px-6 py-3.5">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors"
+                :class="u.auto_renew
+                  ? 'bg-accent-50 text-accent-700 ring-accent-100 hover:bg-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800'
+                  : 'bg-surface-100 text-surface-500 ring-surface-200 hover:bg-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700'"
+                :disabled="autoRenewBusy === u.id"
+                @click="toggleAutoRenew(u)"
+                :title="u.auto_renew ? '关闭自动续费' : '开启自动续费'"
+              >
+                <span class="h-1.5 w-1.5 rounded-full" :class="u.auto_renew ? 'bg-accent-500' : 'bg-surface-400'" />
+                {{ autoRenewBusy === u.id ? '更新中…' : (u.auto_renew ? '开' : '关') }}
+              </button>
+            </td>
             <td class="px-6 py-3.5 text-xs text-surface-500">{{ new Date(u.created_at).toLocaleDateString() }}</td>
             <td class="px-6 py-3.5">
               <div class="flex items-center justify-end gap-0.5">

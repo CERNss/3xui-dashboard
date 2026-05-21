@@ -24,6 +24,7 @@ function makeUser(over: Partial<AdminUser> = {}): AdminUser {
     email_verified: true,
     status: 'active',
     balance_cents: 1500,
+    auto_renew: false,
     sub_id: 'sub-abc123def456',
     created_at: '2026-05-01T00:00:00Z',
     updated_at: '2026-05-01T00:00:00Z',

@@ -284,6 +284,7 @@ type AdminUpdateInput struct {
 	Email        *string `json:"email,omitempty"`
 	Status       *string `json:"status,omitempty"` // active | suspended
 	BalanceCents *int64  `json:"balance_cents,omitempty"`
+	AutoRenew    *bool   `json:"auto_renew,omitempty"`
 }
 
 // AdminUpdate applies the patch and returns the new user row.
@@ -313,6 +314,9 @@ func (s *Service) AdminUpdate(ctx context.Context, userID int64, in AdminUpdateI
 	}
 	if in.BalanceCents != nil {
 		updates["balance_cents"] = *in.BalanceCents
+	}
+	if in.AutoRenew != nil {
+		updates["auto_renew"] = *in.AutoRenew
 	}
 	if len(updates) == 0 {
 		return s.users.Get(ctx, userID)

@@ -8,6 +8,7 @@ export interface AdminUser {
   email_verified: boolean
   status: UserStatus
   balance_cents: number
+  auto_renew: boolean
   sub_id: string
   oidc_subject?: string | null
   created_at: string
@@ -29,7 +30,7 @@ export const adminUsersApi = {
   get: (id: number) =>
     adminClient.get<AdminUser>(`/users/${id}`).then((r) => r.data),
 
-  update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'status'>>) =>
+  update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'status' | 'auto_renew'>>) =>
     adminClient.put<AdminUser>(`/users/${id}`, fields).then((r) => r.data),
 
   suspend: (id: number) =>

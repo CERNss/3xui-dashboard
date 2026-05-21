@@ -17,6 +17,7 @@ type User struct {
 	EmailVerified bool       `gorm:"column:email_verified;not null;default:false" json:"email_verified"`
 	Status        string     `gorm:"column:status;not null;default:active"        json:"status"`
 	BalanceCents  int64      `gorm:"column:balance_cents;not null;default:0"      json:"balance_cents"`
+	AutoRenew     bool       `gorm:"column:auto_renew;not null"                   json:"auto_renew"`
 	SubID         string     `gorm:"column:sub_id;not null;uniqueIndex:users_sub_id_unique" json:"sub_id"`
 	CreatedAt     time.Time  `gorm:"column:created_at;not null;default:now()"     json:"created_at"`
 	UpdatedAt     time.Time  `gorm:"column:updated_at;not null;default:now()"     json:"updated_at"`

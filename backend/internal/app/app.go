@@ -247,6 +247,17 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	paymentPollJob := job.NewPaymentPollJob(billingService, paymentRegistry, 15*time.Minute, logger)
 	_ = scheduler.Add("payment-poll", "@every 30s", paymentPollJob.RunOnce)
 
+	// Auto-renewal — picks up ownerships expiring within 24h whose
+	// owning user has admin-set auto_renew=true; charges via the
+	// usual billing.Purchase flow. Insufficient-balance cases email
+	// the ops recipient (NOT the user — auto-renewal is invisible
+	// to end users per design).
+	autoRenewJob := job.NewAutoRenewJob(
+		ownershipRepo, userRepo, planRepo, notifyLogRepo,
+		billingService, mailerSvc, cfg.Notify.OpsRecipient, logger,
+	)
+	_ = scheduler.Add("auto-renew", "@every 1h", autoRenewJob.RunOnce)
+
 	// Notify service — multi-channel fanout. Channels not configured
 	// (empty env vars) report Enabled()=false and the dispatch loop
 	// silently skips them. Router parsed from NOTIFY_ROUTES; empty
