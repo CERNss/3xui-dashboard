@@ -18,6 +18,7 @@ export default {
     orders: '订单',
     profile: '个人资料',
     webhooks: 'Webhooks',
+    audit: '审计日志',
   },
   auth: {
     login: '登录',

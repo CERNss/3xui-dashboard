@@ -112,7 +112,15 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	loginLimiter := middleware.IPRateLimiter(10, 10, time.Minute)
 	apiAdmin := engine.Group("/api/admin", loginLimiter)
 	adminAuth.RegisterRoutes(apiAdmin)
-	apiAdminAuthed := engine.Group("/api/admin", middleware.RequireAdmin(authSvc))
+	// Admin audit log — written by middleware on every mutating
+	// /api/admin/* request. Wired into the authed group below so
+	// every handler picks it up automatically; no per-handler
+	// integration needed.
+	adminActionRepo := repository.NewAdminActionRepo(db)
+	apiAdminAuthed := engine.Group("/api/admin",
+		middleware.RequireAdmin(authSvc),
+		middleware.AuditLog(adminActionRepo, logger),
+	)
 	apiUser := engine.Group("/api/user", loginLimiter)
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireUser(authSvc))
 
@@ -211,6 +219,10 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// doesn't pull thousands of rows just to render 4 KPI cards.
 	statsRepo := repository.NewStatsRepo(db)
 	adminhandler.NewStatsHandler(statsRepo).RegisterRoutes(apiAdminAuthed)
+
+	// Admin audit log browser. The middleware that writes rows is
+	// already wired into apiAdminAuthed above.
+	adminhandler.NewAuditHandler(adminActionRepo).RegisterRoutes(apiAdminAuthed)
 
 	// Webhooks.
 	webhookRepo := repository.NewWebhookRepo(db)

@@ -71,6 +71,12 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, titleKey: 'nav.webhooks' },
       },
       {
+        path: 'audit-log',
+        name: 'admin.audit',
+        component: () => import('@/views/admin/AuditLog.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.audit' },
+      },
+      {
         path: 'settings',
         name: 'admin.settings',
         component: () => import('@/views/admin/Settings.vue'),

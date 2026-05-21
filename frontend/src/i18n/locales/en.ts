@@ -18,6 +18,7 @@ export default {
     orders: 'Orders',
     profile: 'Profile',
     webhooks: 'Webhooks',
+    audit: 'Audit log',
   },
   auth: {
     login: 'Log in',
