@@ -199,7 +199,11 @@ onMounted(reload)
             <p class="mt-0.5 text-xs text-surface-500">每个客户端对应一个节点上的入站</p>
           </div>
         </header>
-        <table v-if="clients.length > 0" class="min-w-full text-sm">
+        <!-- overflow-x-auto so narrow phones can horizontally scroll the
+             wide columns (node / inbound / email / traffic / expires).
+             A proper card view per breakpoint is a future-pass polish. -->
+        <div v-if="clients.length > 0" class="overflow-x-auto">
+        <table class="min-w-full text-sm">
           <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
             <tr class="border-b border-surface-100 dark:border-surface-800">
               <th class="px-6 py-3 font-medium">节点</th>
@@ -224,6 +228,7 @@ onMounted(reload)
             </tr>
           </tbody>
         </table>
+        </div>
         <div v-else class="px-6 py-14 text-center">
           <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-50 text-accent-600 dark:bg-accent-950 dark:text-accent-300">
             <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0" /></svg>
