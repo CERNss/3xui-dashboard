@@ -49,7 +49,7 @@ async function mountWebhooks() {
   await router.push('/admin/webhooks')
   await router.isReady()
   const w = mount(Webhooks, {
-    global: { plugins: [router], mocks: { $t: (k: string) => k } },
+    global: { plugins: [router] },
     attachTo: document.body,
   })
   await flushPromises()

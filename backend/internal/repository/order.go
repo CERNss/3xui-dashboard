@@ -19,6 +19,10 @@ type OrderRepo struct{ db *gorm.DB }
 // NewOrderRepo returns a repository bound to db.
 func NewOrderRepo(db *gorm.DB) *OrderRepo { return &OrderRepo{db: db} }
 
+// DB exposes the underlying handle for service-level transactions
+// that need to compose order writes with another repository.
+func (r *OrderRepo) DB() *gorm.DB { return r.db }
+
 // GetByIdempotencyKey returns the order matching key, or (nil, nil)
 // on miss. Used by Purchase to short-circuit dupe attempts.
 func (r *OrderRepo) GetByIdempotencyKey(ctx context.Context, key string) (*model.Order, error) {
@@ -33,6 +37,26 @@ func (r *OrderRepo) GetByIdempotencyKey(ctx context.Context, key string) (*model
 			return nil, nil
 		}
 		return nil, fmt.Errorf("OrderRepo.GetByIdempotencyKey: %w", err)
+	}
+	return &o, nil
+}
+
+// GetByUserAndIdempotencyKey returns the order matching user+key, or
+// (nil, nil) on miss. Callers that expose idempotency replays to end
+// users should prefer this scoped lookup before falling back to the
+// global key for conflict detection.
+func (r *OrderRepo) GetByUserAndIdempotencyKey(ctx context.Context, userID int64, key string) (*model.Order, error) {
+	if key == "" {
+		return nil, nil
+	}
+	var o model.Order
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ? AND idempotency_key = ?", userID, key).
+		First(&o).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("OrderRepo.GetByUserAndIdempotencyKey: %w", err)
 	}
 	return &o, nil
 }
@@ -175,8 +199,9 @@ func (r *OrderRepo) ListPaymentPending(ctx context.Context, maxAge time.Duration
 	var rows []model.Order
 	q := r.db.WithContext(ctx).Where("status = ?", model.OrderStatusPaymentPending)
 	if maxAge > 0 {
-		cutoff := time.Now().UTC().Add(-maxAge)
-		q = q.Where("created_at > ?", cutoff)
+		now := time.Now().UTC()
+		cutoff := now.Add(-maxAge)
+		q = q.Where("(payment_expires_at IS NOT NULL AND payment_expires_at > ?) OR (payment_expires_at IS NULL AND created_at > ?)", now, cutoff)
 	}
 	if err := q.Order("created_at ASC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("OrderRepo.ListPaymentPending: %w", err)
@@ -184,12 +209,14 @@ func (r *OrderRepo) ListPaymentPending(ctx context.Context, maxAge time.Duration
 	return rows, nil
 }
 
-// ListExpiredPending returns orders in payment_pending status older
-// than `cutoff` — for the poll job to mark as payment_expired.
-func (r *OrderRepo) ListExpiredPending(ctx context.Context, cutoff time.Time) ([]model.Order, error) {
+// ListExpiredPending returns payment_pending orders whose gateway
+// expiry timestamp is past now. Rows without payment_expires_at
+// fall back to created_at so older data still gets reaped.
+func (r *OrderRepo) ListExpiredPending(ctx context.Context, now, fallbackCutoff time.Time) ([]model.Order, error) {
 	var rows []model.Order
 	err := r.db.WithContext(ctx).
-		Where("status = ? AND created_at <= ?", model.OrderStatusPaymentPending, cutoff).
+		Where("status = ? AND ((payment_expires_at IS NOT NULL AND payment_expires_at <= ?) OR (payment_expires_at IS NULL AND created_at <= ?))",
+			model.OrderStatusPaymentPending, now, fallbackCutoff).
 		Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("OrderRepo.ListExpiredPending: %w", err)
@@ -213,6 +240,26 @@ func (r *OrderRepo) ListByUser(ctx context.Context, userID int64, limit, offset 
 		return nil, fmt.Errorf("OrderRepo.ListByUser: %w", err)
 	}
 	return rows, nil
+}
+
+// UserHasAccessHistory reports whether the user has any order that
+// represents paid/usable access. It deliberately ignores failed,
+// refunded, and merely-pending balance orders so starter-plan rules
+// continue to apply until the user actually enters a paid flow.
+func (r *OrderRepo) UserHasAccessHistory(ctx context.Context, userID int64) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.Order{}).
+		Where("user_id = ?", userID).
+		Where("status IN ?", []string{
+			model.OrderStatusCompleted,
+			model.OrderStatusPaid,
+			model.OrderStatusPaymentPending,
+		}).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("OrderRepo.UserHasAccessHistory: %w", err)
+	}
+	return count > 0, nil
 }
 
 // ListAdmin returns paged orders with optional filters.

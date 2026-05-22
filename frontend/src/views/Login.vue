@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
 import AuthLayout from '@/components/layout/AuthLayout.vue'
 import { adminAuthApi } from '@/api/admin/auth'
@@ -8,6 +9,8 @@ import { portalAuthApi, type OIDCProvider } from '@/api/portal/auth'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import { formatError } from '@/utils/format'
+
+const { t } = useI18n()
 
 type Role = 'admin' | 'portal'
 type Mode = 'login' | 'register'
@@ -32,6 +35,7 @@ const error = ref<string | null>(null)
 const code = ref('')
 const codeSending = ref(false)
 const codeCooldown = ref(0)
+const emailVerificationRequired = ref(true)
 let cooldownTimer: number | undefined
 
 function startCooldown(seconds: number) {
@@ -49,7 +53,7 @@ function startCooldown(seconds: number) {
 async function sendCode() {
   // Basic client-side guard so we don't fire a request for obviously bad emails.
   if (!account.value || !/^.+@.+\..+$/.test(account.value)) {
-    error.value = '请先填写有效邮箱'
+    error.value = t('auth.enterValidEmail')
     return
   }
   codeSending.value = true
@@ -58,7 +62,7 @@ async function sendCode() {
     await portalAuthApi.sendCode(account.value)
     startCooldown(60)
   } catch (e) {
-    error.value = formatError(e, '验证码发送失败')
+    error.value = formatError(e, t('auth.codeFailedToSend'))
   } finally {
     codeSending.value = false
   }
@@ -75,6 +79,15 @@ async function loadOIDC() {
   }
 }
 
+async function loadRegistrationPolicy() {
+  try {
+    const policy = await portalAuthApi.registrationPolicy()
+    emailVerificationRequired.value = policy.email_verification_required
+  } catch {
+    emailVerificationRequired.value = true
+  }
+}
+
 async function startOIDC(_p: OIDCProvider) {
   // POST /auth/oidc/start → returns the IDP's authorize URL.
   // Frontend navigates the browser there; the IDP eventually
@@ -88,15 +101,28 @@ async function startOIDC(_p: OIDCProvider) {
     window.location.assign(authorize_url)
   } catch (e: any) {
     loading.value = false
-    error.value = formatError(e, 'OIDC 启动失败')
+    error.value = formatError(e, t('auth.oidcStarting'))
   }
 }
 
-onMounted(loadOIDC)
+onMounted(() => {
+  loadOIDC()
+  loadRegistrationPolicy()
+})
 onUnmounted(() => window.clearInterval(cooldownTimer))
 
 const nextPath = computed(() => {
   return typeof route.query.next === 'string' ? route.query.next : null
+})
+
+const hintedRole = computed<Role | null>(() => {
+  return route.query.hint === 'portal' || route.query.hint === 'admin'
+    ? route.query.hint
+    : null
+})
+
+const roleOrder = computed<Role[]>(() => {
+  return hintedRole.value === 'portal' ? ['portal', 'admin'] : ['admin', 'portal']
 })
 
 // Try a single role for sign-in. Returns true on success (stores session),
@@ -112,7 +138,7 @@ async function tryRole(role: Role, account: string, password: string): Promise<b
     }
     return true
   } catch (e: any) {
-    const status = e?.response?.status
+    const status = e?.status ?? e?.response?.status
     if (status === 400 || status === 401 || status === 403 || status === 404) {
       return false
     }
@@ -121,24 +147,23 @@ async function tryRole(role: Role, account: string, password: string): Promise<b
 }
 
 async function doLogin() {
-  // Admin and portal share the same email format, so we always try admin
-  // first (cheap path for fleet operators — the heaviest users), then fall
-  // back to portal on auth failure. One wasted request per portal sign-in
-  // is acceptable for self-hosted small fleets.
+  // Admin and portal share the same email format. Prefer the route hint
+  // when present, then continue to the other role on auth-class failures.
   let succeededAs: Role | null = null
   try {
-    if (await tryRole('admin', account.value, password.value)) {
-      succeededAs = 'admin'
-    } else if (await tryRole('portal', account.value, password.value)) {
-      succeededAs = 'portal'
+    for (const role of roleOrder.value) {
+      if (await tryRole(role, account.value, password.value)) {
+        succeededAs = role
+        break
+      }
     }
   } catch (e) {
-    error.value = formatError(e, '登录失败')
+    error.value = formatError(e, t('auth.loginFailed'))
     return
   }
 
   if (!succeededAs) {
-    error.value = '邮箱或密码错误'
+    error.value = t('auth.wrongCredentials')
     return
   }
 
@@ -156,23 +181,27 @@ async function doLogin() {
 
 async function doRegister() {
   if (password.value !== passwordConfirm.value) {
-    error.value = '两次输入的密码不一致'
+    error.value = t('auth.passwordsMustMatch')
     return
   }
   if (password.value.length < 8) {
-    error.value = '密码至少 8 位'
+    error.value = t('auth.passwordTooShort')
     return
   }
-  if (!code.value || code.value.length !== 6) {
-    error.value = '请填写收到的 6 位验证码'
+  if (emailVerificationRequired.value && (!code.value || code.value.length !== 6)) {
+    error.value = t('auth.codeMustBe6')
     return
   }
   try {
-    const res = await portalAuthApi.register(account.value, password.value, code.value)
+    const res = await portalAuthApi.register(
+      account.value,
+      password.value,
+      emailVerificationRequired.value ? code.value : undefined,
+    )
     portalStore.setSession(res.token, { id: res.user_id, email: res.email })
     await router.push('/portal')
   } catch (e) {
-    error.value = formatError(e, '注册失败')
+    error.value = formatError(e, t('auth.registerFailed'))
   }
 }
 
@@ -202,8 +231,8 @@ function switchMode(next: Mode) {
 
 <template>
   <AuthLayout
-    :card-title="mode === 'login' ? '欢迎回来' : '创建账户'"
-    :card-subtitle="mode === 'login' ? '登录您的账户以继续' : '注册一个用户端账户，管理员账户由系统预置'"
+    :card-title="mode === 'login' ? $t('auth.welcomeBack') : $t('auth.createAccount')"
+    :card-subtitle="mode === 'login' ? $t('auth.signInSubtitle') : $t('auth.registerSubtitle')"
   >
     <!-- Mode tabs: 登录 / 注册. Admin vs portal is auto-detected at submit. -->
     <div class="mb-5 flex items-center gap-0.5 rounded-xl border border-surface-200 bg-surface-100/60 p-1 text-sm dark:border-surface-700 dark:bg-surface-800/40">
@@ -215,7 +244,7 @@ function switchMode(next: Mode) {
           : 'text-surface-500 hover:text-ink-900 dark:hover:text-surface-50'"
         @click="switchMode('login')"
       >
-        登录
+        {{ $t('auth.loginTab') }}
       </button>
       <button
         type="button"
@@ -225,13 +254,13 @@ function switchMode(next: Mode) {
           : 'text-surface-500 hover:text-ink-900 dark:hover:text-surface-50'"
         @click="switchMode('register')"
       >
-        注册
+        {{ $t('auth.registerTab') }}
       </button>
     </div>
 
     <form class="space-y-4" @submit.prevent="onSubmit">
       <div>
-        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">邮箱</label>
+        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('auth.email') }}</label>
         <div class="relative">
           <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" />
@@ -247,7 +276,7 @@ function switchMode(next: Mode) {
         </div>
       </div>
       <div>
-        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">密码</label>
+        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('auth.password') }}</label>
         <div class="relative">
           <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -262,8 +291,8 @@ function switchMode(next: Mode) {
           />
         </div>
       </div>
-      <div v-if="mode === 'register'">
-        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">确认密码</label>
+      <div v-if="mode === 'register' && emailVerificationRequired">
+        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('auth.confirmPassword') }}</label>
         <div class="relative">
           <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -273,7 +302,7 @@ function switchMode(next: Mode) {
             type="password"
             autocomplete="new-password"
             required
-            placeholder="再输入一次密码"
+            :placeholder="$t('auth.confirmPasswordPlaceholder')"
             class="block w-full rounded-xl border border-surface-200 bg-surface-0 py-2.5 pl-10 pr-3.5 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
           />
         </div>
@@ -283,7 +312,7 @@ function switchMode(next: Mode) {
            it in here. Send button is rate-limited 60s client-side to mirror
            server-side ErrRateLimited. -->
       <div v-if="mode === 'register'">
-        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">邮箱验证码</label>
+        <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('auth.verificationCode') }}</label>
         <div class="flex items-stretch gap-2">
           <div class="relative flex-1">
             <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -297,7 +326,7 @@ function switchMode(next: Mode) {
               maxlength="6"
               autocomplete="one-time-code"
               required
-              placeholder="6 位数字"
+              :placeholder="$t('auth.codePlaceholder')"
               class="block w-full rounded-xl border border-surface-200 bg-surface-0 py-2.5 pl-10 pr-3.5 text-center text-sm font-medium tabular-nums tracking-[0.4em] transition-colors placeholder:text-surface-400 placeholder:tracking-normal focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
             />
           </div>
@@ -307,12 +336,12 @@ function switchMode(next: Mode) {
             class="inline-flex h-auto min-w-[120px] items-center justify-center rounded-xl border border-surface-200 px-3 text-sm font-medium text-surface-700 transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-surface-200 disabled:hover:bg-transparent disabled:hover:text-surface-700 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-accent-950/40 dark:hover:text-accent-300"
             @click="sendCode"
           >
-            <span v-if="codeSending">发送中…</span>
-            <span v-else-if="codeCooldown > 0">{{ codeCooldown }}s 后重试</span>
-            <span v-else>发送验证码</span>
+            <span v-if="codeSending">{{ $t('auth.sending') }}</span>
+            <span v-else-if="codeCooldown > 0">{{ $t('auth.codeRetry', { n: codeCooldown }) }}</span>
+            <span v-else>{{ $t('auth.sendCode') }}</span>
           </button>
         </div>
-        <p class="mt-1.5 text-2xs text-surface-400">收到的验证码 10 分钟内有效</p>
+        <p class="mt-1.5 text-2xs text-surface-400">{{ $t('auth.codeValidHint') }}</p>
       </div>
       <button
         type="submit"
@@ -326,8 +355,8 @@ function switchMode(next: Mode) {
           <path d="M21 12a9 9 0 1 1-6.2-8.55" />
         </svg>
         {{ loading
-          ? (mode === 'login' ? '登录中…' : '注册中…')
-          : (mode === 'login' ? '继续' : '创建账户') }}
+          ? (mode === 'login' ? $t('auth.loggingIn') : $t('auth.registering'))
+          : (mode === 'login' ? $t('auth.submit') : $t('auth.createAccount')) }}
       </button>
       <p v-if="error" class="flex items-start gap-2 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800">
         <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
@@ -340,7 +369,7 @@ function switchMode(next: Mode) {
     <div v-if="mode === 'login' && oidcProviders.length" class="mt-6">
       <div class="relative my-4 flex items-center">
         <span class="h-px flex-1 bg-surface-200 dark:bg-surface-700"></span>
-        <span class="px-3 text-2xs text-surface-400">或使用其他方式登录</span>
+        <span class="px-3 text-2xs text-surface-400">{{ $t('auth.orSignInWith') }}</span>
         <span class="h-px flex-1 bg-surface-200 dark:bg-surface-700"></span>
       </div>
       <div class="space-y-2">
@@ -356,7 +385,7 @@ function switchMode(next: Mode) {
             <circle cx="12" cy="12" r="10" />
             <path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" />
           </svg>
-          <span>使用 {{ p.name }} 登录</span>
+          <span>{{ $t('auth.signInWith', { name: p.name }) }}</span>
         </button>
       </div>
     </div>

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import {
   adminWebhooksApi,
   type Webhook,
   type WebhookDelivery,
   type WebhookInput,
-  type WebhookFormat,
   type WebhookMethod,
 } from '@/api/admin/webhooks'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
@@ -14,6 +14,8 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
+
+const { t } = useI18n()
 
 const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
 
@@ -86,7 +88,7 @@ async function reload() {
   try {
     rows.value = await adminWebhooksApi.list()
   } catch (e: any) {
-    error.value = formatError(e, '加载 webhooks 失败')
+    error.value = formatError(e, t('admin.webhooks.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -139,7 +141,7 @@ async function save() {
     editor.value.open = false
     await reload()
   } catch (e: any) {
-    editor.value.err = formatError(e, '保存失败')
+    editor.value.err = formatError(e, t('admin.webhooks.saveFailed'))
   } finally {
     editor.value.busy = false
   }
@@ -147,17 +149,17 @@ async function save() {
 
 async function destroy(w: Webhook) {
   const ok = await askConfirm({
-    title: '删除 webhook',
-    message: `Webhook "${w.name}" 及其历史 deliveries 会被级联删除。`,
+    title: t('admin.webhooks.confirmDelete'),
+    message: t('admin.webhooks.confirmDeleteMsg', { name: w.name }),
     variant: 'danger',
-    confirmLabel: '删除',
+    confirmLabel: t('admin.webhooks.delete'),
   })
   if (!ok) return
   try {
     await adminWebhooksApi.remove(w.id)
     await reload()
   } catch (e: any) {
-    error.value = formatError(e, '删除失败')
+    error.value = formatError(e, t('admin.webhooks.deleteFailed'))
   }
 }
 
@@ -182,7 +184,7 @@ async function toggleDeliveries(w: Webhook) {
   try {
     deliveries.value[w.id] = await adminWebhooksApi.deliveries(w.id)
   } catch (e: any) {
-    deliveriesErr.value = formatError(e, '加载 deliveries 失败')
+    deliveriesErr.value = formatError(e, t('admin.webhooks.deliveriesLoadFailed'))
   } finally {
     deliveriesLoading.value = null
   }
@@ -209,14 +211,14 @@ async function testFire(w: Webhook) {
   testFlash.value = null
   try {
     await adminWebhooksApi.test(w.id)
-    testFlash.value = { id: w.id, kind: 'ok', text: '已派发，查看下方记录' }
+    testFlash.value = { id: w.id, kind: 'ok', text: t('admin.webhooks.testSent') }
     // Auto-expand the deliveries panel + refresh — admin almost
     // always wants to see the result of the test fire, not just
     // a "sent" confirmation.
     deliveries.value[w.id] = await adminWebhooksApi.deliveries(w.id)
     expandedID.value = w.id
   } catch (e: any) {
-    testFlash.value = { id: w.id, kind: 'err', text: formatError(e, 'test 发送失败') }
+    testFlash.value = { id: w.id, kind: 'err', text: formatError(e, t('admin.webhooks.testFailed')) }
   } finally {
     testBusy.value = null
     // Auto-clear after 4s so the table doesn't accumulate stale notices.
@@ -238,7 +240,7 @@ async function replayDelivery(w: Webhook, deliveryID: number) {
     // Refresh the deliveries list so admin sees the new attempt row.
     deliveries.value[w.id] = await adminWebhooksApi.deliveries(w.id)
   } catch (e: any) {
-    replayErr.value = formatError(e, '重放失败')
+    replayErr.value = formatError(e, t('admin.webhooks.replayFailed'))
   } finally {
     replayBusy.value = null
   }
@@ -261,15 +263,15 @@ onMounted(reload)
   <div>
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">Webhooks</h1>
-        <p class="mt-1.5 text-sm text-surface-500">配置外部回调：事件订阅 + GET/POST + Header 自定义 + Body Template</p>
+        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.webhooks.title') }}</h1>
+        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.webhooks.subtitle') }}</p>
       </div>
       <button
         type="button"
         class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500"
         @click="openCreate"
       >
-        + 新建 webhook
+        {{ $t('admin.webhooks.createNew') }}
       </button>
     </header>
 
@@ -281,13 +283,13 @@ onMounted(reload)
       <table class="min-w-full text-sm">
         <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
           <tr class="border-b border-surface-100 dark:border-surface-800">
-            <th class="px-6 py-3 font-medium">名称</th>
-            <th class="px-6 py-3 font-medium">Method</th>
-            <th class="px-6 py-3 font-medium">URL</th>
-            <th class="px-6 py-3 font-medium">事件</th>
-            <th class="px-6 py-3 font-medium">模板</th>
-            <th class="px-6 py-3 font-medium">状态</th>
-            <th class="px-6 py-3 text-right font-medium">操作</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.name') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.method') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.url') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.events') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.template') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.status') }}</th>
+            <th class="px-6 py-3 text-right font-medium">{{ $t('admin.webhooks.column.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
@@ -303,19 +305,19 @@ onMounted(reload)
               {{ w.body_template ? `${w.template_format} • ${w.body_template.length} chars` : `default (${w.template_format})` }}
             </td>
             <td class="px-6 py-3.5">
-              <span v-if="w.enabled" class="inline-flex items-center rounded-full bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700 ring-1 ring-inset ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800">启用</span>
-              <span v-else class="inline-flex items-center rounded-full bg-surface-100 px-2 py-0.5 text-xs font-medium text-surface-500 ring-1 ring-inset ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700">禁用</span>
+              <span v-if="w.enabled" class="inline-flex items-center rounded-full bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700 ring-1 ring-inset ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800">{{ $t('admin.webhooks.enabled') }}</span>
+              <span v-else class="inline-flex items-center rounded-full bg-surface-100 px-2 py-0.5 text-xs font-medium text-surface-500 ring-1 ring-inset ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700">{{ $t('admin.webhooks.disabled') }}</span>
             </td>
             <td class="px-6 py-3.5 text-right">
               <div class="inline-flex items-center gap-1">
-                <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="toggleDeliveries(w)">{{ expandedID === w.id ? '收起' : '记录' }}</button>
+                <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="toggleDeliveries(w)">{{ expandedID === w.id ? $t('admin.webhooks.collapse') : $t('admin.webhooks.deliveries') }}</button>
                 <button
                   type="button"
                   class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 disabled:opacity-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
                   :disabled="testBusy === w.id"
                   @click="testFire(w)"
                 >
-                  {{ testBusy === w.id ? '发送中…' : 'test' }}
+                  {{ testBusy === w.id ? $t('admin.webhooks.testSending') : $t('admin.webhooks.test') }}
                 </button>
                 <span
                   v-if="testFlash && testFlash.id === w.id"
@@ -324,8 +326,8 @@ onMounted(reload)
                 >
                   {{ testFlash.text }}
                 </span>
-                <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="openEdit(w)">编辑</button>
-                <button class="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40" type="button" @click="destroy(w)">删除</button>
+                <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" type="button" @click="openEdit(w)">{{ $t('admin.webhooks.edit') }}</button>
+                <button class="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40" type="button" @click="destroy(w)">{{ $t('admin.webhooks.delete') }}</button>
               </div>
             </td>
           </tr>
@@ -335,9 +337,9 @@ onMounted(reload)
                receiver is actually getting hit. -->
           <tr v-if="expandedID === w.id">
             <td colspan="7" class="bg-surface-50/60 px-6 py-4 dark:bg-surface-800/40">
-              <div v-if="deliveriesLoading === w.id" class="text-xs text-surface-500">加载 deliveries…</div>
+              <div v-if="deliveriesLoading === w.id" class="text-xs text-surface-500">{{ $t('admin.webhooks.deliveriesLoading') }}</div>
               <p v-else-if="deliveriesErr" class="text-xs text-red-600">{{ deliveriesErr }}</p>
-              <div v-else-if="deliveries[w.id]?.length === 0" class="text-xs text-surface-500">还没有投递记录</div>
+              <div v-else-if="deliveries[w.id]?.length === 0" class="text-xs text-surface-500">{{ $t('admin.webhooks.deliveriesEmpty') }}</div>
               <div v-else class="space-y-1.5">
                 <p v-if="replayErr" class="text-2xs text-red-600">{{ replayErr }}</p>
                 <div
@@ -355,7 +357,7 @@ onMounted(reload)
                     :disabled="replayBusy === d.id"
                     @click="replayDelivery(w, d.id)"
                   >
-                    {{ replayBusy === d.id ? '重放中…' : '重放' }}
+                    {{ replayBusy === d.id ? $t('admin.webhooks.replayBusy') : $t('admin.webhooks.replay') }}
                   </button>
                   <p v-if="d.error" class="col-span-5 truncate font-mono text-red-600">err: {{ d.error }}</p>
                 </div>
@@ -370,8 +372,8 @@ onMounted(reload)
     <EmptyState
       v-else
       icon="M13 10V3L4 14h7v7l9-11h-7z"
-      title="还没有 webhook"
-      description="新建一个 webhook 把订单 / 节点 / 客户端事件推到外部系统。"
+      :title="$t('admin.webhooks.empty')"
+      :description="$t('admin.webhooks.emptyDescription')"
     />
 
     <!-- Editor modal -->
@@ -382,7 +384,7 @@ onMounted(reload)
     >
       <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-surface-0 shadow-elevated dark:bg-surface-900">
         <header class="flex items-center justify-between border-b border-surface-100 px-6 py-4 dark:border-surface-800">
-          <h2 class="text-lg font-semibold">{{ editor.mode === 'create' ? '新建 webhook' : `编辑 webhook #${editor.id}` }}</h2>
+          <h2 class="text-lg font-semibold">{{ editor.mode === 'create' ? $t('admin.webhooks.createTitle') : $t('admin.webhooks.editTitle', { id: editor.id }) }}</h2>
           <button type="button" class="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-800" @click="editor.open = false">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
@@ -391,11 +393,11 @@ onMounted(reload)
         <form class="flex-1 space-y-4 overflow-y-auto px-6 py-5" @submit.prevent="save">
           <div class="grid grid-cols-2 gap-3">
             <label class="block">
-              <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">名称</span>
+              <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.webhooks.name') }}</span>
               <input v-model="editor.draft.name" type="text" required class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </label>
             <label class="block">
-              <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Method</span>
+              <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.webhooks.methodChip') }}</span>
               <select v-model="editor.draft.method" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900">
                 <option value="POST">POST</option>
                 <option value="GET">GET</option>
@@ -408,60 +410,60 @@ onMounted(reload)
 
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">URL</span>
-            <input v-model="editor.draft.url" type="url" required class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="https://hooks.example.com/incoming" />
+            <input v-model="editor.draft.url" type="url" required class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-sm dark:border-surface-700 dark:bg-surface-900" :placeholder="$t('admin.webhooks.urlPlaceholder')" />
           </label>
 
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">
-              事件订阅（运营通知 surface，逗号分隔；<code>*</code> = 全部，<code>order.*</code> = 前缀匹配）
+              {{ $t('admin.webhooks.eventsLabel') }}
             </span>
-            <input v-model="eventsText" type="text" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="order.*, node.offline, client.expired, user.registered" />
+            <input v-model="eventsText" type="text" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-sm dark:border-surface-700 dark:bg-surface-900" :placeholder="$t('admin.webhooks.eventsPlaceholder')" />
             <span class="mt-1 block text-2xs text-surface-500">
-              常见事件：<code>node.online</code> / <code>node.offline</code> / <code>node.recovered</code> / <code>client.expired</code> / <code>client.expiring_soon</code> / <code>client.over_limit</code> / <code>order.created</code> / <code>order.completed</code> / <code>order.failed</code> / <code>order.payment_confirmed</code> / <code>order.payment_failed</code> / <code>order.payment_expired</code> / <code>order.refunded</code> / <code>user.registered</code>。Webhook 只用于运营通知，用户向消息走 SMTP（参见 Settings → 消息）。
+              {{ $t('admin.webhooks.eventsCommon') }}
             </span>
           </label>
 
           <div class="grid grid-cols-2 gap-3">
             <label class="block">
-              <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Body Format</span>
+              <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.webhooks.bodyFormat') }}</span>
               <select v-model="editor.draft.template_format" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900">
-                <option value="json">JSON (application/json)</option>
-                <option value="form">Form (urlencoded)</option>
-                <option value="text">Text (text/plain)</option>
-                <option value="raw">Raw (自定 Content-Type)</option>
+                <option value="json">{{ $t('admin.webhooks.bodyFormatOpts.json') }}</option>
+                <option value="form">{{ $t('admin.webhooks.bodyFormatOpts.form') }}</option>
+                <option value="text">{{ $t('admin.webhooks.bodyFormatOpts.text') }}</option>
+                <option value="raw">{{ $t('admin.webhooks.bodyFormatOpts.raw') }}</option>
               </select>
             </label>
             <div class="flex items-end gap-4">
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="editor.draft.enabled" type="checkbox" class="h-4 w-4 rounded border-surface-300" />
-                启用
+                {{ $t('admin.webhooks.enabledCheckbox') }}
               </label>
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="editor.draft.allow_private" type="checkbox" class="h-4 w-4 rounded border-surface-300" />
-                允许内网 URL
+                {{ $t('admin.webhooks.privateAllowed') }}
               </label>
             </div>
           </div>
 
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">
-              Body Template（Go text/template；留空使用默认 JSON envelope）
+              {{ $t('admin.webhooks.body') }}
             </span>
-            <textarea v-model="editor.draft.body_template" rows="6" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" placeholder="留空使用默认 JSON envelope" />
-            <p class="mt-1 text-2xs text-surface-500">可用变量（Go text/template）：<code>.Event</code> <code>.Version</code> <code>.Timestamp</code> <code>.Data.&lt;字段名&gt;</code>。访问不存在的字段渲染为空，不会断开 delivery。</p>
+            <textarea v-model="editor.draft.body_template" rows="6" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" :placeholder="$t('admin.webhooks.bodyPlaceholder')" />
+            <p class="mt-1 text-2xs text-surface-500">{{ $t('admin.webhooks.bodyVars') }}</p>
           </label>
 
           <label class="block">
-            <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">自定义 Headers（每行一条 <code>Key: Value</code>）</span>
-            <textarea v-model="headersText" rows="3" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" placeholder="Authorization: Bearer xxx&#10;X-Custom-Header: value" />
+            <span class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.webhooks.headersLabel') }}</span>
+            <textarea v-model="headersText" rows="3" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" :placeholder="$t('admin.webhooks.headersPlaceholder')" />
           </label>
 
           <p v-if="editor.err" class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300">{{ editor.err }}</p>
 
           <div class="flex justify-end gap-2 border-t border-surface-100 pt-4 dark:border-surface-800">
-            <button type="button" class="rounded-lg border border-surface-200 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" @click="editor.open = false">取消</button>
+            <button type="button" class="rounded-lg border border-surface-200 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" @click="editor.open = false">{{ $t('admin.webhooks.cancel') }}</button>
             <button type="submit" :disabled="editor.busy" class="rounded-lg bg-ink-900 px-4 py-2 text-sm font-medium text-white hover:bg-ink-800 disabled:opacity-60 dark:bg-accent-600 dark:hover:bg-accent-500">
-              {{ editor.busy ? '保存中…' : '保存' }}
+              {{ editor.busy ? $t('admin.webhooks.saving') : $t('admin.webhooks.save') }}
             </button>
           </div>
         </form>

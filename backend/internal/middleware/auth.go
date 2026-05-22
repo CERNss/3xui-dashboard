@@ -7,10 +7,13 @@ package middleware
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/cern/3xui-dashboard/internal/model"
+	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 )
 
@@ -31,28 +34,70 @@ func RequireUser(a *auth.Service) gin.HandlerFunc {
 	return requireAudience(a, auth.AudUser)
 }
 
-func requireAudience(a *auth.Service, want string) gin.HandlerFunc {
+// RequireActiveUser verifies a user JWT and then checks the current
+// database row is still active. It prevents a suspended account from
+// continuing to use an old, otherwise-valid JWT until expiry.
+func RequireActiveUser(a *auth.Service, users *repository.UserRepo) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tok := bearerToken(c.GetHeader("Authorization"))
-		if tok == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		if !verifyBearerClaims(c, a, auth.AudUser) {
 			return
 		}
-		claims, err := a.VerifyToken(tok, want)
-		switch {
-		case err == nil:
-			c.Set(ContextKey, claims)
+		claims := Claims(c)
+		if claims == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing claims"})
+			return
+		}
+		userID, err := strconv.ParseInt(claims.Subject, 10, 64)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid subject"})
+			return
+		}
+		u, err := users.Get(c.Request.Context(), userID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "user lookup failed"})
+			return
+		}
+		if u == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			return
+		}
+		if u.Status == model.UserStatusSuspended {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account suspended"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func requireAudience(a *auth.Service, want string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if verifyBearerClaims(c, a, want) {
 			c.Next()
-		case errors.Is(err, auth.ErrWrongAudience):
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "wrong audience"})
-		case errors.Is(err, auth.ErrTokenExpired):
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token expired"})
-		case errors.Is(err, auth.ErrInvalidToken):
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-		default:
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token verification failed"})
 		}
 	}
+}
+
+func verifyBearerClaims(c *gin.Context, a *auth.Service, want string) bool {
+	tok := bearerToken(c.GetHeader("Authorization"))
+	if tok == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		return false
+	}
+	claims, err := a.VerifyToken(tok, want)
+	switch {
+	case err == nil:
+		c.Set(ContextKey, claims)
+		return true
+	case errors.Is(err, auth.ErrWrongAudience):
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "wrong audience"})
+	case errors.Is(err, auth.ErrTokenExpired):
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token expired"})
+	case errors.Is(err, auth.ErrInvalidToken):
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+	default:
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token verification failed"})
+	}
+	return false
 }
 
 // Claims pulls the verified claims out of the Gin context. Safe to

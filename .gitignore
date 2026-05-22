@@ -6,6 +6,8 @@
 *.dylib
 *.test
 *.out
+/.cache/
+/3xui-dashboard
 /backend/bin/
 /backend/data/
 /backend/tmp/
@@ -58,3 +60,16 @@ logs/
 coverage/
 *.cover
 *.coverprofile
+
+# --- Browser / Playwright test artifacts ---
+.playwright-mcp/
+playwright-report/
+blob-report/
+test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
+/frontend/test-results/
+
+# --- Runtime uploads ---
+uploads/
+/backend/uploads/

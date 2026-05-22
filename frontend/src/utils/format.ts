@@ -50,13 +50,3 @@ export function formatError(e: unknown, fallback = '操作失败'): string {
 
   return fallback
 }
-
-/** Chinese label for node status. Single source of truth. */
-export function nodeStatusLabel(status: string | undefined | null): string {
-  switch (status) {
-    case 'online':  return '在线'
-    case 'offline': return '离线'
-    case 'unknown': return '未知'
-    default:        return status || '—'
-  }
-}

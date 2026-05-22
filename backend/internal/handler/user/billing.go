@@ -100,6 +100,10 @@ func (h *BillingHandler) PurchaseViaPayment(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case errors.Is(err, billing.ErrPlanDisabled):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, billing.ErrNoProvisioningTarget):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, billing.ErrIdempotencyConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, billing.ErrInvalidInput):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
@@ -111,7 +115,11 @@ func (h *BillingHandler) PurchaseViaPayment(c *gin.Context) {
 }
 
 func (h *BillingHandler) ListPlans(c *gin.Context) {
-	rows, err := h.svc.ListPlans(c.Request.Context(), true)
+	userID, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	rows, err := h.svc.ListPlansForUser(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -137,8 +145,8 @@ func (h *BillingHandler) ListOrders(c *gin.Context) {
 type purchaseRequest struct {
 	PlanID         int64  `json:"plan_id" binding:"required"`
 	IdempotencyKey string `json:"idempotency_key"`
-	NodeID         int64  `json:"node_id" binding:"required"`
-	InboundTag     string `json:"inbound_tag" binding:"required"`
+	NodeID         int64  `json:"node_id"`
+	InboundTag     string `json:"inbound_tag"`
 }
 
 func (h *BillingHandler) Purchase(c *gin.Context) {
@@ -171,6 +179,10 @@ func (h *BillingHandler) Purchase(c *gin.Context) {
 		case errors.Is(err, billing.ErrPlanNotFound), errors.Is(err, billing.ErrUserNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case errors.Is(err, billing.ErrPlanDisabled):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, billing.ErrNoProvisioningTarget):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "order": order})
+		case errors.Is(err, billing.ErrIdempotencyConflict):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, billing.ErrInvalidInput):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

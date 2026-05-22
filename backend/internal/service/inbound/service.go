@@ -202,8 +202,8 @@ type FleetInbound struct {
 // keys an offline-or-misconfigured node id to a short string so the
 // admin UI can render a per-node toast without losing healthy rows.
 type FleetResult struct {
-	Inbounds   []FleetInbound    `json:"inbounds"`
-	NodeErrors map[int64]string  `json:"node_errors,omitempty"`
+	Inbounds   []FleetInbound   `json:"inbounds"`
+	NodeErrors map[int64]string `json:"node_errors,omitempty"`
 }
 
 // ListAll walks every enabled node concurrently (capped) and returns
@@ -225,7 +225,7 @@ func (s *Service) ListAll(ctx context.Context) (*FleetResult, error) {
 
 	var (
 		mu       sync.Mutex
-		results  []FleetInbound
+		results  = make([]FleetInbound, 0)
 		errsByID = map[int64]string{}
 	)
 

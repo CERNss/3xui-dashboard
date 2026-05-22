@@ -119,6 +119,29 @@ func TestListAll_FleetHappyPath(t *testing.T) {
 	}
 }
 
+func TestListAll_EmptyRemoteListSerializesAsArray(t *testing.T) {
+	srv := panelServer(t, nil)
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{
+		nodeForURL(t, 1, "empty", srv.URL),
+	}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+
+	res, err := svc.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if res.Inbounds == nil {
+		t.Fatal("inbounds slice is nil, want empty non-nil slice for JSON []")
+	}
+	if len(res.Inbounds) != 0 {
+		t.Fatalf("inbounds = %d, want 0", len(res.Inbounds))
+	}
+}
+
 func TestListAll_PartialFailureSurfacesHealthyAndErrors(t *testing.T) {
 	srvOK := panelServer(t, []runtime.Inbound{{ID: 1, Tag: "live", Port: 443}})
 	defer srvOK.Close()

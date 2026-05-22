@@ -45,7 +45,7 @@ async function mountStats() {
   await router.push('/admin/stats')
   await router.isReady()
   const w = mount(Stats, {
-    global: { plugins: [router], mocks: { $t: (k: string) => k } },
+    global: { plugins: [router] },
     attachTo: document.body,
   })
   await flushPromises()

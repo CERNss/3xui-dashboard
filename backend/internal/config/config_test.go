@@ -82,6 +82,7 @@ func TestLoad_FullEnvLoadsCleanly(t *testing.T) {
 		"ADMIN_USERNAME": "admin",
 		"ADMIN_PASSWORD": "pw",
 		"ENV":            "dev",
+		"LOG_FORMAT":     "",
 	}, func() {
 		cfg, err := Load("")
 		if err != nil {
@@ -92,6 +93,33 @@ func TestLoad_FullEnvLoadsCleanly(t *testing.T) {
 		}
 		if cfg.Server.LogFormat != "text" {
 			t.Errorf("dev should default LogFormat to text, got %q", cfg.Server.LogFormat)
+		}
+	})
+}
+
+func TestLoad_PublicRegistrationDefaultsEnabled(t *testing.T) {
+	prev, hadPrev := os.LookupEnv("PUBLIC_REGISTRATION")
+	os.Unsetenv("PUBLIC_REGISTRATION")
+	defer func() {
+		if hadPrev {
+			os.Setenv("PUBLIC_REGISTRATION", prev)
+		} else {
+			os.Unsetenv("PUBLIC_REGISTRATION")
+		}
+	}()
+
+	withEnv(t, map[string]string{
+		"DATABASE_URL":   "postgres://x@x/x",
+		"JWT_SECRET":     "secret",
+		"ADMIN_USERNAME": "admin",
+		"ADMIN_PASSWORD": "pw",
+	}, func() {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if !cfg.PublicRegistration {
+			t.Fatal("PUBLIC_REGISTRATION should default to true")
 		}
 	})
 }

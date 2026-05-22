@@ -5,13 +5,34 @@ export interface UserTokenResponse {
   expires_at: number
   user_id: number
   email: string
+  redirect_after?: string
+  next?: string
 }
+
+export interface OIDCPendingResponse {
+  status: 'pending'
+  pending_token: string
+  email: string
+  email_verified: boolean
+  existing_user_id: number
+  existing_has_oidc: boolean
+  expires_at: number
+  redirect_after?: string
+  next?: string
+}
+
+export type OIDCCallbackResponse = UserTokenResponse | OIDCPendingResponse
+export type OIDCResolveAction = 'bind' | 'recreate'
 
 /** OIDC provider descriptor returned by /auth/oidc/providers. */
 export interface OIDCProvider {
   name: string       // "集换社" — human-readable display name
   icon?: string      // optional URL or SVG path; frontend falls back to a generic globe icon
   login_url: string  // absolute or relative URL to start the OIDC flow
+}
+
+export interface RegistrationPolicy {
+  email_verification_required: boolean
 }
 
 export const portalAuthApi = {
@@ -30,6 +51,11 @@ export const portalAuthApi = {
   sendCode: (email: string) =>
     portalClient.post<void>('/auth/send-code', { email }).then((r) => r.data),
 
+  registrationPolicy: () =>
+    portalClient
+      .get<RegistrationPolicy>('/auth/registration-policy')
+      .then((r) => r.data),
+
   /** List configured OIDC providers. Empty array when OIDC is not set up
    *  in the backend config — login UI hides the "或使用 X 登录" section. */
   oidcProviders: () =>
@@ -45,6 +71,12 @@ export const portalAuthApi = {
   /** Exchange the IDP-returned code + state for a portal JWT. */
   oidcCallback: (code: string, state: string) =>
     portalClient
-      .post<UserTokenResponse>('/auth/oidc/callback', { code, state })
+      .post<OIDCCallbackResponse>('/auth/oidc/callback', { code, state })
+      .then((r) => r.data),
+
+  /** Finish a pending OIDC account decision. */
+  oidcResolve: (pendingToken: string, action: OIDCResolveAction) =>
+    portalClient
+      .post<UserTokenResponse>('/auth/oidc/resolve', { pending_token: pendingToken, action })
       .then((r) => r.data),
 }

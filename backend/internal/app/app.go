@@ -19,6 +19,8 @@ import (
 	publichandler "github.com/cern/3xui-dashboard/internal/handler/public"
 	userhandler "github.com/cern/3xui-dashboard/internal/handler/user"
 	"github.com/cern/3xui-dashboard/internal/job"
+	"github.com/cern/3xui-dashboard/internal/mailer"
+	"github.com/cern/3xui-dashboard/internal/metrics"
 	"github.com/cern/3xui-dashboard/internal/middleware"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
@@ -27,16 +29,14 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/billing"
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
-	"github.com/cern/3xui-dashboard/internal/mailer"
-	"github.com/cern/3xui-dashboard/internal/metrics"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	"github.com/cern/3xui-dashboard/internal/service/messages"
-	"github.com/cern/3xui-dashboard/internal/service/payment"
-	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
-	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
 	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 	"github.com/cern/3xui-dashboard/internal/service/notify"
 	"github.com/cern/3xui-dashboard/internal/service/notify/channels"
+	"github.com/cern/3xui-dashboard/internal/service/payment"
+	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
+	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
@@ -56,7 +56,7 @@ type App struct {
 	UserService    *usersvc.Service
 	BillingService *billing.Service
 	WebhookService *webhook.Service
-	RuntimeManager *runtime.Manager // exposed for tests to swap http client
+	RuntimeManager *runtime.Manager    // exposed for tests to swap http client
 	PaymentPollJob *job.PaymentPollJob // exposed for tests to trigger RunOnce
 
 	cfg *config.Config
@@ -102,6 +102,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 		}
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+	engine.Static("/uploads/branding", "uploads/branding")
 
 	// Auth + middleware.
 	authSvc := auth.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL, cfg.Admin.Username, cfg.Admin.Password)
@@ -113,6 +114,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	loginLimiter := middleware.IPRateLimiter(10, 10, time.Minute)
 	apiAdmin := engine.Group("/api/admin", loginLimiter)
 	adminAuth.RegisterRoutes(apiAdmin)
+
+	// Repos used by both middleware and services.
+	userRepo := repository.NewUserRepo(db)
+	planRepo := repository.NewPlanRepo(db)
+	ownershipRepo := repository.NewClientOwnershipRepo(db)
 	// Admin audit log — written by middleware on every mutating
 	// /api/admin/* request. Wired into the authed group below so
 	// every handler picks it up automatically; no per-handler
@@ -123,7 +129,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 		middleware.AuditLog(adminActionRepo, logger),
 	)
 	apiUser := engine.Group("/api/user", loginLimiter)
-	apiUserAuthed := engine.Group("/api/user", middleware.RequireUser(authSvc))
+	apiUserAuthed := engine.Group("/api/user", middleware.RequireActiveUser(authSvc, userRepo))
 
 	// /sub/:subId is unauthenticated — anyone holding a sub_id
 	// gets the user's WG private keys + full link bundle. sub_id
@@ -146,10 +152,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	inboundService := inbound.New(rtManager, &nodeListAdapter{svc: nodeService}, logger)
 	adminhandler.NewInboundHandler(inboundService).RegisterRoutes(apiAdminAuthed)
 
-	// Repos + client provisioning.
-	userRepo := repository.NewUserRepo(db)
-	planRepo := repository.NewPlanRepo(db)
-	ownershipRepo := repository.NewClientOwnershipRepo(db)
+	// Client provisioning.
 	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
 	adminhandler.NewClientHandler(clientService).RegisterRoutes(apiAdminAuthed)
 
@@ -208,20 +211,24 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	userhandler.NewAccountHandler(userService, userRepo).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)
+	adminhandler.NewBrandingHandler(settingRepo).RegisterRoutes(engine.Group("/api/public"))
 
 	// Billing + payment gateways.
 	orderRepo := repository.NewOrderRepo(db)
+	provisioningPoolRepo := repository.NewProvisioningPoolRepo(db)
 	paymentRegistry := payment.NewRegistry()
 	paymentRegistry.Register(alipay.New(cfg.Alipay))
 	paymentRegistry.Register(stripe.New(cfg.Stripe))
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
+	billingService.SetSettings(settingRepo)
+	billingService.SetProvisioningPools(provisioningPoolRepo)
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
+	adminhandler.NewProvisioningPoolHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
 	// Public payment notify endpoints — RSA-signed callbacks from
 	// the gateway. Mounted on the engine root, not under /api,
 	// because alipay requires a plain-text "success" response.
 	publichandler.NewPaymentNotifyHandler(billingService, logger).RegisterRoutes(engine)
-	userhandler.NewInboundHandler(inboundService).RegisterRoutes(apiUserAuthed)
 
 	// Admin stats overview — server-side aggregates so the page
 	// doesn't pull thousands of rows just to render 4 KPI cards.

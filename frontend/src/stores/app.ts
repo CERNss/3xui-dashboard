@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-type Locale = 'en' | 'zh'
+export type Locale = 'en' | 'zh'
 type Theme = 'light' | 'dark'
 
 const LOCALE_KEY = 'dashboard.locale'
@@ -32,6 +32,9 @@ export const useAppStore = defineStore('app', {
     setLocale(loc: Locale) {
       this.locale = loc
       localStorage.setItem(LOCALE_KEY, loc)
+    },
+    toggleLocale() {
+      this.setLocale(this.locale === 'zh' ? 'en' : 'zh')
     },
     setTheme(theme: Theme) {
       this.theme = theme

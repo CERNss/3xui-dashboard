@@ -1,10 +1,15 @@
 package admin
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +47,30 @@ func (h *SettingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.PUT("/:key", h.Put)
 	g.DELETE("/:key", h.Delete)
 	g.POST("/smtp-test", h.SMTPTest)
+	g.POST("/branding/icon", h.UploadBrandIcon)
+}
+
+// BrandingHandler exposes the public, unauthenticated branding
+// metadata used by the login page and shell chrome.
+type BrandingHandler struct {
+	repo *repository.SettingRepo
+}
+
+func NewBrandingHandler(repo *repository.SettingRepo) *BrandingHandler {
+	return &BrandingHandler{repo: repo}
+}
+
+func (h *BrandingHandler) RegisterRoutes(rg *gin.RouterGroup) {
+	rg.GET("/branding", h.Get)
+}
+
+func (h *BrandingHandler) Get(c *gin.Context) {
+	iconURL, _, err := h.repo.Get(c.Request.Context(), model.SettingBrandIconURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"icon_url": iconURL})
 }
 
 // SMTPTest sends a one-shot test email so the admin can verify
@@ -72,94 +101,359 @@ func (h *SettingHandler) SMTPTest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "to": req.To})
 }
 
+const (
+	brandIconMaxBytes = 1 << 20 // 1 MiB
+	brandUploadDir    = "uploads/branding"
+)
+
+var allowedBrandIconTypes = map[string]string{
+	"image/png":     ".png",
+	"image/jpeg":    ".jpg",
+	"image/webp":    ".webp",
+	"image/svg+xml": ".svg",
+}
+
+// UploadBrandIcon accepts multipart field "file", stores it under
+// uploads/branding, and persists the public URL in settings. The
+// public file handler is wired in app.Build at /uploads/branding/*.
+func (h *SettingHandler) UploadBrandIcon(c *gin.Context) {
+	req := c.Request
+	req.Body = http.MaxBytesReader(c.Writer, req.Body, brandIconMaxBytes+1024)
+	file, header, err := req.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file field is required"})
+		return
+	}
+	defer file.Close()
+	if header.Size > brandIconMaxBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "icon must be 1 MiB or smaller"})
+		return
+	}
+
+	data, err := io.ReadAll(io.LimitReader(file, brandIconMaxBytes+1))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "read upload: " + err.Error()})
+		return
+	}
+	if len(data) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "icon file is empty"})
+		return
+	}
+	if len(data) > brandIconMaxBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "icon must be 1 MiB or smaller"})
+		return
+	}
+
+	contentType := http.DetectContentType(data)
+	ext, ok := allowedBrandIconTypes[contentType]
+	if !ok && looksLikeSVG(data) {
+		contentType = "image/svg+xml"
+		ext = ".svg"
+		ok = true
+	}
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "icon must be PNG, JPEG, WebP, or SVG"})
+		return
+	}
+	if err := os.MkdirAll(brandUploadDir, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "prepare upload directory: " + err.Error()})
+		return
+	}
+
+	name := "icon-" + randomHex(12) + ext
+	dst := filepath.Join(brandUploadDir, name)
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "save icon: " + err.Error()})
+		return
+	}
+	url := "/uploads/branding/" + name
+	if err := h.repo.Set(c.Request.Context(), model.SettingBrandIconURL, url); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"key":          model.SettingBrandIconURL,
+		"value":        url,
+		"url":          url,
+		"content_type": contentType,
+		"size":         len(data),
+	})
+}
+
+func looksLikeSVG(data []byte) bool {
+	s := strings.TrimSpace(string(data))
+	return strings.HasPrefix(s, "<svg") || strings.Contains(s, "<svg ")
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	const hex = "0123456789abcdef"
+	out := make([]byte, n*2)
+	for i, v := range b {
+		out[i*2] = hex[v>>4]
+		out[i*2+1] = hex[v&0x0f]
+	}
+	return string(out)
+}
+
 // settingDescriptor enumerates the well-known keys the UI knows how to
 // render + validate. Unknown keys are accepted for forward compat but
 // shown as raw strings.
+//
+// LabelZh / DescriptionZh hold the zh-CN translations. The frontend
+// picks between en (Label/Description) and zh (LabelZh/DescriptionZh)
+// based on its active locale — that keeps locale switching purely
+// client-side. Group labels are translated by the frontend's i18n
+// dictionary (zh.ts admin.settings.group*), so we deliberately do
+// not duplicate them here.
 type settingDescriptor struct {
-	Key          string `json:"key"`
-	Label        string `json:"label"`
-	Type         string `json:"type"`   // bool | int | string
-	Group        string `json:"group"`  // registration / subscription / traffic
-	Default      string `json:"default"`
-	Description  string `json:"description"`
+	Key           string `json:"key"`
+	Label         string `json:"label"`
+	LabelZh       string `json:"label_zh,omitempty"`
+	Type          string `json:"type"`  // bool | int | string
+	Group         string `json:"group"` // registration / subscription / traffic
+	Default       string `json:"default"`
+	Description   string `json:"description"`
+	DescriptionZh string `json:"description_zh,omitempty"`
 }
 
 var knownSettings = []settingDescriptor{
 	{
-		Key:         model.SettingPublicRegistrationEnabled,
-		Label:       "Public registration enabled",
-		Type:        "bool",
-		Group:       "registration",
-		Description: "When true, the user portal /register endpoint accepts new signups. Overrides the PUBLIC_REGISTRATION env var.",
+		Key:           model.SettingPublicRegistrationEnabled,
+		Label:         "Public registration enabled",
+		LabelZh:       "公开注册",
+		Type:          "bool",
+		Group:         "registration",
+		Default:       "true",
+		Description:   "When true, the user portal /register endpoint accepts new signups. Overrides the PUBLIC_REGISTRATION env var.",
+		DescriptionZh: "启用后用户端 /register 接受新注册；覆盖 PUBLIC_REGISTRATION 环境变量。",
 	},
 	{
-		Key:         model.SettingEmailDomainAllowlist,
-		Label:       "Email domain allowlist",
-		Type:        "string",
-		Group:       "registration",
-		Description: "Comma-separated list of email domains permitted to register or bind. Empty = unrestricted. Overrides EMAIL_DOMAIN_ALLOWLIST.",
+		Key:           model.SettingEmailVerificationRequired,
+		Label:         "Email verification required",
+		LabelZh:       "邮箱验证",
+		Type:          "bool",
+		Group:         "registration",
+		Description:   "When true, new users must verify their email with a code during registration. Empty follows SMTP availability.",
+		DescriptionZh: "启用后新用户注册时必须验证邮箱；留空时跟随 SMTP 是否可用。",
 	},
 	{
-		Key:         model.SettingSubscriptionRemarkModel,
-		Label:       "Subscription remark model",
-		Type:        "string",
-		Group:       "subscription",
-		Default:     "-ieo",
-		Description: "Format spec for client link labels in /sub. First rune is the separator; remaining runes are tokens i/e/o/t (inbound, email, node, tag).",
+		Key:           model.SettingEmailDomainAllowlist,
+		Label:         "Email domain allowlist",
+		LabelZh:       "邮箱域名白名单",
+		Type:          "string",
+		Group:         "registration",
+		Description:   "Comma-separated list of email domains permitted to register or bind. Empty = unrestricted. Overrides EMAIL_DOMAIN_ALLOWLIST.",
+		DescriptionZh: "允许注册/绑定的邮箱域名，英文逗号分隔；空 = 不限制。覆盖 EMAIL_DOMAIN_ALLOWLIST。",
 	},
 	{
-		Key:         model.SettingTrafficWarnPct,
-		Label:       "Traffic warning %",
-		Type:        "int",
-		Group:       "traffic",
-		Default:     "80",
-		Description: "Emit client.over_limit warning when usage reaches this percentage of the cap (1-100).",
+		Key:           model.SettingNewUserInitialBalanceCents,
+		Label:         "New-user initial balance",
+		LabelZh:       "新用户初始余额",
+		Type:          "int",
+		Group:         "registration",
+		Default:       "0",
+		Description:   "Balance credited to self-service and brand-new OIDC users at signup, stored in cents. Admin-created users use the create-user form field instead.",
+		DescriptionZh: "自助注册和全新 OIDC 用户创建时自动发放的余额，单位为分。管理员手动创建用户时使用创建表单里的初始余额。",
 	},
 	{
-		Key:         model.SettingTrafficCriticalPct,
-		Label:       "Traffic critical %",
-		Type:        "int",
-		Group:       "traffic",
-		Default:     "95",
-		Description: "Emit critical client.over_limit when usage reaches this percentage (1-100).",
+		Key:           model.SettingNewUserPlanIDs,
+		Label:         "New-user starter plans",
+		LabelZh:       "新用户可选套餐",
+		Type:          "string",
+		Group:         "registration",
+		Description:   "Comma-separated plan IDs visible and purchasable only while a user has no paid/completed order history. Empty = all enabled plans.",
+		DescriptionZh: "逗号分隔的套餐 ID。用户没有付款中/已付款/已完成订单前，只能看到并购买这些套餐；空 = 不限制。",
 	},
 	{
-		Key:         model.SettingExpiryWarnDays,
-		Label:       "Expiry warning days",
-		Type:        "int",
-		Group:       "traffic",
-		Default:     "3",
-		Description: "Emit warning when a client.expires_at is within this many days.",
+		Key:           model.SettingOIDCIssuer,
+		Label:         "OIDC issuer",
+		LabelZh:       "OIDC Issuer",
+		Type:          "string",
+		Group:         "other",
+		Description:   "OIDC issuer base URL. Empty falls back to OIDC_ISSUER.",
+		DescriptionZh: "OIDC 签发方基础 URL。留空回退 OIDC_ISSUER 环境变量。",
 	},
 	{
-		Key:         model.SettingClashTemplateYAML,
-		Label:       "Clash template (YAML)",
-		Type:        "string",
-		Group:       "subscription",
-		Description: "Override the embedded Mihomo Clash template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
+		Key:           model.SettingOIDCClientID,
+		Label:         "OIDC client ID",
+		LabelZh:       "OIDC Client ID",
+		Type:          "string",
+		Group:         "other",
+		Description:   "OIDC OAuth client ID. Empty falls back to OIDC_CLIENT_ID.",
+		DescriptionZh: "OIDC OAuth Client ID。留空回退 OIDC_CLIENT_ID。",
 	},
 	{
-		Key:         model.SettingSingBoxTemplateJSON,
-		Label:       "Sing-box template (JSON)",
-		Type:        "string",
-		Group:       "subscription",
-		Description: "Override the embedded sing-box template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
+		Key:           model.SettingOIDCClientSecret,
+		Label:         "OIDC client secret",
+		LabelZh:       "OIDC Client Secret",
+		Type:          "string",
+		Group:         "other",
+		Description:   "OIDC OAuth client secret. Empty falls back to OIDC_CLIENT_SECRET.",
+		DescriptionZh: "OIDC OAuth Client Secret。留空回退 OIDC_CLIENT_SECRET。",
 	},
 	{
-		Key:         model.SettingProxyGroupStrategy,
-		Label:       "Proxy group strategy",
-		Type:        "string",
-		Group:       "subscription",
-		Default:     "auto+select",
-		Description: "One of: auto-only / select-only / auto+select. Controls the default Clash template's proxy-groups block. Ignored when clash_template_yaml is set.",
+		Key:           model.SettingOIDCRedirectURL,
+		Label:         "OIDC redirect URL",
+		LabelZh:       "OIDC 回调地址",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Dashboard callback URL registered with the IDP. Empty falls back to OIDC_REDIRECT_URL.",
+		DescriptionZh: "在身份提供商里登记的 Dashboard 回调地址。留空回退 OIDC_REDIRECT_URL。",
 	},
 	{
-		Key:         model.SettingRuleProvidersEnabled,
-		Label:       "Rule providers enabled",
-		Type:        "bool",
-		Group:       "subscription",
-		Default:     "true",
-		Description: "When false, the default Clash template strips rule-providers + rules — emitting just proxies + groups + a MATCH fallback. Ignored when clash_template_yaml is set.",
+		Key:           model.SettingOIDCScopes,
+		Label:         "OIDC scopes",
+		LabelZh:       "OIDC Scopes",
+		Type:          "string",
+		Group:         "other",
+		Default:       "openid,profile,email",
+		Description:   "Comma-separated scopes requested from the IDP. Empty falls back to OIDC_SCOPES.",
+		DescriptionZh: "向身份提供商请求的 scopes，英文逗号分隔。留空回退 OIDC_SCOPES。",
+	},
+	{
+		Key:           model.SettingOIDCDisplayName,
+		Label:         "OIDC display name",
+		LabelZh:       "OIDC 显示名称",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Name shown on the login button. Empty falls back to OIDC_DISPLAY_NAME or issuer host.",
+		DescriptionZh: "登录按钮上显示的名称。留空回退 OIDC_DISPLAY_NAME 或 issuer 域名。",
+	},
+	{
+		Key:           model.SettingOIDCIconURL,
+		Label:         "OIDC icon URL",
+		LabelZh:       "OIDC 图标 URL",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional login button icon. Empty falls back to OIDC_ICON_URL.",
+		DescriptionZh: "登录按钮图标，可选。留空回退 OIDC_ICON_URL。",
+	},
+	{
+		Key:           model.SettingOIDCAuthURL,
+		Label:         "OIDC auth URL",
+		LabelZh:       "OIDC 授权端点",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional authorization endpoint override. Empty uses discovery or OIDC_AUTH_URL.",
+		DescriptionZh: "可选授权端点覆盖。留空使用 discovery 或 OIDC_AUTH_URL。",
+	},
+	{
+		Key:           model.SettingOIDCTokenURL,
+		Label:         "OIDC token URL",
+		LabelZh:       "OIDC Token 端点",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional token endpoint override. Empty uses discovery or OIDC_TOKEN_URL.",
+		DescriptionZh: "可选 token 端点覆盖。留空使用 discovery 或 OIDC_TOKEN_URL。",
+	},
+	{
+		Key:           model.SettingOIDCJWKSURL,
+		Label:         "OIDC JWKS URL",
+		LabelZh:       "OIDC JWKS 端点",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional JWKS endpoint override. Empty uses discovery or OIDC_JWKS_URL.",
+		DescriptionZh: "可选 JWKS 端点覆盖。留空使用 discovery 或 OIDC_JWKS_URL。",
+	},
+	{
+		Key:           model.SettingOIDCUserInfoURL,
+		Label:         "OIDC userinfo URL",
+		LabelZh:       "OIDC UserInfo 端点",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional userinfo endpoint override. Empty uses discovery or OIDC_USERINFO_URL.",
+		DescriptionZh: "可选 userinfo 端点覆盖。留空使用 discovery 或 OIDC_USERINFO_URL。",
+	},
+	{
+		Key:           model.SettingSubscriptionRemarkModel,
+		Label:         "Subscription remark model",
+		LabelZh:       "订阅链接备注格式",
+		Type:          "string",
+		Group:         "subscription",
+		Default:       "-ieo",
+		Description:   "Format spec for client link labels in /sub. First rune is the separator; remaining runes are tokens i/e/o/t (inbound, email, node, tag).",
+		DescriptionZh: "/sub 客户端链接 label 的格式串。首字符为分隔符；后续字符为字段标记 i/e/o/t（inbound、email、node、tag）。",
+	},
+	{
+		Key:           model.SettingTrafficWarnPct,
+		Label:         "Traffic warning %",
+		LabelZh:       "流量预警 %",
+		Type:          "int",
+		Group:         "traffic",
+		Default:       "80",
+		Description:   "Emit client.over_limit warning when usage reaches this percentage of the cap (1-100).",
+		DescriptionZh: "用量达到限额此百分比时触发 client.over_limit 预警事件（1-100）。",
+	},
+	{
+		Key:           model.SettingTrafficCriticalPct,
+		Label:         "Traffic critical %",
+		LabelZh:       "流量紧急 %",
+		Type:          "int",
+		Group:         "traffic",
+		Default:       "95",
+		Description:   "Emit critical client.over_limit when usage reaches this percentage (1-100).",
+		DescriptionZh: "用量达到限额此百分比时触发 critical 级 client.over_limit（1-100）。",
+	},
+	{
+		Key:           model.SettingExpiryWarnDays,
+		Label:         "Expiry warning days",
+		LabelZh:       "到期预警天数",
+		Type:          "int",
+		Group:         "traffic",
+		Default:       "3",
+		Description:   "Emit warning when a client.expires_at is within this many days.",
+		DescriptionZh: "客户端到期时间小于这么多天时触发预警。",
+	},
+	{
+		Key:           model.SettingBrandIconURL,
+		Label:         "Brand icon URL",
+		LabelZh:       "品牌图标 URL",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Uploaded panel icon URL. Prefer the upload control above; manual values must be a relative /uploads/ URL or an http(s) URL.",
+		DescriptionZh: "面板品牌图标地址。建议使用上方上传控件；手动值必须是 /uploads/ 相对地址或 http(s) URL。",
+	},
+	{
+		Key:           model.SettingClashTemplateYAML,
+		Label:         "Clash template (YAML)",
+		LabelZh:       "Clash 模板（YAML）",
+		Type:          "string",
+		Group:         "subscription",
+		Description:   "Override the embedded Mihomo Clash template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
+		DescriptionZh: "覆盖内置 Mihomo Clash 模板。必须包含 ${proxies} 和 ${proxy_names} 占位符。空 = 用内置默认。",
+	},
+	{
+		Key:           model.SettingSingBoxTemplateJSON,
+		Label:         "Sing-box template (JSON)",
+		LabelZh:       "Sing-box 模板（JSON）",
+		Type:          "string",
+		Group:         "subscription",
+		Description:   "Override the embedded sing-box template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
+		DescriptionZh: "覆盖内置 sing-box 模板。必须包含 ${proxies} 和 ${proxy_names} 占位符。空 = 用内置默认。",
+	},
+	{
+		Key:           model.SettingProxyGroupStrategy,
+		Label:         "Proxy group strategy",
+		LabelZh:       "代理组策略",
+		Type:          "string",
+		Group:         "subscription",
+		Default:       "auto+select",
+		Description:   "One of: auto-only / select-only / auto+select. Controls the default Clash template's proxy-groups block. Ignored when clash_template_yaml is set.",
+		DescriptionZh: "取值之一：auto-only / select-only / auto+select。控制默认 Clash 模板 proxy-groups。如已设置 clash_template_yaml 则忽略。",
+	},
+	{
+		Key:           model.SettingRuleProvidersEnabled,
+		Label:         "Rule providers enabled",
+		LabelZh:       "启用 rule providers",
+		Type:          "bool",
+		Group:         "subscription",
+		Default:       "true",
+		Description:   "When false, the default Clash template strips rule-providers + rules — emitting just proxies + groups + a MATCH fallback. Ignored when clash_template_yaml is set.",
+		DescriptionZh: "关闭后默认 Clash 模板会剥离 rule-providers + rules，仅输出 proxies + groups + MATCH 兜底。如已设置 clash_template_yaml 则忽略。",
 	},
 }
 
@@ -257,8 +551,32 @@ func (h *SettingHandler) envFallback(key string) string {
 	switch key {
 	case model.SettingPublicRegistrationEnabled:
 		return strconv.FormatBool(h.cfg.PublicRegistration)
+	case model.SettingEmailVerificationRequired:
+		return strconv.FormatBool(h.cfg.SMTP.Enabled())
 	case model.SettingEmailDomainAllowlist:
 		return strings.Join(h.cfg.EmailDomainAllowlist, ",")
+	case model.SettingOIDCIssuer:
+		return h.cfg.OIDC.Issuer
+	case model.SettingOIDCClientID:
+		return h.cfg.OIDC.ClientID
+	case model.SettingOIDCClientSecret:
+		return h.cfg.OIDC.ClientSecret
+	case model.SettingOIDCRedirectURL:
+		return h.cfg.OIDC.RedirectURL
+	case model.SettingOIDCScopes:
+		return strings.Join(h.cfg.OIDC.Scopes, ",")
+	case model.SettingOIDCDisplayName:
+		return h.cfg.OIDC.DisplayName
+	case model.SettingOIDCIconURL:
+		return h.cfg.OIDC.IconURL
+	case model.SettingOIDCAuthURL:
+		return h.cfg.OIDC.AuthURL
+	case model.SettingOIDCTokenURL:
+		return h.cfg.OIDC.TokenURL
+	case model.SettingOIDCJWKSURL:
+		return h.cfg.OIDC.JWKSURL
+	case model.SettingOIDCUserInfoURL:
+		return h.cfg.OIDC.UserURL
 	default:
 		// no env equivalent
 		return ""
@@ -302,6 +620,9 @@ func validate(key, value string) error {
 			return fmt.Errorf("value %d outside 0-100 range for %q", n, key)
 		}
 		if strings.HasSuffix(key, "_days") && n < 0 {
+			return fmt.Errorf("value %d cannot be negative for %q", n, key)
+		}
+		if key == model.SettingNewUserInitialBalanceCents && n < 0 {
 			return fmt.Errorf("value %d cannot be negative for %q", n, key)
 		}
 		return nil
@@ -348,7 +669,57 @@ func validate(key, value string) error {
 			default:
 				return fmt.Errorf("proxy_group_strategy must be one of: auto-only, select-only, auto+select")
 			}
+		case model.SettingBrandIconURL:
+			v := strings.TrimSpace(value)
+			if v == "" || strings.HasPrefix(v, "/uploads/") || strings.HasPrefix(v, "https://") || strings.HasPrefix(v, "http://") {
+				return nil
+			}
+			return errors.New("brand_icon_url must be empty, an /uploads/ URL, or an http(s) URL")
+		case model.SettingNewUserPlanIDs:
+			for _, part := range strings.Split(value, ",") {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
+				n, err := strconv.ParseInt(part, 10, 64)
+				if err != nil || n <= 0 {
+					return errors.New("new_user_plan_ids must be empty or comma-separated positive plan IDs")
+				}
+			}
+		case model.SettingOIDCIssuer, model.SettingOIDCRedirectURL, model.SettingOIDCIconURL,
+			model.SettingOIDCAuthURL, model.SettingOIDCTokenURL, model.SettingOIDCJWKSURL,
+			model.SettingOIDCUserInfoURL:
+			if err := validateOptionalURL(key, value); err != nil {
+				return err
+			}
+		case model.SettingOIDCScopes:
+			for _, part := range strings.Split(value, ",") {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
+				if strings.ContainsAny(part, " \t\r\n") {
+					return errors.New("oidc_scopes must be comma-separated scope names without spaces inside each scope")
+				}
+			}
 		}
 		return nil
+	}
+}
+
+func validateOptionalURL(key, value string) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return nil
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("%s must be empty or an absolute http(s) URL", key)
+	}
+	switch u.Scheme {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("%s must use http or https", key)
 	}
 }

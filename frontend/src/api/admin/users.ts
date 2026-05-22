@@ -13,6 +13,9 @@ export interface AdminUser {
   oidc_subject?: string | null
   created_at: string
   updated_at: string
+  // Optional — backend may not have wired this column yet.
+  // The Users page renders "—" when undefined.
+  last_active_at?: string | null
 }
 
 export interface ListUsersResponse {
@@ -29,6 +32,13 @@ export const adminUsersApi = {
 
   get: (id: number) =>
     adminClient.get<AdminUser>(`/users/${id}`).then((r) => r.data),
+
+  // Create a brand-new user. Backend assigns id + sub_id; the optional
+  // initial_balance_cents is recorded as a balance_log entry so the
+  // audit trail captures "where this money came from".
+  // Errors: 400 (invalid input) / 409 (email already exists).
+  create: (body: { email: string; password: string; initial_balance_cents?: number }) =>
+    adminClient.post<AdminUser>('/users', body).then((r) => r.data),
 
   update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'status' | 'auto_renew'>>) =>
     adminClient.put<AdminUser>(`/users/${id}`, fields).then((r) => r.data),

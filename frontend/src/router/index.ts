@@ -53,6 +53,12 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, titleKey: 'nav.plans' },
       },
       {
+        path: 'provisioning-pools',
+        name: 'admin.provisioningPools',
+        component: () => import('@/views/admin/ProvisioningPools.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.provisioningPools' },
+      },
+      {
         path: 'orders',
         name: 'admin.orders',
         component: () => import('@/views/admin/Orders.vue'),
@@ -95,9 +101,10 @@ const portalRoutes: RouteRecordRaw[] = [
   },
   {
     path: '/portal/register',
-    name: 'portal.register',
-    component: () => import('@/views/portal/Register.vue'),
-    meta: { titleKey: 'auth.register' },
+    redirect: (to) => ({
+      path: '/login',
+      query: { ...to.query, mode: 'register', hint: 'portal' },
+    }),
   },
   {
     path: '/portal',

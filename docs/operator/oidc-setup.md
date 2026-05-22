@@ -83,8 +83,8 @@ User                Frontend          Backend           IDP
  │                    │              ├─token exchange──►│
  │                    │              │◄──id_token───────┤
  │                    │              ├─verify via JWKS  │
- │                    │              ├─upsert user (sub)│
- │                    │◄──{token, user_id}─              │
+ │                    │              ├─resolve user by email
+ │                    │◄──{token} or {pending decision}─ │
  │  /portal/...      │                 │                │
 ```
 
@@ -99,7 +99,20 @@ User                Frontend          Backend           IDP
    rejected; most IDPs default to RS256)
 5. Validate standard claims: `iss == OIDC_ISSUER`,
    `aud contains OIDC_CLIENT_ID`, `exp > now`
-6. Extract `sub` claim → upsert users row by `oidc_subject` column
+6. Extract `email` + `sub` claims. Email is the canonical identity;
+   `sub` is stored only as an OIDC login credential on that email row.
+
+## Email-first account resolution
+
+- New OIDC email: create one user row with that email and OIDC subject.
+- Returning OIDC subject with the same email: log into the existing row.
+- OIDC email already exists but is not linked to this subject: the
+  callback returns a short-lived pending decision. The browser asks the
+  user whether to bind this OIDC login to the existing email account or
+  recreate/reset that email identity.
+- Missing email claim: rejected. Configure the IDP scopes/claims so
+  `email` is present; the dashboard intentionally avoids email-less
+  users because email is the unique user identity.
 
 ## Limitations
 
@@ -116,8 +129,7 @@ User                Frontend          Backend           IDP
 - **Email verification claim is honored**. If the ID token has
   `email_verified: true` the dashboard marks the user's email
   as verified. Without it, the email column is populated but
-  `email_verified=false` — the user gets the same first-time
-  flow as a manual signup.
+  `email_verified=false`.
 
 ## Troubleshooting
 

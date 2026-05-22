@@ -186,3 +186,48 @@ func (r *UserRepo) AdjustBalance(ctx context.Context, userID, delta int64, reaso
 	}
 	return newBalance, nil
 }
+
+// ChargeBalanceIfEnough debits amountCents while holding the user row
+// lock and writes the matching balance_logs row only if the balance is
+// sufficient. The returned have value is the locked balance before the
+// debit, useful for surfacing precise insufficient-balance errors.
+func (r *UserRepo) ChargeBalanceIfEnough(ctx context.Context, userID, amountCents int64, reason, note string, orderID *int64) (newBalance, have int64, err error) {
+	if amountCents < 0 {
+		return 0, 0, fmt.Errorf("UserRepo.ChargeBalanceIfEnough: amount_cents must be >= 0")
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var u model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&u, userID).Error; err != nil {
+			return err
+		}
+		have = u.BalanceCents
+		if have < amountCents {
+			return ErrInsufficientBalance
+		}
+		newBalance = have - amountCents
+		if err := tx.Model(&u).Updates(map[string]any{
+			"balance_cents": newBalance,
+			"updated_at":    time.Now().UTC(),
+		}).Error; err != nil {
+			return err
+		}
+		log := model.BalanceLog{
+			UserID:            userID,
+			DeltaCents:        -amountCents,
+			BalanceAfterCents: newBalance,
+			Reason:            reason,
+			Note:              note,
+			OrderID:           orderID,
+		}
+		if err := tx.Create(&log).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, have, fmt.Errorf("UserRepo.ChargeBalanceIfEnough: %w", err)
+	}
+	return newBalance, have, nil
+}
+
+var ErrInsufficientBalance = errors.New("repository: insufficient balance")

@@ -13,11 +13,11 @@ func TestComputeExpiry(t *testing.T) {
 	day := 24 * time.Hour
 
 	cases := []struct {
-		desc          string
-		existing      *model.ClientOwnership
-		durationDays  int
-		wantOffset    time.Duration
-		wantZero      bool
+		desc         string
+		existing     *model.ClientOwnership
+		durationDays int
+		wantOffset   time.Duration
+		wantZero     bool
 	}{
 		{
 			desc:         "first provision 30d",
@@ -65,7 +65,7 @@ func TestComputeExpiry(t *testing.T) {
 }
 
 func TestBuildWireClient_VLESSGetsUUID(t *testing.T) {
-	c := buildWireClient("vless", "alice", "sub-1", time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), 1<<30)
+	c := buildWireClient("vless", "alice", "sub-1", time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), 1<<30, 0)
 	if c.ID == "" {
 		t.Error("vless client should have ID (UUID)")
 	}
@@ -83,8 +83,15 @@ func TestBuildWireClient_VLESSGetsUUID(t *testing.T) {
 	}
 }
 
+func TestBuildWireClient_AppliesIPLimit(t *testing.T) {
+	c := buildWireClient("vless", "alice", "sub-1", time.Time{}, 0, 3)
+	if c.LimitIP != 3 {
+		t.Errorf("LimitIP = %d, want 3", c.LimitIP)
+	}
+}
+
 func TestBuildWireClient_TrojanGetsPassword(t *testing.T) {
-	c := buildWireClient("trojan", "bob", "sub-2", time.Time{}, 0)
+	c := buildWireClient("trojan", "bob", "sub-2", time.Time{}, 0, 0)
 	if c.Password == "" {
 		t.Error("trojan client should have Password")
 	}
@@ -100,14 +107,14 @@ func TestBuildWireClient_TrojanGetsPassword(t *testing.T) {
 }
 
 func TestBuildWireClient_ShadowsocksGetsPassword(t *testing.T) {
-	c := buildWireClient("shadowsocks", "carol", "sub-3", time.Time{}, 0)
+	c := buildWireClient("shadowsocks", "carol", "sub-3", time.Time{}, 0, 0)
 	if c.Password == "" {
 		t.Error("shadowsocks client should have Password")
 	}
 }
 
 func TestBuildWireClient_HysteriaGetsAuth(t *testing.T) {
-	c := buildWireClient("hysteria", "dan", "sub-4", time.Time{}, 0)
+	c := buildWireClient("hysteria", "dan", "sub-4", time.Time{}, 0, 0)
 	if c.Auth == "" {
 		t.Error("hysteria client should have Auth populated")
 	}
@@ -116,14 +123,14 @@ func TestBuildWireClient_HysteriaGetsAuth(t *testing.T) {
 	}
 	// Also test the legacy 'hysteria2' alias — the fork emits
 	// `hysteria` but UAs and configs sometimes spell it `hysteria2`.
-	c2 := buildWireClient("hysteria2", "erin", "sub-5", time.Time{}, 0)
+	c2 := buildWireClient("hysteria2", "erin", "sub-5", time.Time{}, 0, 0)
 	if c2.Auth == "" {
 		t.Error("hysteria2 alias should also populate Auth")
 	}
 }
 
 func TestBuildWireClient_UnknownGetsUUIDIdAsSafeDefault(t *testing.T) {
-	c := buildWireClient("totally-made-up", "fred", "sub-6", time.Time{}, 0)
+	c := buildWireClient("totally-made-up", "fred", "sub-6", time.Time{}, 0, 0)
 	if c.ID == "" {
 		t.Error("unknown protocol should default to UUID id")
 	}

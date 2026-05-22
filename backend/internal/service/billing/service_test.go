@@ -51,3 +51,99 @@ func TestIsUniqueViolation(t *testing.T) {
 		t.Error("nil should be false")
 	}
 }
+
+func TestValidateIdempotentPurchaseRejectsDifferentRequest(t *testing.T) {
+	nodeID := int64(7)
+	existing := &model.Order{
+		UserID:                 1,
+		PlanID:                 2,
+		PaymentMethod:          model.PaymentMethodBalance,
+		ProvisioningNodeID:     &nodeID,
+		ProvisioningInboundTag: "vless-1",
+	}
+	same := PurchaseInput{
+		UserID:     1,
+		PlanID:     2,
+		NodeID:     7,
+		InboundTag: "vless-1",
+	}
+	if err := validateIdempotentPurchase(existing, same, model.PaymentMethodBalance); err != nil {
+		t.Fatalf("same purchase rejected: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		in   PurchaseInput
+	}{
+		{"other user", PurchaseInput{UserID: 9, PlanID: 2, NodeID: 7, InboundTag: "vless-1"}},
+		{"other plan", PurchaseInput{UserID: 1, PlanID: 3, NodeID: 7, InboundTag: "vless-1"}},
+		{"other node", PurchaseInput{UserID: 1, PlanID: 2, NodeID: 8, InboundTag: "vless-1"}},
+		{"other inbound", PurchaseInput{UserID: 1, PlanID: 2, NodeID: 7, InboundTag: "trojan-1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateIdempotentPurchase(existing, tc.in, model.PaymentMethodBalance); !errors.Is(err, ErrIdempotencyConflict) {
+				t.Fatalf("err = %v, want ErrIdempotencyConflict", err)
+			}
+		})
+	}
+}
+
+func TestValidateIdempotentPaymentPurchaseRejectsDifferentProvider(t *testing.T) {
+	nodeID := int64(7)
+	existing := &model.Order{
+		UserID:                 1,
+		PlanID:                 2,
+		PaymentMethod:          "stripe",
+		ProvisioningNodeID:     &nodeID,
+		ProvisioningInboundTag: "vless-1",
+	}
+	in := PurchaseViaPaymentInput{
+		UserID:     1,
+		PlanID:     2,
+		NodeID:     7,
+		InboundTag: "vless-1",
+		Provider:   "alipay",
+	}
+	if err := validateIdempotentPaymentPurchase(existing, in); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("err = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
+func TestNormalizeProvisioningPoolFieldsConvertsAllowedProtocols(t *testing.T) {
+	got := normalizeProvisioningPoolFields(map[string]any{
+		"allowed_protocols": []any{" VLESS ", "trojan", "vless", ""},
+	})
+	protocols, ok := got["allowed_protocols"].(model.StringSlice)
+	if !ok {
+		t.Fatalf("allowed_protocols type = %T, want model.StringSlice", got["allowed_protocols"])
+	}
+	want := model.StringSlice{"vless", "trojan"}
+	if len(protocols) != len(want) {
+		t.Fatalf("allowed_protocols = %#v, want %#v", protocols, want)
+	}
+	for i := range want {
+		if protocols[i] != want[i] {
+			t.Fatalf("allowed_protocols = %#v, want %#v", protocols, want)
+		}
+	}
+}
+
+func TestAdvisoryLockKeyStable(t *testing.T) {
+	if advisoryLockKey("vless-1") != advisoryLockKey("vless-1") {
+		t.Fatal("same inbound tag should produce same lock key")
+	}
+	if advisoryLockKey("vless-1") == advisoryLockKey("trojan-1") {
+		t.Fatal("different inbound tags unexpectedly collided")
+	}
+}
+
+func TestParsePlanIDSet(t *testing.T) {
+	got := parsePlanIDSet(" 3, 1, bad, 3, 0, -2 ")
+	if len(got) != 2 || !got[1] || !got[3] {
+		t.Fatalf("parsePlanIDSet returned %#v, want ids 1 and 3", got)
+	}
+	if empty := parsePlanIDSet("bad, 0, "); empty != nil {
+		t.Fatalf("empty parse = %#v, want nil", empty)
+	}
+}

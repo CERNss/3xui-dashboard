@@ -1,4 +1,5 @@
 import { createI18n } from 'vue-i18n'
+import { watch, type WatchStopHandle } from 'vue'
 
 import en from './locales/en'
 import zh from './locales/zh'
@@ -25,7 +26,16 @@ export const i18n = createI18n({
 export type MessageSchema = typeof en
 
 // Keep the i18n locale in lockstep with the app store.
+let stopLocaleWatch: WatchStopHandle | null = null
+
 export function bindI18nToStore() {
   const app = useAppStore()
-  i18n.global.locale.value = app.locale
+  stopLocaleWatch?.()
+  stopLocaleWatch = watch(
+    () => app.locale,
+    (loc) => {
+      i18n.global.locale.value = loc
+    },
+    { immediate: true },
+  )
 }

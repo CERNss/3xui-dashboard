@@ -11,7 +11,7 @@ defineProps<{
     <div
       v-for="i in (rows ?? 4)"
       :key="i"
-      class="relative h-28 overflow-hidden rounded-2xl border border-surface-200 bg-surface-100 dark:border-surface-800 dark:bg-surface-800/40"
+      class="relative h-28 overflow-hidden rounded-2xl border border-surface-200 bg-surface-100 dark:border-surface-700 dark:bg-surface-800"
     >
       <div class="absolute inset-0 -translate-x-full animate-shimmer bg-skeleton-shimmer bg-[length:400px_100%] dark:bg-skeleton-shimmer-dark" />
     </div>
@@ -19,7 +19,7 @@ defineProps<{
 
   <div
     v-else-if="(variant ?? 'table') === 'card'"
-    class="rounded-2xl border border-surface-200 bg-surface-100 p-6 dark:border-surface-800 dark:bg-surface-800/40"
+    class="rounded-2xl border border-surface-200 bg-surface-100 p-6 dark:border-surface-700 dark:bg-surface-800"
   >
     <div class="space-y-3">
       <div

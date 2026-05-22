@@ -36,6 +36,7 @@ type PlanParams struct {
 	PlanID            *int64 // optional — for traceability on the ownership row
 	DurationDays      int    // 0 = non-expiring
 	TrafficLimitBytes int64  // 0 = unlimited
+	IPLimit           int    // 0 = unlimited
 }
 
 // Service composes the runtime manager, the user/plan/ownership
@@ -61,22 +62,27 @@ func (s *Service) SetWGProvisioner(p *WGProvisioner) { s.wg = p }
 // Returns nil when the target is provisionable. Errors mean
 // the resolved (nodeID, inboundTag) is unreachable / disabled /
 // requires WG_MASTER_KEY which isn't set / inbound vanished.
-func (s *Service) PreflightProvision(ctx context.Context, nodeID int64, inboundTag string) error {
+func (s *Service) PreflightInbound(ctx context.Context, nodeID int64, inboundTag string) (*runtime.Inbound, error) {
 	r, err := s.rt.Get(ctx, nodeID)
 	if err != nil {
-		return fmt.Errorf("node: %w", err)
+		return nil, fmt.Errorf("node: %w", err)
 	}
 	in, err := r.GetInbound(ctx, inboundTag)
 	if err != nil {
-		return fmt.Errorf("inbound %q: %w", inboundTag, err)
+		return nil, fmt.Errorf("inbound %q: %w", inboundTag, err)
 	}
 	if !in.Enable {
-		return fmt.Errorf("inbound %q is disabled on the panel", inboundTag)
+		return nil, fmt.Errorf("inbound %q is disabled on the panel", inboundTag)
 	}
 	if in.IsWireguard() && s.wg == nil {
-		return fmt.Errorf("WG inbound %q requires WG_MASTER_KEY but it is not configured on this dashboard", inboundTag)
+		return nil, fmt.Errorf("WG inbound %q requires WG_MASTER_KEY but it is not configured on this dashboard", inboundTag)
 	}
-	return nil
+	return in, nil
+}
+
+func (s *Service) PreflightProvision(ctx context.Context, nodeID int64, inboundTag string) error {
+	_, err := s.PreflightInbound(ctx, nodeID, inboundTag)
+	return err
 }
 
 // UserLookup / PlanLookup are tiny interfaces to keep the client
@@ -165,7 +171,7 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 	newExpiry := computeExpiry(now, existing, params.DurationDays)
 	newLimit := params.TrafficLimitBytes
 
-	wireClient := buildWireClient(in.Protocol, clientEmail, user.SubID, newExpiry, newLimit)
+	wireClient := buildWireClient(in.Protocol, clientEmail, user.SubID, newExpiry, newLimit, params.IPLimit)
 
 	if existing == nil {
 		if err := r.AddClient(ctx, inboundTag, wireClient); err != nil {
@@ -352,8 +358,8 @@ func (s *Service) DeleteClient(ctx context.Context, nodeID int64, inboundTag, cl
 // annotates each with the matching ClientOwnership row (or nil for
 // unmapped clients). Inputs: nodeID + inboundTag.
 type AnnotatedClient struct {
-	Client    runtime.Client          `json:"client"`
-	Ownership *model.ClientOwnership  `json:"ownership,omitempty"`
+	Client    runtime.Client         `json:"client"`
+	Ownership *model.ClientOwnership `json:"ownership,omitempty"`
 }
 
 func (s *Service) ListOnInbound(ctx context.Context, nodeID int64, inboundTag string) ([]AnnotatedClient, error) {
@@ -423,11 +429,12 @@ func computeExpiry(now time.Time, existing *model.ClientOwnership, durationDays 
 // buildWireClient constructs the 3x-ui Client object for the given
 // protocol. VLESS / VMess get a UUID; Trojan / Shadowsocks get a
 // random hex password. Everything else gets a UUID id (safe default).
-func buildWireClient(protocol, email, subID string, expiry time.Time, trafficBytes int64) runtime.Client {
+func buildWireClient(protocol, email, subID string, expiry time.Time, trafficBytes int64, ipLimit int) runtime.Client {
 	c := runtime.Client{
 		Email:   email,
 		SubID:   subID,
 		Enable:  true,
+		LimitIP: ipLimit,
 		TotalGB: trafficBytes, // bytes despite the name
 	}
 	if !expiry.IsZero() {
@@ -481,4 +488,3 @@ func randomHex(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
-

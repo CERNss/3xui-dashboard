@@ -37,6 +37,9 @@ var (
 	ErrRegistrationOff    = errors.New("user: public registration disabled")
 	ErrDomainNotAllowed   = errors.New("user: email domain not allowed")
 	ErrNotImplemented     = errors.New("user: not implemented in this build")
+	ErrOIDCEmailRequired  = errors.New("oidc: email claim is required")
+	ErrOIDCPendingInvalid = errors.New("oidc: pending decision invalid or expired")
+	ErrOIDCActionInvalid  = errors.New("oidc: invalid account decision")
 )
 
 // Service owns registration + auth.
@@ -49,12 +52,14 @@ type Service struct {
 
 	// OIDC state — only used when cfg.OIDC.Enabled().
 	oidcSessions     *oidcSessions
+	oidcPending      *oidcPendingSessions
 	oidcHTTP         *http.Client
 	oidcDiscoMu      sync.Mutex
 	oidcDiscoCache   *oidcDiscovery
 	oidcDiscoFetched time.Time
 	oidcJWKSMu       sync.Mutex
 	oidcJWKSCache    map[string]*rsa.PublicKey
+	oidcJWKSURL      string
 	oidcJWKSFetched  time.Time
 }
 
@@ -67,6 +72,7 @@ func New(users *repository.UserRepo, settings *repository.SettingRepo, bus *even
 		cfg:          cfg,
 		log:          lg.With(slog.String("component", "service.user")),
 		oidcSessions: newOIDCSessions(),
+		oidcPending:  newOIDCPendingSessions(),
 		oidcHTTP:     &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -80,12 +86,14 @@ type RegisterInput struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Code     string `json:"code"`
+	Verified bool   `json:"verified"`
 }
 
 // Register creates a new account. Gated by:
 //   - public registration setting (settings.public_registration_enabled,
 //     defaulting to cfg.PublicRegistration when no row exists)
 //   - email domain allowlist (same fallback chain)
+//
 // Emits user.registered on success.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*model.User, error) {
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
@@ -127,11 +135,14 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*model.User, 
 	u := &model.User{
 		Email:         &in.Email,
 		PasswordHash:  &hashStr,
-		EmailVerified: false, // No SMTP yet — see ConfirmEmail.
+		EmailVerified: in.Verified,
 		Status:        model.UserStatusActive,
 		SubID:         subID,
 	}
 	if err := s.users.Create(ctx, u); err != nil {
+		return nil, err
+	}
+	if err := s.applyNewUserInitialBalance(ctx, u, "new user initial balance"); err != nil {
 		return nil, err
 	}
 	s.bus.PublishType(event.UserRegistered, RegisteredPayload{UserID: u.ID, Email: in.Email})
@@ -213,7 +224,7 @@ func (s *Service) BindEmail(ctx context.Context, userID int64, email string) err
 	}
 	return s.users.Update(ctx, userID, map[string]any{
 		"email":          email,
-		"email_verified": s.cfg.SMTP.Enabled() == false, // see comment below
+		"email_verified": false,
 	})
 }
 
@@ -261,23 +272,134 @@ func (s *Service) RotateSubID(ctx context.Context, userID int64) (string, error)
 // Callers (handler) hand the URL to the frontend which navigates
 // the user there.
 func (s *Service) OIDCStart(ctx context.Context, redirectAfter string) (string, error) {
-	if !s.cfg.OIDC.Enabled() {
+	oidc, err := s.effectiveOIDC(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !oidc.Enabled() {
 		return "", ErrNotImplemented
 	}
-	return s.oidcStartImpl(ctx, redirectAfter)
+	return s.oidcStartImpl(ctx, oidc, redirectAfter)
 }
 
 // OIDCCallback exchanges the IDP-returned code for tokens, verifies
-// the id_token against the JWKS, and provisions-or-links the
-// matching User row keyed on `sub` (oidc_subject column).
-func (s *Service) OIDCCallback(ctx context.Context, code, state string) (*model.User, error) {
-	if !s.cfg.OIDC.Enabled() {
+// the id_token against the JWKS, and resolves the login by email.
+// If the email already belongs to an account that is not linked to
+// this OIDC subject yet, the caller gets a pending decision instead
+// of a silent auto-link.
+func (s *Service) OIDCCallback(ctx context.Context, code, state string) (*OIDCLoginResult, error) {
+	oidc, err := s.effectiveOIDC(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !oidc.Enabled() {
 		return nil, ErrNotImplemented
 	}
-	return s.oidcCallbackImpl(ctx, code, state)
+	return s.oidcCallbackImpl(ctx, oidc, code, state)
+}
+
+// OIDCResolve finalizes a pending OIDC account decision returned by
+// OIDCCallback. action is one of:
+//   - bind: link this OIDC subject to the existing email account.
+//   - recreate: reset that email account's login identity to OIDC
+//     (password removed, subscription id rotated) while keeping the
+//     same canonical email row.
+func (s *Service) OIDCResolve(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
+	oidc, err := s.effectiveOIDC(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if !oidc.Enabled() {
+		return nil, "", ErrNotImplemented
+	}
+	return s.resolveOIDCPending(ctx, pendingToken, action)
+}
+
+// OIDCConfig returns the current effective OIDC config for UI metadata.
+// Runtime settings override env values; empty settings fall back to env.
+func (s *Service) OIDCConfig(ctx context.Context) (config.OIDC, error) {
+	return s.effectiveOIDC(ctx)
 }
 
 // ---- Admin ----------------------------------------------------------------
+
+// AdminCreateInput is the body shape for admin-side user creation.
+//
+// Unlike Register, AdminCreate skips the public-registration toggle,
+// the email-domain allowlist, and the email verification code: an
+// admin is presumed to be vetting the account out-of-band. The new
+// row is created with email_verified=true.
+type AdminCreateInput struct {
+	Email               string `json:"email"`
+	Password            string `json:"password"`
+	InitialBalanceCents int64  `json:"initial_balance_cents"`
+}
+
+// AdminCreate provisions a new portal user under admin authority.
+// Emits user.registered on success so downstream listeners (webhook
+// fanout, metrics) treat it the same as a self-service signup.
+func (s *Service) AdminCreate(ctx context.Context, in AdminCreateInput) (*model.User, error) {
+	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
+	if _, err := mail.ParseAddress(in.Email); err != nil {
+		return nil, ErrInvalidEmail
+	}
+	if len(in.Password) < 8 {
+		return nil, ErrPasswordTooShort
+	}
+	if in.InitialBalanceCents < 0 {
+		return nil, fmt.Errorf("user.AdminCreate: initial_balance_cents must be >= 0")
+	}
+
+	existing, err := s.users.GetByEmail(ctx, in.Email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrEmailTaken
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	hashStr := string(hash)
+	subID, err := generateSubID()
+	if err != nil {
+		return nil, err
+	}
+	u := &model.User{
+		Email:         &in.Email,
+		PasswordHash:  &hashStr,
+		EmailVerified: true, // admin-vetted, skip email-code flow
+		Status:        model.UserStatusActive,
+		SubID:         subID,
+	}
+	if err := s.users.Create(ctx, u); err != nil {
+		return nil, err
+	}
+
+	// Apply initial balance via AdjustBalance so a balance_logs row
+	// is written for the credit. Non-zero only.
+	if in.InitialBalanceCents > 0 {
+		newBal, err := s.users.AdjustBalance(
+			ctx, u.ID, in.InitialBalanceCents,
+			model.BalanceReasonAdminAdjust,
+			"initial balance (admin create)",
+			nil,
+		)
+		if err != nil {
+			// Best-effort rollback: the user row exists but the
+			// initial credit failed. Surface the error so the
+			// admin can retry; the operator can delete + recreate
+			// if the half-state is unwanted.
+			return nil, fmt.Errorf("user.AdminCreate: apply initial balance: %w", err)
+		}
+		u.BalanceCents = newBal
+	}
+
+	s.bus.PublishType(event.UserRegistered, RegisteredPayload{UserID: u.ID, Email: in.Email})
+	return u, nil
+}
 
 // AdminUpdateInput is the patch shape admins can apply.
 type AdminUpdateInput struct {
@@ -352,6 +474,20 @@ func (s *Service) publicRegistrationEnabled(ctx context.Context) (bool, error) {
 	return s.cfg.PublicRegistration, nil
 }
 
+// EmailVerificationRequired reads the runtime setting first, falling
+// back to the supplied default when the operator has not set an
+// override. AuthHandler supplies SMTP availability as the default.
+func (s *Service) EmailVerificationRequired(ctx context.Context, fallback bool) (bool, error) {
+	if s.settings != nil {
+		v, err := s.settings.GetBool(ctx, model.SettingEmailVerificationRequired, fallback)
+		if err == nil {
+			return v, nil
+		}
+		return fallback, err
+	}
+	return fallback, nil
+}
+
 // emailDomainAllowed checks the settings override first, then the
 // env allowlist. Empty allowlist = no domain restriction.
 func (s *Service) emailDomainAllowed(ctx context.Context, email string) bool {
@@ -390,6 +526,25 @@ func generateSubID() (string, error) {
 		return "", fmt.Errorf("rand for sub_id: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func (s *Service) applyNewUserInitialBalance(ctx context.Context, u *model.User, note string) error {
+	if s.settings == nil || u == nil {
+		return nil
+	}
+	cents, err := s.settings.GetInt(ctx, model.SettingNewUserInitialBalanceCents, 0)
+	if err != nil {
+		return err
+	}
+	if cents <= 0 {
+		return nil
+	}
+	newBal, err := s.users.AdjustBalance(ctx, u.ID, cents, model.BalanceReasonBonus, note, nil)
+	if err != nil {
+		return fmt.Errorf("apply initial balance: %w", err)
+	}
+	u.BalanceCents = newBal
+	return nil
 }
 
 // RegisteredPayload is the event.UserRegistered payload.

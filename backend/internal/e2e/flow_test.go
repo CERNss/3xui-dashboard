@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -121,7 +122,9 @@ func TestFullFlow(t *testing.T) {
 		StreamSettings: `{"network":"tcp","security":"none"}`,
 	})
 
-	var plan struct{ ID int64 `json:"id"` }
+	var plan struct {
+		ID int64 `json:"id"`
+	}
 	if got := h.do(t, req{
 		method: http.MethodPost, path: "/api/admin/plans", token: adminTok,
 		body: map[string]any{
@@ -175,7 +178,9 @@ func TestFullFlow(t *testing.T) {
 	}
 
 	// Idempotency: same key returns the same order.
-	var orderReplay struct{ ID int64 `json:"id"` }
+	var orderReplay struct {
+		ID int64 `json:"id"`
+	}
 	_ = h.do(t, req{
 		method: http.MethodPost, path: "/api/user/purchase", token: userTok,
 		body: map[string]any{
@@ -185,6 +190,30 @@ func TestFullFlow(t *testing.T) {
 	}, &orderReplay)
 	if orderReplay.ID != order.ID {
 		t.Errorf("idempotency replay: got order %d, want %d", orderReplay.ID, order.ID)
+	}
+
+	// Same idempotency key cannot be replayed for a different purchase.
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/user/purchase", token: userTok,
+		body: map[string]any{
+			"plan_id": plan.ID, "node_id": node.ID, "inbound_tag": "missing-inbound",
+			"idempotency_key": "key-2",
+		},
+	}, nil); got != http.StatusConflict {
+		t.Fatalf("idempotency mismatch: status=%d, want 409", got)
+	}
+
+	// Another user must not be able to retrieve Alice's order by
+	// reusing the same idempotency key.
+	_, otherTok := h.registerUser(t, "bob@example.com", "hunter2hunter2")
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/user/purchase", token: otherTok,
+		body: map[string]any{
+			"plan_id": plan.ID, "node_id": node.ID, "inbound_tag": "vless-1",
+			"idempotency_key": "key-2",
+		},
+	}, nil); got != http.StatusConflict {
+		t.Fatalf("cross-user idempotency replay: status=%d, want 409", got)
 	}
 
 	// The provisioned client must show up on the mock panel (proves
@@ -208,7 +237,9 @@ func TestFullFlow(t *testing.T) {
 	}
 
 	// --- Subscription ------------------------------------------------------
-	var profile struct{ SubID string `json:"sub_id"` }
+	var profile struct {
+		SubID string `json:"sub_id"`
+	}
 	_ = h.do(t, req{method: http.MethodGet, path: "/api/user/profile", token: userTok}, &profile)
 	if profile.SubID == "" {
 		t.Fatal("profile.sub_id empty")
@@ -226,13 +257,34 @@ func TestFullFlow(t *testing.T) {
 		t.Error("/sub/<real>: empty body (expected base64 link payload)")
 	}
 
+	if got := h.do(t, req{
+		method: http.MethodPut, path: fmt.Sprintf("/api/admin/users/%d", userID), token: adminTok,
+		body: map[string]any{"status": "suspended"},
+	}, nil); got != http.StatusOK {
+		t.Fatalf("suspend user: status=%d", got)
+	}
+	if got := h.do(t, req{method: http.MethodGet, path: "/api/user/profile", token: userTok}, nil); got != http.StatusForbidden {
+		t.Errorf("suspended user old JWT: status=%d, want 403", got)
+	}
+	if got, _, _ := h.raw(t, req{method: http.MethodGet, path: "/sub/" + profile.SubID}); got != http.StatusNotFound {
+		t.Errorf("suspended user sub URL: status=%d, want 404", got)
+	}
+	if got := h.do(t, req{
+		method: http.MethodPut, path: fmt.Sprintf("/api/admin/users/%d", userID), token: adminTok,
+		body: map[string]any{"status": "active"},
+	}, nil); got != http.StatusOK {
+		t.Fatalf("reactivate user: status=%d", got)
+	}
+
 	// Unknown sub_id → 404.
 	if got, _, _ := h.raw(t, req{method: http.MethodGet, path: "/sub/no-such-id"}); got != http.StatusNotFound {
 		t.Errorf("/sub/<unknown>: status=%d, want 404", got)
 	}
 
 	// --- Webhook create + test --------------------------------------------
-	var webhook struct{ ID int64 `json:"id"` }
+	var webhook struct {
+		ID int64 `json:"id"`
+	}
 	if got := h.do(t, req{
 		method: http.MethodPost, path: "/api/admin/webhooks", token: adminTok,
 		body: map[string]any{
@@ -243,7 +295,10 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("create webhook: status=%d", got)
 	}
 	// Test delivery — async, just check the row was queued.
-	var delivery struct{ ID int64 `json:"id"`; Status string `json:"status"` }
+	var delivery struct {
+		ID     int64  `json:"id"`
+		Status string `json:"status"`
+	}
 	if got := h.do(t, req{
 		method: http.MethodPost,
 		path:   "/api/admin/webhooks/" + itoa(webhook.ID) + "/test", token: adminTok,

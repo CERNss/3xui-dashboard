@@ -2,26 +2,24 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import type { Order, Plan, PortalInbound, PaymentMethod } from '@/api/portal/billing'
+import type { Order, Plan, PaymentMethod } from '@/api/portal/billing'
 import type { UserProfile } from '@/api/portal/profile'
 
 // Stub the API modules BEFORE importing Plans.vue. Hoisted by vi —
 // must be at the top of the file or vi won't pick it up before the
 // dynamic component import.
 const apiStubs = vi.hoisted(() => ({
-  listPlans: vi.fn<[], Promise<Plan[]>>(),
-  listInbounds: vi.fn<[], Promise<PortalInbound[]>>(),
-  paymentMethods: vi.fn<[], Promise<PaymentMethod[]>>(),
-  purchase: vi.fn<[unknown], Promise<Order>>(),
-  purchaseViaPayment: vi.fn<[PaymentMethod, unknown], Promise<Order>>(),
-  getOrder: vi.fn<[number], Promise<Order>>(),
-  profileGet: vi.fn<[], Promise<UserProfile>>(),
+  listPlans: vi.fn<() => Promise<Plan[]>>(),
+  paymentMethods: vi.fn<() => Promise<PaymentMethod[]>>(),
+  purchase: vi.fn<(input: unknown) => Promise<Order>>(),
+  purchaseViaPayment: vi.fn<(provider: PaymentMethod, input: unknown) => Promise<Order>>(),
+  getOrder: vi.fn<(id: number) => Promise<Order>>(),
+  profileGet: vi.fn<() => Promise<UserProfile>>(),
 }))
 
 vi.mock('@/api/portal/billing', () => ({
   portalBillingApi: {
     listPlans: apiStubs.listPlans,
-    listInbounds: apiStubs.listInbounds,
     paymentMethods: apiStubs.paymentMethods,
     purchase: apiStubs.purchase,
     purchaseViaPayment: apiStubs.purchaseViaPayment,
@@ -45,18 +43,6 @@ function makePlan(over: Partial<Plan> = {}): Plan {
     traffic_limit_bytes: 100 * 1024 * 1024 * 1024,
     duration_days: 30,
     enabled: true,
-    ...over,
-  }
-}
-
-function makeInbound(over: Partial<PortalInbound> = {}): PortalInbound {
-  return {
-    node_id: 1,
-    node_name: 'tokyo-1',
-    inbound_tag: 'vless-tcp',
-    protocol: 'vless',
-    remark: '',
-    port: 443,
     ...over,
   }
 }
@@ -89,13 +75,7 @@ async function mountPlans() {
   await router.push('/portal/plans')
   await router.isReady()
   const w = mount(Plans, {
-    global: {
-      plugins: [router],
-      // $t is referenced in the loading template — stub to return
-      // the key so the render doesn't crash. Real i18n lookup isn't
-      // what we're testing here.
-      mocks: { $t: (key: string) => key },
-    },
+    global: { plugins: [router] },
     attachTo: document.body,
   })
   // Wait for onMounted's load() to complete
@@ -104,9 +84,8 @@ async function mountPlans() {
 }
 
 beforeEach(() => {
-  // Default happy-path: one plan, one inbound, profile with enough balance, only balance method.
+  // Default happy-path: one plan, profile with enough balance, only balance method.
   apiStubs.listPlans.mockResolvedValue([makePlan()])
-  apiStubs.listInbounds.mockResolvedValue([makeInbound()])
   apiStubs.paymentMethods.mockResolvedValue(['balance'])
   apiStubs.profileGet.mockResolvedValue(makeProfile())
   apiStubs.purchase.mockResolvedValue({
@@ -151,18 +130,27 @@ describe('Plans.vue smoke', () => {
     expect(w.text()).toContain('Stripe')
   })
 
-  it('shows empty-state when no inbounds are configured', async () => {
-    apiStubs.listInbounds.mockResolvedValue([])
-    const { w } = await mountPlans()
-    expect(w.text()).toContain('当前没有可用的节点入站')
-  })
-
   it('disables the buy button when balance is insufficient', async () => {
     apiStubs.profileGet.mockResolvedValue(makeProfile({ balance_cents: 100 }))
     const { w } = await mountPlans()
     const buyButton = w.findAll('button').find((b) => b.text().includes('余额不足'))
     expect(buyButton).toBeDefined()
     expect(buyButton?.attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps external payment available when balance is insufficient', async () => {
+    apiStubs.profileGet.mockResolvedValue(makeProfile({ balance_cents: 100 }))
+    apiStubs.paymentMethods.mockResolvedValue(['balance', 'alipay'])
+    const { w } = await mountPlans()
+
+    const alipayRadio = [...w.findAll('input[type="radio"]')].find(
+      (r) => (r.element as HTMLInputElement).value === 'alipay',
+    )
+    await alipayRadio!.setValue()
+
+    const buyButton = w.findAll('button').find((b) => b.text().includes('立即购买'))
+    expect(buyButton).toBeDefined()
+    expect(buyButton?.attributes('disabled')).toBeUndefined()
   })
 
   it('alipay branch: opens AlipayPayModal instead of calling balance purchase', async () => {
@@ -200,8 +188,10 @@ describe('Plans.vue smoke', () => {
 
     expect(apiStubs.purchaseViaPayment).toHaveBeenCalledWith(
       'alipay',
-      expect.objectContaining({ plan_id: 1, node_id: 1, inbound_tag: 'vless-tcp' }),
+      expect.objectContaining({ plan_id: 1, idempotency_key: expect.any(String) }),
     )
+    expect(apiStubs.purchaseViaPayment.mock.calls[0][1]).not.toHaveProperty('node_id')
+    expect(apiStubs.purchaseViaPayment.mock.calls[0][1]).not.toHaveProperty('inbound_tag')
     expect(apiStubs.purchase).not.toHaveBeenCalled()
   })
 
@@ -217,7 +207,7 @@ describe('Plans.vue smoke', () => {
     })
 
     // Capture window.location.href assignments via a spy.
-    const hrefSpy = vi.fn<[string], void>()
+    const hrefSpy = vi.fn<(href: string) => void>()
     Object.defineProperty(window, 'location', {
       writable: true,
       value: {
@@ -242,7 +232,8 @@ describe('Plans.vue smoke', () => {
     confirmButton!.click()
     await flushPromises()
 
-    expect(apiStubs.purchaseViaPayment).toHaveBeenCalledWith('stripe', expect.any(Object))
+    expect(apiStubs.purchaseViaPayment).toHaveBeenCalledWith('stripe', expect.objectContaining({ plan_id: 1 }))
+    expect(apiStubs.purchaseViaPayment.mock.calls[0][1]).not.toHaveProperty('node_id')
     expect(hrefSpy).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/cs_test_a1B2c3')
   })
 
@@ -259,8 +250,10 @@ describe('Plans.vue smoke', () => {
     await flushPromises()
 
     expect(apiStubs.purchase).toHaveBeenCalledWith(
-      expect.objectContaining({ plan_id: 1, node_id: 1, inbound_tag: 'vless-tcp' }),
+      expect.objectContaining({ plan_id: 1, idempotency_key: expect.any(String) }),
     )
+    expect(apiStubs.purchase.mock.calls[0][0]).not.toHaveProperty('node_id')
+    expect(apiStubs.purchase.mock.calls[0][0]).not.toHaveProperty('inbound_tag')
     expect(apiStubs.purchaseViaPayment).not.toHaveBeenCalled()
   })
 })

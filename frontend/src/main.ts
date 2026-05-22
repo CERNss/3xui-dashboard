@@ -12,7 +12,8 @@ import '@fontsource/geist-mono/500.css'
 
 import App from './App.vue'
 import { router } from './router'
-import { i18n } from './i18n'
+import { bindI18nToStore, i18n } from './i18n'
+import { useBrandingStore } from './stores/branding'
 import { useThemeStore } from './stores/theme'
 
 import './style.css'
@@ -23,6 +24,8 @@ app.use(router)
 app.use(i18n)
 
 // Apply persisted theme before mount so we don't get a light-to-dark flash.
+bindI18nToStore()
 useThemeStore().init()
+useBrandingStore().load().catch(() => {})
 
 app.mount('#app')

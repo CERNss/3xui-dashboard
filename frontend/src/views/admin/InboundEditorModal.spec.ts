@@ -47,7 +47,6 @@ function mountEditor(over: { mode?: 'create' | 'edit'; open?: boolean } = {}) {
       source: null,
       nodes: [fakeNode(1)],
     },
-    global: { mocks: { $t: (k: string) => k } },
     attachTo: document.body,
   })
 }

@@ -1,7 +1,9 @@
 // OIDC login flow — authorization code with PKCE, ID token
-// verification via the IDP's JWKS, and user upsert keyed on
-// `sub` (oidc_subject column). Stdlib + golang-jwt/jwt/v5 only;
-// no oidc SDK to keep the dependency surface small and auditable.
+// verification via the IDP's JWKS, and user resolution keyed by
+// email. `sub` is stored as a login credential on the canonical
+// email account; it is not the primary identity. Stdlib +
+// golang-jwt/jwt/v5 only; no oidc SDK to keep the dependency
+// surface small and auditable.
 //
 // Wiring: handlers/user/auth.go calls Service.OIDCStart to get the
 // authorize URL, then Service.OIDCCallback once the IDP comes back
@@ -30,6 +32,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 )
@@ -47,11 +50,10 @@ var ErrOIDCStateInvalid = errors.New("oidc: state mismatch or expired")
 var ErrOIDCBadIDToken = errors.New("oidc: id_token verification failed")
 
 // ErrOIDCEmailConflict fires when an OIDC login arrives with an
-// email that's already bound to a different account AND the IDP
-// hasn't asserted email_verified=true. The dashboard refuses to
-// auto-link in that case — an attacker who can register an OIDC
-// identity with someone else's address would otherwise take over
-// the existing account. Handler maps to 409.
+// email that's already bound to a different OIDC subject. Because
+// email is the canonical user identity, the dashboard requires an
+// explicit user decision instead of silently creating a duplicate.
+// Handler maps to 409 for legacy callers.
 var ErrOIDCEmailConflict = errors.New("oidc: email already linked to a different account")
 
 // oidcState is one in-flight login: state parameter + PKCE verifier
@@ -60,6 +62,77 @@ type oidcState struct {
 	verifier      string
 	redirectAfter string
 	expiresAt     time.Time
+}
+
+// OIDCLoginResult is returned by OIDCCallback. Exactly one of User or
+// Pending is set. Pending means the IDP identity is valid, but the
+// email already exists and the frontend must ask the user whether to
+// bind to that existing account or reset/recreate that email identity.
+type OIDCLoginResult struct {
+	User          *model.User
+	Pending       *OIDCPendingDecision
+	RedirectAfter string
+}
+
+// OIDCPendingDecision is safe to serialize to the browser. It does
+// not expose the OIDC subject; the short-lived token points at the
+// server-side pending record.
+type OIDCPendingDecision struct {
+	Token           string
+	Email           string
+	EmailVerified   bool
+	ExistingUserID  int64
+	ExistingHasOIDC bool
+	ExpiresAt       time.Time
+}
+
+type oidcPending struct {
+	sub            string
+	email          string
+	emailVerified  bool
+	redirectAfter  string
+	existingUserID int64
+	expiresAt      time.Time
+}
+
+type oidcPendingSessions struct {
+	mu sync.Mutex
+	m  map[string]*oidcPending
+}
+
+func newOIDCPendingSessions() *oidcPendingSessions {
+	return &oidcPendingSessions{m: map[string]*oidcPending{}}
+}
+
+func (s *oidcPendingSessions) put(token string, p *oidcPending) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweepLocked()
+	s.m[token] = p
+}
+
+func (s *oidcPendingSessions) take(token string) *oidcPending {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweepLocked()
+	p, ok := s.m[token]
+	if !ok {
+		return nil
+	}
+	delete(s.m, token)
+	if p.expiresAt.Before(time.Now()) {
+		return nil
+	}
+	return p
+}
+
+func (s *oidcPendingSessions) sweepLocked() {
+	now := time.Now()
+	for k, v := range s.m {
+		if v.expiresAt.Before(now) {
+			delete(s.m, k)
+		}
+	}
 }
 
 // oidcSessions holds the short-lived state map. Construct via
@@ -116,36 +189,87 @@ type oidcDiscovery struct {
 	Issuer                string `json:"issuer"`
 }
 
+func (s *Service) effectiveOIDC(ctx context.Context) (config.OIDC, error) {
+	oidc := s.cfg.OIDC
+	if s.settings == nil {
+		return oidc, nil
+	}
+	var err error
+	read := func(key, fallback string) string {
+		if err != nil {
+			return fallback
+		}
+		var v string
+		v, err = s.settings.GetString(ctx, key, fallback)
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return fallback
+		}
+		return v
+	}
+	oidc.Issuer = read(model.SettingOIDCIssuer, oidc.Issuer)
+	oidc.ClientID = read(model.SettingOIDCClientID, oidc.ClientID)
+	oidc.ClientSecret = read(model.SettingOIDCClientSecret, oidc.ClientSecret)
+	oidc.RedirectURL = read(model.SettingOIDCRedirectURL, oidc.RedirectURL)
+	scopesRaw := read(model.SettingOIDCScopes, strings.Join(oidc.Scopes, ","))
+	if scopesRaw != "" {
+		oidc.Scopes = splitOIDCScopes(scopesRaw)
+	}
+	oidc.DisplayName = read(model.SettingOIDCDisplayName, oidc.DisplayName)
+	oidc.IconURL = read(model.SettingOIDCIconURL, oidc.IconURL)
+	oidc.AuthURL = read(model.SettingOIDCAuthURL, oidc.AuthURL)
+	oidc.TokenURL = read(model.SettingOIDCTokenURL, oidc.TokenURL)
+	oidc.JWKSURL = read(model.SettingOIDCJWKSURL, oidc.JWKSURL)
+	oidc.UserURL = read(model.SettingOIDCUserInfoURL, oidc.UserURL)
+	if err != nil {
+		return oidc, err
+	}
+	return oidc, nil
+}
+
+func splitOIDCScopes(raw string) []string {
+	raw = strings.ReplaceAll(raw, " ", ",")
+	parts := strings.Split(raw, ",")
+	out := parts[:0]
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // resolveEndpoints returns the URLs the dashboard needs, hitting
 // discovery only when an explicit override is missing. Caches the
 // discovery result in-process so we don't refetch on every login.
-func (s *Service) resolveEndpoints(ctx context.Context) (oidcDiscovery, error) {
+func (s *Service) resolveEndpoints(ctx context.Context, oidc config.OIDC) (oidcDiscovery, error) {
 	s.oidcDiscoMu.Lock()
 	defer s.oidcDiscoMu.Unlock()
-	// Cached + still fresh? (24h TTL — endpoints rotate rarely.)
-	if s.oidcDiscoCache != nil && time.Since(s.oidcDiscoFetched) < 24*time.Hour {
-		return *s.oidcDiscoCache, nil
-	}
 
 	// Start from explicit overrides; only fetch discovery for the
 	// remaining gaps. This lets operators run against IDPs whose
 	// discovery doc is broken / behind auth.
 	d := oidcDiscovery{
-		AuthorizationEndpoint: s.cfg.OIDC.AuthURL,
-		TokenEndpoint:         s.cfg.OIDC.TokenURL,
-		UserInfoEndpoint:      s.cfg.OIDC.UserURL,
-		JWKSURI:               s.cfg.OIDC.JWKSURL,
-		Issuer:                s.cfg.OIDC.Issuer,
+		AuthorizationEndpoint: oidc.AuthURL,
+		TokenEndpoint:         oidc.TokenURL,
+		UserInfoEndpoint:      oidc.UserURL,
+		JWKSURI:               oidc.JWKSURL,
+		Issuer:                oidc.Issuer,
 	}
 	if d.AuthorizationEndpoint != "" && d.TokenEndpoint != "" && d.JWKSURI != "" {
 		s.oidcDiscoCache = &d
 		s.oidcDiscoFetched = time.Now()
 		return d, nil
 	}
-	if s.cfg.OIDC.Issuer == "" {
+	// Cached + still fresh? (24h TTL — endpoints rotate rarely.)
+	if s.oidcDiscoCache != nil && s.oidcDiscoCache.Issuer == oidc.Issuer && time.Since(s.oidcDiscoFetched) < 24*time.Hour {
+		return *s.oidcDiscoCache, nil
+	}
+	if oidc.Issuer == "" {
 		return d, errors.New("oidc: issuer not configured")
 	}
-	discoURL := strings.TrimRight(s.cfg.OIDC.Issuer, "/") + "/.well-known/openid-configuration"
+	discoURL := strings.TrimRight(oidc.Issuer, "/") + "/.well-known/openid-configuration"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoURL, nil)
 	if err != nil {
 		return d, fmt.Errorf("oidc disco: %w", err)
@@ -190,8 +314,8 @@ func (s *Service) resolveEndpoints(ctx context.Context) (oidcDiscovery, error) {
 
 // oidcStartImpl is the real implementation. Returns the IDP's
 // authorize URL the frontend should navigate the user to.
-func (s *Service) oidcStartImpl(ctx context.Context, redirectAfter string) (string, error) {
-	disco, err := s.resolveEndpoints(ctx)
+func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectAfter string) (string, error) {
+	disco, err := s.resolveEndpoints(ctx, oidc)
 	if err != nil {
 		return "", err
 	}
@@ -213,14 +337,14 @@ func (s *Service) oidcStartImpl(ctx context.Context, redirectAfter string) (stri
 		expiresAt:     time.Now().Add(10 * time.Minute),
 	})
 
-	scopes := strings.Join(s.cfg.OIDC.Scopes, " ")
+	scopes := strings.Join(oidc.Scopes, " ")
 	if scopes == "" {
 		scopes = "openid profile email"
 	}
 	q := url.Values{}
 	q.Set("response_type", "code")
-	q.Set("client_id", s.cfg.OIDC.ClientID)
-	q.Set("redirect_uri", s.cfg.OIDC.RedirectURL)
+	q.Set("client_id", oidc.ClientID)
+	q.Set("redirect_uri", oidc.RedirectURL)
 	q.Set("scope", scopes)
 	q.Set("state", state)
 	q.Set("code_challenge", challenge)
@@ -244,13 +368,14 @@ type oidcTokenResponse struct {
 }
 
 // oidcCallbackImpl exchanges code → tokens, verifies the id_token,
-// upserts the user row by oidc_subject, returns the resolved user.
-func (s *Service) oidcCallbackImpl(ctx context.Context, code, state string) (*model.User, error) {
+// resolves the user row by canonical email, and returns either a
+// logged-in user or a pending decision for the frontend.
+func (s *Service) oidcCallbackImpl(ctx context.Context, oidc config.OIDC, code, state string) (*OIDCLoginResult, error) {
 	st := s.oidcSessions.take(state)
 	if st == nil {
 		return nil, ErrOIDCStateInvalid
 	}
-	disco, err := s.resolveEndpoints(ctx)
+	disco, err := s.resolveEndpoints(ctx, oidc)
 	if err != nil {
 		return nil, err
 	}
@@ -259,11 +384,11 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, code, state string) (*mo
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
-	form.Set("redirect_uri", s.cfg.OIDC.RedirectURL)
-	form.Set("client_id", s.cfg.OIDC.ClientID)
+	form.Set("redirect_uri", oidc.RedirectURL)
+	form.Set("client_id", oidc.ClientID)
 	form.Set("code_verifier", st.verifier)
-	if s.cfg.OIDC.ClientSecret != "" {
-		form.Set("client_secret", s.cfg.OIDC.ClientSecret)
+	if oidc.ClientSecret != "" {
+		form.Set("client_secret", oidc.ClientSecret)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, disco.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -290,7 +415,7 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, code, state string) (*mo
 
 	// Verify id_token signature against the IDP's JWKS + standard
 	// claim checks (iss / aud / exp).
-	claims, err := s.verifyIDToken(ctx, tok.IDToken, disco)
+	claims, err := s.verifyIDToken(ctx, tok.IDToken, oidc, disco)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrOIDCBadIDToken, err)
 	}
@@ -301,79 +426,89 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, code, state string) (*mo
 	email, _ := claims["email"].(string)
 	emailVerifiedClaim, _ := claims["email_verified"].(bool)
 
-	return s.upsertOIDCUser(ctx, sub, email, emailVerifiedClaim)
+	return s.upsertOIDCUser(ctx, sub, email, emailVerifiedClaim, st.redirectAfter)
 }
 
 // upsertOIDCUser resolves verified IDP claims to a User row.
-// Three paths in order: (1) oidc_subject already linked → refresh
-// email; (2) sub is new but the email matches an existing account
-// → auto-link if IDP asserts email_verified, else refuse; (3) no
-// match → create fresh. Extracted from oidcCallbackImpl so the
-// upsert table can be tested without the IDP roundtrip.
-func (s *Service) upsertOIDCUser(ctx context.Context, sub, email string, emailVerified bool) (*model.User, error) {
-	// Path 1: oidc_subject already linked. Refresh email if the IDP
-	// rotated it; tolerate failures from a unique-email collision
-	// (the user is correctly identified by sub, not email).
+// Identity is email-first: returning OIDC users are accepted only if
+// their subject still points at the same email row; new OIDC subjects
+// with an existing email become pending user decisions.
+func (s *Service) upsertOIDCUser(ctx context.Context, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil, ErrOIDCEmailRequired
+	}
+	if !s.emailDomainAllowed(ctx, email) {
+		return nil, ErrDomainNotAllowed
+	}
+
+	// Existing subject is allowed only while it still belongs to the
+	// same canonical email. If the IDP changed the email claim, ask the
+	// user to decide rather than silently moving identity.
 	user, err := s.users.GetByOIDCSubject(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
 	if user != nil {
-		if email != "" && (user.Email == nil || *user.Email != email) {
-			updates := map[string]any{"email": email}
-			if emailVerified {
+		if user.Email != nil && strings.EqualFold(*user.Email, email) {
+			updates := map[string]any{}
+			if emailVerified && !user.EmailVerified {
 				updates["email_verified"] = true
 			}
 			if err := s.users.Update(ctx, user.ID, updates); err != nil {
-				s.log.Warn("oidc: email refresh failed (keeping existing)",
-					"user_id", user.ID, "new_email", email, "err", err.Error())
+				return nil, err
 			}
+			u, err := s.users.Get(ctx, user.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &OIDCLoginResult{User: u, RedirectAfter: redirectAfter}, nil
 		}
-		return s.users.Get(ctx, user.ID)
-	}
-
-	// Path 2: oidc_subject is new. If the email matches an existing
-	// account, auto-link IFF the IDP asserts email_verified AND the
-	// existing row isn't already linked to a DIFFERENT oidc_subject.
-	// Refusing the unverified-email case prevents an attacker who
-	// registers an IDP account with someone else's address from
-	// hijacking that user.
-	if email != "" {
+		if user.Email == nil {
+			if err := s.users.Update(ctx, user.ID, map[string]any{
+				"email":          email,
+				"email_verified": emailVerified,
+			}); err != nil {
+				return nil, err
+			}
+			u, err := s.users.Get(ctx, user.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &OIDCLoginResult{User: u, RedirectAfter: redirectAfter}, nil
+		}
 		existing, err := s.users.GetByEmail(ctx, email)
 		if err != nil {
 			return nil, err
 		}
 		if existing != nil {
-			if !emailVerified {
-				return nil, ErrOIDCEmailConflict
-			}
-			if existing.OIDCSubject != nil && *existing.OIDCSubject != "" {
-				return nil, ErrOIDCEmailConflict
-			}
-			updates := map[string]any{
-				"oidc_subject":   sub,
-				"email_verified": true,
-			}
-			if err := s.users.Update(ctx, existing.ID, updates); err != nil {
-				return nil, fmt.Errorf("oidc auto-link: %w", err)
-			}
-			s.log.Info("oidc: auto-linked existing email to new oidc_subject",
-				"user_id", existing.ID, "email", email)
-			return s.users.Get(ctx, existing.ID)
+			return s.makeOIDCPendingForUser(ctx, existing, sub, email, emailVerified, redirectAfter)
 		}
+		updates := map[string]any{"email": email, "email_verified": emailVerified}
+		if err := s.users.Update(ctx, user.ID, updates); err != nil {
+			return nil, err
+		}
+		u, err := s.users.Get(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &OIDCLoginResult{User: u, RedirectAfter: redirectAfter}, nil
 	}
 
-	// Path 3: brand-new account.
+	existing, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return s.makeOIDCPendingForUser(ctx, existing, sub, email, emailVerified, redirectAfter)
+	}
+
 	subID, err := generateSubID()
 	if err != nil {
 		return nil, err
 	}
-	var emailPtr *string
-	if email != "" {
-		emailPtr = &email
-	}
 	created := &model.User{
-		Email:         emailPtr,
+		Email:         &email,
 		EmailVerified: emailVerified,
 		OIDCSubject:   &sub,
 		SubID:         subID,
@@ -382,22 +517,107 @@ func (s *Service) upsertOIDCUser(ctx context.Context, sub, email string, emailVe
 	if err := s.users.Create(ctx, created); err != nil {
 		return nil, err
 	}
+	if err := s.applyNewUserInitialBalance(ctx, created, "new OIDC user initial balance"); err != nil {
+		return nil, err
+	}
 	s.bus.PublishType(event.UserRegistered, RegisteredPayload{
 		UserID: created.ID,
 		Email:  email,
 	})
-	return created, nil
+	return &OIDCLoginResult{User: created, RedirectAfter: redirectAfter}, nil
+}
+
+func (s *Service) makeOIDCPendingForUser(_ context.Context, existing *model.User, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
+	if existing.OIDCSubject != nil && *existing.OIDCSubject == sub {
+		return &OIDCLoginResult{User: existing, RedirectAfter: redirectAfter}, nil
+	}
+	token, err := randomURLString(32)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt := time.Now().Add(10 * time.Minute)
+	s.oidcPending.put(token, &oidcPending{
+		sub:            sub,
+		email:          email,
+		emailVerified:  emailVerified,
+		redirectAfter:  redirectAfter,
+		existingUserID: existing.ID,
+		expiresAt:      expiresAt,
+	})
+	hasOIDC := existing.OIDCSubject != nil && *existing.OIDCSubject != ""
+	return &OIDCLoginResult{
+		Pending: &OIDCPendingDecision{
+			Token:           token,
+			Email:           email,
+			EmailVerified:   emailVerified,
+			ExistingUserID:  existing.ID,
+			ExistingHasOIDC: hasOIDC,
+			ExpiresAt:       expiresAt,
+		},
+		RedirectAfter: redirectAfter,
+	}, nil
+}
+
+func (s *Service) resolveOIDCPending(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
+	p := s.oidcPending.take(strings.TrimSpace(pendingToken))
+	if p == nil {
+		return nil, "", ErrOIDCPendingInvalid
+	}
+	existing, err := s.users.Get(ctx, p.existingUserID)
+	if err != nil {
+		return nil, "", err
+	}
+	if existing == nil || existing.Email == nil || !strings.EqualFold(*existing.Email, p.email) {
+		return nil, "", ErrOIDCPendingInvalid
+	}
+	switch action {
+	case "bind":
+		if existing.OIDCSubject != nil && *existing.OIDCSubject != "" && *existing.OIDCSubject != p.sub {
+			return nil, "", ErrOIDCEmailConflict
+		}
+		updates := map[string]any{"oidc_subject": p.sub}
+		if p.emailVerified && !existing.EmailVerified {
+			updates["email_verified"] = true
+		}
+		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
+			return nil, "", err
+		}
+	case "recreate":
+		newSubID, err := generateSubID()
+		if err != nil {
+			return nil, "", err
+		}
+		updates := map[string]any{
+			"oidc_subject":  p.sub,
+			"password_hash": nil,
+			"sub_id":        newSubID,
+			"status":        model.UserStatusActive,
+		}
+		if p.emailVerified {
+			updates["email_verified"] = true
+		}
+		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
+			return nil, "", err
+		}
+	default:
+		return nil, "", ErrOIDCActionInvalid
+	}
+	u, err := s.users.Get(ctx, existing.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	return u, p.redirectAfter, nil
 }
 
 // verifyIDToken parses, fetches JWKS, verifies signature, and
 // validates iss/aud/exp. Returns the token claims as a map.
-func (s *Service) verifyIDToken(ctx context.Context, raw string, disco oidcDiscovery) (jwt.MapClaims, error) {
+func (s *Service) verifyIDToken(ctx context.Context, raw string, oidc config.OIDC, disco oidcDiscovery) (jwt.MapClaims, error) {
 	tok, err := jwt.Parse(raw, func(t *jwt.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
 		return s.lookupJWK(ctx, disco.JWKSURI, kid)
 	},
 		jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}),
-		jwt.WithAudience(s.cfg.OIDC.ClientID),
+		jwt.WithAudience(oidc.ClientID),
 		jwt.WithIssuer(disco.Issuer),
 		jwt.WithExpirationRequired(),
 	)
@@ -431,7 +651,7 @@ func (s *Service) lookupJWK(ctx context.Context, jwksURL, kid string) (*rsa.Publ
 	s.oidcJWKSMu.Lock()
 	defer s.oidcJWKSMu.Unlock()
 
-	if s.oidcJWKSCache == nil || time.Since(s.oidcJWKSFetched) > time.Hour {
+	if s.oidcJWKSCache == nil || s.oidcJWKSURL != jwksURL || time.Since(s.oidcJWKSFetched) > time.Hour {
 		if err := s.refreshJWKSLocked(ctx, jwksURL); err != nil {
 			return nil, err
 		}
@@ -481,6 +701,7 @@ func (s *Service) refreshJWKSLocked(ctx context.Context, jwksURL string) error {
 		out[k.Kid] = pub
 	}
 	s.oidcJWKSCache = out
+	s.oidcJWKSURL = jwksURL
 	s.oidcJWKSFetched = time.Now()
 	return nil
 }

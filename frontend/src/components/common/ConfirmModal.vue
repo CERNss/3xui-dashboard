@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 interface Props {
   open: boolean
@@ -15,10 +16,18 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'default',
-  confirmLabel: '确认',
-  cancelLabel: '取消',
+  confirmLabel: '',
+  cancelLabel: '',
   busy: false,
 })
+
+const { t } = useI18n()
+
+// Fall back to the i18n defaults when the caller didn't pass an
+// explicit label. Empty string sentinel keeps callers free to pass
+// localized strings directly.
+const confirmText = computed(() => props.confirmLabel || t('confirmModal.confirm'))
+const cancelText = computed(() => props.cancelLabel || t('confirmModal.cancel'))
 
 const emit = defineEmits<{
   (e: 'confirm'): void
@@ -93,7 +102,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
             class="inline-flex h-9 items-center rounded-xl border border-surface-200 px-4 text-sm font-medium text-surface-700 transition-all hover:bg-surface-50 active:scale-[0.98] disabled:opacity-60 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
             @click="close"
           >
-            {{ cancelLabel }}
+            {{ cancelText }}
           </button>
           <button
             type="button"
@@ -107,7 +116,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
             <svg v-if="busy" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
               <path d="M21 12a9 9 0 1 1-6.2-8.55" />
             </svg>
-            {{ confirmLabel }}
+            {{ confirmText }}
           </button>
         </footer>
       </div>

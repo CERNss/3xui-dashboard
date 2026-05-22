@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/cern/3xui-dashboard/internal/config"
+	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
@@ -19,7 +20,6 @@ type AuthHandler struct {
 	users  *usersvc.Service
 	auth   *auth.Service
 	verify *verification.Service
-	oidc   config.OIDC
 	smtpOn bool // true when verification mail can actually be sent
 }
 
@@ -31,7 +31,7 @@ type AuthHandler struct {
 // OIDC IdP (display name + icon) so the login page can render the
 // "使用 X 登录" button. Empty config → empty list → button hides.
 func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, oidcCfg config.OIDC, smtpOn bool) *AuthHandler {
-	return &AuthHandler{users: users, auth: a, verify: v, oidc: oidcCfg, smtpOn: smtpOn}
+	return &AuthHandler{users: users, auth: a, verify: v, smtpOn: smtpOn}
 }
 
 // RegisterRoutes mounts /auth under rg (rg is the public user group).
@@ -39,9 +39,11 @@ func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/login", h.Login)
 	rg.POST("/auth/register", h.Register)
 	rg.POST("/auth/send-code", h.SendCode)
+	rg.GET("/auth/registration-policy", h.RegistrationPolicy)
 	rg.GET("/auth/oidc/providers", h.OIDCProviders)
 	rg.POST("/auth/oidc/start", h.OIDCStart)
 	rg.POST("/auth/oidc/callback", h.OIDCCallback)
+	rg.POST("/auth/oidc/resolve", h.OIDCResolve)
 }
 
 // oidcProvider mirrors the frontend's OIDCProvider shape. Keep in sync
@@ -56,15 +58,20 @@ type oidcProvider struct {
 // an empty array (not 404) when OIDC isn't configured — frontend treats
 // the empty list as "no providers, hide the button row".
 func (h *AuthHandler) OIDCProviders(c *gin.Context) {
-	if !h.oidc.Enabled() {
+	oidc, err := h.users.OIDCConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !oidc.Enabled() {
 		c.JSON(http.StatusOK, []oidcProvider{})
 		return
 	}
-	name := h.oidc.DisplayName
+	name := oidc.DisplayName
 	if name == "" {
 		// Fall back to issuer hostname so the button has *something* useful
 		// to show even if the operator didn't set OIDC_DISPLAY_NAME.
-		if u, err := url.Parse(h.oidc.Issuer); err == nil && u.Host != "" {
+		if u, err := url.Parse(oidc.Issuer); err == nil && u.Host != "" {
 			name = u.Host
 		} else {
 			name = "OIDC"
@@ -72,7 +79,7 @@ func (h *AuthHandler) OIDCProviders(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, []oidcProvider{{
 		Name:     name,
-		Icon:     h.oidc.IconURL,
+		Icon:     oidc.IconURL,
 		LoginURL: "/api/user/auth/oidc/start",
 	}})
 }
@@ -83,10 +90,24 @@ type loginRequest struct {
 }
 
 type tokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresAt int64  `json:"expires_at"`
-	UserID    int64  `json:"user_id"`
-	Email     string `json:"email"`
+	Token         string `json:"token"`
+	ExpiresAt     int64  `json:"expires_at"`
+	UserID        int64  `json:"user_id"`
+	Email         string `json:"email"`
+	RedirectAfter string `json:"redirect_after,omitempty"`
+	Next          string `json:"next,omitempty"`
+}
+
+type oidcPendingResponse struct {
+	Status          string `json:"status"`
+	PendingToken    string `json:"pending_token"`
+	Email           string `json:"email"`
+	EmailVerified   bool   `json:"email_verified"`
+	ExistingUserID  int64  `json:"existing_user_id"`
+	ExistingHasOIDC bool   `json:"existing_has_oidc"`
+	ExpiresAt       int64  `json:"expires_at"`
+	RedirectAfter   string `json:"redirect_after,omitempty"`
+	Next            string `json:"next,omitempty"`
 }
 
 // Login validates email+password and returns a user JWT.
@@ -135,6 +156,20 @@ type sendCodeRequest struct {
 	Email string `json:"email" binding:"required"`
 }
 
+// RegistrationPolicy exposes public registration affordances so the
+// login page can hide the verification-code UI when the operator has
+// disabled that requirement.
+func (h *AuthHandler) RegistrationPolicy(c *gin.Context) {
+	required, err := h.users.EmailVerificationRequired(c.Request.Context(), h.smtpOn)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"email_verification_required": required,
+	})
+}
+
 // SendCode dispatches a fresh 6-digit verification code to the given email.
 // Rate-limited per (email, purpose). Returns 204 on success.
 func (h *AuthHandler) SendCode(c *gin.Context) {
@@ -167,7 +202,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if h.smtpOn {
+	emailVerificationRequired, err := h.users.EmailVerificationRequired(c.Request.Context(), h.smtpOn)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if emailVerificationRequired {
 		if req.Code == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少邮箱验证码"})
 			return
@@ -188,7 +228,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 	}
 
-	u, err := h.users.Register(c.Request.Context(), usersvc.RegisterInput{Email: req.Email, Password: req.Password})
+	u, err := h.users.Register(c.Request.Context(), usersvc.RegisterInput{
+		Email:    req.Email,
+		Password: req.Password,
+		Verified: emailVerificationRequired,
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, usersvc.ErrRegistrationOff):
@@ -251,13 +295,63 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "code+state required"})
 		return
 	}
-	u, err := h.users.OIDCCallback(c.Request.Context(), req.Code, req.State)
+	result, err := h.users.OIDCCallback(c.Request.Context(), req.Code, req.State)
 	if err != nil {
 		switch {
 		case errors.Is(err, usersvc.ErrOIDCStateInvalid):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, usersvc.ErrOIDCBadIDToken):
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		case errors.Is(err, usersvc.ErrOIDCEmailConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, usersvc.ErrOIDCEmailRequired):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC email claim is required"})
+		case errors.Is(err, usersvc.ErrDomainNotAllowed):
+			c.JSON(http.StatusForbidden, gin.H{"error": "email domain not allowed"})
+		case errors.Is(err, usersvc.ErrNotImplemented):
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	if result.Pending != nil {
+		c.JSON(http.StatusOK, oidcPendingResponse{
+			Status:          "pending",
+			PendingToken:    result.Pending.Token,
+			Email:           result.Pending.Email,
+			EmailVerified:   result.Pending.EmailVerified,
+			ExistingUserID:  result.Pending.ExistingUserID,
+			ExistingHasOIDC: result.Pending.ExistingHasOIDC,
+			ExpiresAt:       result.Pending.ExpiresAt.Unix(),
+			RedirectAfter:   result.RedirectAfter,
+			Next:            result.RedirectAfter,
+		})
+		return
+	}
+	if result.User == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "OIDC login did not resolve a user"})
+		return
+	}
+	h.writeToken(c, http.StatusOK, result.User, result.RedirectAfter)
+}
+
+func (h *AuthHandler) OIDCResolve(c *gin.Context) {
+	var req struct {
+		PendingToken string `json:"pending_token" binding:"required"`
+		Action       string `json:"action" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pending_token+action required"})
+		return
+	}
+	u, redirectAfter, err := h.users.OIDCResolve(c.Request.Context(), req.PendingToken, req.Action)
+	if err != nil {
+		switch {
+		case errors.Is(err, usersvc.ErrOIDCPendingInvalid):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC decision expired. Please sign in again."})
+		case errors.Is(err, usersvc.ErrOIDCActionInvalid):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid OIDC decision"})
 		case errors.Is(err, usersvc.ErrOIDCEmailConflict):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, usersvc.ErrNotImplemented):
@@ -267,6 +361,10 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		}
 		return
 	}
+	h.writeToken(c, http.StatusOK, u, redirectAfter)
+}
+
+func (h *AuthHandler) writeToken(c *gin.Context, status int, u *model.User, redirectAfter string) {
 	token, exp, err := h.auth.IssueUserToken(u.ID, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
@@ -276,10 +374,12 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 	if u.Email != nil {
 		email = *u.Email
 	}
-	c.JSON(http.StatusOK, tokenResponse{
-		Token:     token,
-		ExpiresAt: exp.Unix(),
-		UserID:    u.ID,
-		Email:     email,
+	c.JSON(status, tokenResponse{
+		Token:         token,
+		ExpiresAt:     exp.Unix(),
+		UserID:        u.ID,
+		Email:         email,
+		RedirectAfter: redirectAfter,
+		Next:          redirectAfter,
 	})
 }

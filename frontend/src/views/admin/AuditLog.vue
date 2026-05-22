@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { adminAuditApi, type AdminAction, type ListAuditParams } from '@/api/admin/audit'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
 import { formatError } from '@/utils/format'
+
+const { t } = useI18n()
 
 const rows = ref<AdminAction[]>([])
 const loading = ref(true)
@@ -19,7 +22,7 @@ async function reload() {
     const { actions } = await adminAuditApi.list(filters.value)
     rows.value = actions
   } catch (e: any) {
-    error.value = formatError(e, '加载审计日志失败')
+    error.value = formatError(e, t('admin.auditLog.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -63,8 +66,8 @@ onMounted(reload)
   <div>
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">审计日志</h1>
-        <p class="mt-1.5 text-sm text-surface-500">所有 admin POST/PUT/DELETE/PATCH 请求的记录，新→旧 排序</p>
+        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.auditLog.title') }}</h1>
+        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.auditLog.subtitle') }}</p>
       </div>
     </header>
 
@@ -73,20 +76,20 @@ onMounted(reload)
       <input
         v-model="filters.username"
         type="text"
-        placeholder="管理员 username"
+        :placeholder="$t('admin.auditLog.filterUsername')"
         class="rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"
       />
       <input
         v-model="filters.resource"
         type="text"
-        placeholder="resource (orders/users/...)"
+        :placeholder="$t('admin.auditLog.filterResource')"
         class="rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"
       />
       <select
         v-model="filters.method"
         class="rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"
       >
-        <option value="">所有方法</option>
+        <option value="">{{ $t('admin.auditLog.anyMethod') }}</option>
         <option value="POST">POST</option>
         <option value="PUT">PUT</option>
         <option value="DELETE">DELETE</option>
@@ -97,7 +100,7 @@ onMounted(reload)
         class="rounded-lg border border-surface-200 px-3 py-2 text-sm font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
         @click="reload"
       >
-        刷新
+        {{ $t('admin.users.reload') }}
       </button>
     </div>
 
@@ -109,19 +112,19 @@ onMounted(reload)
       <table class="min-w-full text-sm">
         <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
           <tr class="border-b border-surface-100 dark:border-surface-800">
-            <th class="px-6 py-3 font-medium">时间</th>
-            <th class="px-6 py-3 font-medium">管理员</th>
-            <th class="px-6 py-3 font-medium">方法</th>
-            <th class="px-6 py-3 font-medium">Path</th>
-            <th class="px-6 py-3 font-medium">目标</th>
-            <th class="px-6 py-3 font-medium">状态</th>
-            <th class="px-6 py-3 font-medium">IP</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.time') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.admin') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.method') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.path') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.target') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.status') }}</th>
+            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.ip') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
           <tr v-for="r in rows" :key="r.id" class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
             <td class="px-6 py-3.5 font-mono text-xs text-surface-500 whitespace-nowrap">{{ new Date(r.created_at).toLocaleString() }}</td>
-            <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ r.admin_username || '(未识别)' }}</td>
+            <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ r.admin_username || $t('admin.auditLog.unknownAdmin') }}</td>
             <td class="px-6 py-3.5">
               <span class="inline-flex items-center rounded-md px-2 py-0.5 text-2xs font-medium ring-1 ring-inset" :class="methodChip(r.method)">{{ r.method }}</span>
             </td>
@@ -143,8 +146,8 @@ onMounted(reload)
     <EmptyState
       v-else
       icon="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"
-      title="没有审计记录"
-      :description="hasFilters ? '当前过滤条件下没有记录。' : '还没有任何 admin 操作记录。'"
+      :title="$t('admin.auditLog.emptyTitle')"
+      :description="hasFilters ? $t('admin.auditLog.emptyFiltered') : $t('admin.auditLog.emptyTotal')"
     />
   </div>
 </template>

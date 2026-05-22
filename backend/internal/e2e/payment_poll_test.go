@@ -100,13 +100,12 @@ func TestPaymentPoll_ExpiresOldOrders(t *testing.T) {
 
 	orderID, _ := purchaseViaStripe(t, h, planID, userTok, "poll-expire-key")
 
-	// Backdate the order's created_at to 20 minutes ago — past the
-	// 15-minute window the production job uses. Direct DB write is
-	// the simplest path; the API doesn't expose time travel.
+	// Move the explicit payment expiry into the past. Direct DB write
+	// is the simplest path; the API doesn't expose time travel.
 	if err := h.db.Model(&model.Order{}).
 		Where("id = ?", orderID).
-		Update("created_at", time.Now().Add(-20*time.Minute)).Error; err != nil {
-		t.Fatalf("backdate order: %v", err)
+		Update("payment_expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+		t.Fatalf("expire order payment timestamp: %v", err)
 	}
 
 	h.app.PaymentPollJob.RunOnce(context.Background())

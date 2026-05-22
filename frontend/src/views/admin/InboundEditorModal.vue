@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { formatError } from '@/utils/format'
 
 import { inboundsApi, type Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
+
+const { t } = useI18n()
 
 // ---- Local UI components (declared first so template can resolve them) ----
 
@@ -94,7 +97,7 @@ const AdvancedJSON = defineComponent({
               onChange: (e: Event) => emit('update:override', (e.target as HTMLInputElement).checked),
               class: 'h-4 w-4 rounded border-surface-300 text-accent-600',
             }),
-            'override raw',
+            t('admin.inboundEditor.advanced.overrideRaw'),
           ]),
         ]),
         h('textarea', {
@@ -303,13 +306,14 @@ const activeTab = ref<'basic' | 'protocol' | 'stream' | 'sniffing' | 'advanced'>
 const busy = ref(false)
 const error = ref<string | null>(null)
 
-const tabs = [
-  { key: 'basic', label: '基础配置' },
-  { key: 'protocol', label: '协议' },
-  { key: 'stream', label: 'Stream' },
-  { key: 'sniffing', label: 'Sniffing' },
-  { key: 'advanced', label: '高级配置' },
-] as const
+// Computed so labels react to locale changes.
+const tabs = computed(() => [
+  { key: 'basic' as const, label: t('admin.inboundEditor.tab.basic') },
+  { key: 'protocol' as const, label: t('admin.inboundEditor.tab.protocol') },
+  { key: 'stream' as const, label: t('admin.inboundEditor.tab.stream') },
+  { key: 'sniffing' as const, label: t('admin.inboundEditor.tab.sniffing') },
+  { key: 'advanced' as const, label: t('admin.inboundEditor.tab.advanced') },
+])
 
 // Protocol-specific tab visibility:
 //   - WireGuard: no streamSettings / no sniffing — hide both
@@ -321,12 +325,12 @@ const tabs = [
 const visibleTabs = computed(() => {
   const p = m.value.protocol
   if (p === 'wireguard') {
-    return tabs.filter((t) => t.key !== 'stream' && t.key !== 'sniffing')
+    return tabs.value.filter((tab) => tab.key !== 'stream' && tab.key !== 'sniffing')
   }
   if (p === 'hysteria') {
-    return tabs.filter((t) => t.key !== 'stream' && t.key !== 'sniffing')
+    return tabs.value.filter((tab) => tab.key !== 'stream' && tab.key !== 'sniffing')
   }
-  return tabs
+  return tabs.value
 })
 
 // If the protocol flips to a transport-free protocol while the
@@ -673,15 +677,15 @@ function composeBody(): Partial<Inbound> {
 async function submit() {
   error.value = null
   if (!selectedNodeID.value) {
-    error.value = '请选择节点'
+    error.value = t('admin.inboundEditor.errSelectNode')
     return
   }
   if (!m.value.remark.trim()) {
-    error.value = '备注必填'
+    error.value = t('admin.inboundEditor.errRemark')
     return
   }
   if (m.value.port < 1 || m.value.port > 65535) {
-    error.value = '端口需在 1-65535'
+    error.value = t('admin.inboundEditor.errPort')
     return
   }
   busy.value = true
@@ -694,7 +698,7 @@ async function submit() {
     emit('saved', result)
     emit('close')
   } catch (e: any) {
-    error.value = formatError(e, '操作失败')
+    error.value = formatError(e, t('admin.inboundEditor.operationFailed'))
   } finally {
     busy.value = false
   }
@@ -741,7 +745,7 @@ const expiryDisplay = computed({
     <div class="flex h-[640px] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-surface-0 shadow-elevated dark:bg-surface-900">
       <!-- Title bar -->
       <header class="flex items-center justify-between border-b border-surface-200 px-6 py-4 dark:border-surface-800">
-        <h2 class="text-lg font-semibold">{{ mode === 'create' ? '添加入站' : `编辑入站 · ${tag}` }}</h2>
+        <h2 class="text-lg font-semibold">{{ mode === 'create' ? $t('admin.inboundEditor.createTitle') : $t('admin.inboundEditor.editTitle', { tag }) }}</h2>
         <button class="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
@@ -768,24 +772,24 @@ const expiryDisplay = computed({
       <form class="flex-1 overflow-y-auto px-6 py-5" @submit.prevent="submit">
         <!-- ============ Tab: 基础配置 ============ -->
         <div v-if="activeTab === 'basic'" class="space-y-4">
-          <Row label="启用">
+          <Row :label="$t('admin.inboundEditor.basicEnable')">
             <ToggleBtn v-model="m.enable" />
           </Row>
-          <Row label="节点">
+          <Row :label="$t('admin.inboundEditor.basicNode')">
             <select
               v-model="selectedNodeID"
               :disabled="mode === 'edit'"
               class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900 disabled:opacity-60"
             >
               <option v-for="n in nodes" :key="n.id" :value="n.id" :disabled="!n.enabled">
-                {{ n.name }} {{ n.enabled ? '' : '(disabled)' }}
+                {{ n.name }} {{ n.enabled ? '' : $t('admin.inboundEditor.nodeDisabledSuffix') }}
               </option>
             </select>
           </Row>
-          <Row label="备注">
-            <input v-model="m.remark" type="text" class="input" placeholder="给这个入站起个名字" />
+          <Row :label="$t('admin.inboundEditor.basicRemark')">
+            <input v-model="m.remark" type="text" class="input" :placeholder="$t('admin.inboundEditor.basicRemarkPlaceholder')" />
           </Row>
-          <Row label="协议">
+          <Row :label="$t('admin.inboundEditor.basicProtocol')">
             <select v-model="m.protocol" class="input">
               <option value="vless">vless</option>
               <option value="vmess">vmess</option>
@@ -796,30 +800,30 @@ const expiryDisplay = computed({
             </select>
           </Row>
           <p v-if="m.protocol === 'wireguard'" class="text-xs text-surface-500 pl-32">
-            WireGuard：节点端自动生成 server 密钥对；客户端 peer 通过订阅流程下发，无需在此手动管理 clients。
+            {{ $t('admin.inboundEditor.wireguardInfo') }}
           </p>
           <p v-if="m.protocol === 'hysteria'" class="text-xs text-surface-500 pl-32">
-            Hysteria 2：TLS 强制开启；ALPN 锁定 h3；客户端用 auth 字段而非 UUID/密码。证书路径需在 Stream→Security 配（节点本地文件路径）。
+            {{ $t('admin.inboundEditor.hysteriaInfo') }}
           </p>
-          <Row label="地址">
-            <input v-model="m.listen" type="text" class="input" placeholder="留空表示监听所有 IP" />
+          <Row :label="$t('admin.inboundEditor.basicAddress')">
+            <input v-model="m.listen" type="text" class="input" :placeholder="$t('admin.inboundEditor.basicAddressPlaceholder')" />
           </Row>
-          <Row label="端口">
+          <Row :label="$t('admin.inboundEditor.basicPort')">
             <input v-model.number="m.port" type="number" min="1" max="65535" class="input" />
           </Row>
-          <Row label="总流量 (GB, 0 = 无限)">
+          <Row :label="$t('admin.inboundEditor.basicTotalGB')">
             <input v-model="totalGBDisplay" type="number" min="0" step="0.01" class="input" />
           </Row>
-          <Row label="流量重置">
+          <Row :label="$t('admin.inboundEditor.basicTrafficReset')">
             <select v-model="m.trafficReset" class="input">
-              <option value="never">从不</option>
-              <option value="daily">每天</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
-              <option value="yearly">每年</option>
+              <option value="never">{{ $t('admin.inboundEditor.trafficReset.never') }}</option>
+              <option value="daily">{{ $t('admin.inboundEditor.trafficReset.daily') }}</option>
+              <option value="weekly">{{ $t('admin.inboundEditor.trafficReset.weekly') }}</option>
+              <option value="monthly">{{ $t('admin.inboundEditor.trafficReset.monthly') }}</option>
+              <option value="yearly">{{ $t('admin.inboundEditor.trafficReset.yearly') }}</option>
             </select>
           </Row>
-          <Row label="到期时间">
+          <Row :label="$t('admin.inboundEditor.basicExpiry')">
             <input v-model="expiryDisplay" type="datetime-local" class="input" />
           </Row>
         </div>
@@ -827,7 +831,7 @@ const expiryDisplay = computed({
         <!-- ============ Tab: 协议 ============ -->
         <div v-else-if="activeTab === 'protocol'" class="space-y-4">
           <Info>
-            客户端管理在入站行的展开区域里：选 "添加客户端" 弹另一个表单。这里只放协议级配置（decryption、method、加密选项等）。
+            {{ $t('admin.inboundEditor.protocolInfo') }}
           </Info>
 
           <template v-if="m.protocol === 'vless'">
@@ -836,17 +840,17 @@ const expiryDisplay = computed({
                 <option value="none">none</option>
               </select>
             </Row>
-            <p class="text-xs text-surface-500 pl-32">VLESS 不支持 fallbacks 编辑 — 走"高级配置"标签的 raw JSON 改</p>
+            <p class="text-xs text-surface-500 pl-32">{{ $t('admin.inboundEditor.protocolVLESSHint') }}</p>
           </template>
 
           <template v-else-if="m.protocol === 'vmess'">
-            <Row label="禁用不安全加密">
+            <Row :label="$t('admin.inboundEditor.vmessDisableInsecure')">
               <ToggleBtn v-model="m.disableInsecureEncryption" />
             </Row>
           </template>
 
           <template v-else-if="m.protocol === 'shadowsocks'">
-            <Row label="加密方式">
+            <Row :label="$t('admin.inboundEditor.ssMethod')">
               <select v-model="m.ssMethod" class="input">
                 <option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option>
                 <option value="aes-256-gcm">aes-256-gcm</option>
@@ -856,7 +860,7 @@ const expiryDisplay = computed({
                 <option value="2022-blake3-chacha20-poly1305">2022-blake3-chacha20-poly1305</option>
               </select>
             </Row>
-            <Row label="网络">
+            <Row :label="$t('admin.inboundEditor.ssNetwork')">
               <select v-model="m.ssNetwork" class="input">
                 <option value="tcp,udp">tcp+udp</option>
                 <option value="tcp">tcp only</option>
@@ -866,24 +870,23 @@ const expiryDisplay = computed({
           </template>
 
           <template v-else-if="m.protocol === 'trojan'">
-            <p class="text-xs text-surface-500">Trojan 没有协议级专属配置 — 直接去 Stream tab 配 TLS</p>
+            <p class="text-xs text-surface-500">{{ $t('admin.inboundEditor.trojanHint') }}</p>
           </template>
 
           <template v-else-if="m.protocol === 'wireguard'">
             <p class="text-sm text-surface-700 dark:text-surface-300">
-              WireGuard 没有 Stream / Sniffing 概念 — 节点本身就是 UDP listener。
-              端口 ↑ Basic tab 里填，peers 走订阅 +「下载配置」按钮自动下发。
+              {{ $t('admin.inboundEditor.wireguardNote1') }}
             </p>
             <p class="text-xs text-surface-500">
-              提示：dashboard 要求节点运行 MHSanaei/3x-ui fork（含 WG 模块）+ <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">WG_MASTER_KEY</code> 已配置。
+              {{ $t('admin.inboundEditor.wireguardNote2') }}
             </p>
           </template>
 
           <template v-else-if="m.protocol === 'hysteria'">
             <Row label="SNI">
-              <input v-model="m.tlsServerName" type="text" class="input" placeholder="vpn.example.com" />
+              <input v-model="m.tlsServerName" type="text" class="input" :placeholder="$t('admin.inboundEditor.stream.sniPlaceholder').replace('example.com', 'vpn.example.com')" />
             </Row>
-            <Row label="Fingerprint">
+            <Row :label="$t('admin.inboundEditor.realityFingerprint')">
               <select v-model="m.tlsFingerprint" class="input">
                 <option value="">none</option>
                 <option value="chrome">chrome</option>
@@ -894,10 +897,10 @@ const expiryDisplay = computed({
                 <option value="randomized">randomized</option>
               </select>
             </Row>
-            <Row label="Allow Insecure">
+            <Row :label="$t('admin.inboundEditor.stream.allowInsecure')">
               <ToggleBtn v-model="m.tlsAllowInsecure" />
             </Row>
-            <Row label="证书路径">
+            <Row :label="$t('admin.inboundEditor.stream.certFile')">
               <input
                 v-model="m.tlsCertificateFile"
                 type="text"
@@ -905,7 +908,7 @@ const expiryDisplay = computed({
                 placeholder="/etc/letsencrypt/live/example.com/fullchain.pem"
               />
             </Row>
-            <Row label="私钥路径">
+            <Row :label="$t('admin.inboundEditor.stream.keyFile')">
               <input
                 v-model="m.tlsKeyFile"
                 type="text"
@@ -914,16 +917,14 @@ const expiryDisplay = computed({
               />
             </Row>
             <p class="text-xs text-surface-500">
-              Hysteria 2 强制 TLS + ALPN=h3 + UDP。证书 / 私钥需要是节点本地文件系统的绝对路径
-              （acme.sh / certbot 默认放在 <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">/etc/letsencrypt/live/&lt;domain&gt;/</code>）；
-              dashboard 只传路径，不上传证书内容。两路径都留空时 Xray 用 self-signed，配 Allow Insecure 才能连通。
+              {{ $t('admin.inboundEditor.hysteriaTLSNote') }}
             </p>
           </template>
         </div>
 
         <!-- ============ Tab: Stream ============ -->
         <div v-else-if="activeTab === 'stream'" class="space-y-4">
-          <Row label="Transmission">
+          <Row :label="$t('admin.inboundEditor.stream.transmission')">
             <select v-model="m.network" class="input">
               <option value="tcp">TCP (RAW)</option>
               <option value="ws">WebSocket</option>
@@ -938,44 +939,44 @@ const expiryDisplay = computed({
 
           <!-- TCP -->
           <template v-if="m.network === 'tcp'">
-            <Row label="Proxy Protocol"><ToggleBtn v-model="m.proxyProtocol" /></Row>
-            <Row label="HTTP 伪装"><ToggleBtn v-model="m.httpHeader" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.proxyProtocol')"><ToggleBtn v-model="m.proxyProtocol" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.httpHeader')"><ToggleBtn v-model="m.httpHeader" /></Row>
             <template v-if="m.httpHeader">
-              <Row label="伪装 Host"><input v-model="m.httpHeaderHost" class="input" placeholder="example.com" /></Row>
-              <Row label="伪装 Path"><input v-model="m.httpHeaderPath" class="input" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.httpFakeHost')"><input v-model="m.httpHeaderHost" class="input" :placeholder="$t('admin.inboundEditor.stream.sniPlaceholder')" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.httpFakePath')"><input v-model="m.httpHeaderPath" class="input" /></Row>
             </template>
           </template>
 
           <!-- WS -->
           <template v-if="m.network === 'ws'">
-            <Row label="Path"><input v-model="m.wsPath" class="input" /></Row>
-            <Row label="Host"><input v-model="m.wsHost" class="input" placeholder="可选" /></Row>
-            <Row label="Proxy Protocol"><ToggleBtn v-model="m.proxyProtocol" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.path')"><input v-model="m.wsPath" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.host')"><input v-model="m.wsHost" class="input" :placeholder="$t('admin.inboundEditor.stream.hostOptional')" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.proxyProtocol')"><ToggleBtn v-model="m.proxyProtocol" /></Row>
           </template>
 
           <!-- gRPC -->
           <template v-if="m.network === 'grpc'">
-            <Row label="ServiceName"><input v-model="m.grpcServiceName" class="input" /></Row>
-            <Row label="Multi Mode"><ToggleBtn v-model="m.grpcMultiMode" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.serviceName')"><input v-model="m.grpcServiceName" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.multiMode')"><ToggleBtn v-model="m.grpcMultiMode" /></Row>
           </template>
 
           <!-- httpupgrade -->
           <template v-if="m.network === 'httpupgrade'">
-            <Row label="Path"><input v-model="m.httpupgradePath" class="input" /></Row>
-            <Row label="Host"><input v-model="m.httpupgradeHost" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.path')"><input v-model="m.httpupgradePath" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.host')"><input v-model="m.httpupgradeHost" class="input" /></Row>
           </template>
 
           <!-- h2 -->
           <template v-if="m.network === 'h2'">
-            <Row label="Path"><input v-model="m.h2Path" class="input" /></Row>
-            <Row label="Host"><input v-model="m.h2Host" class="input" placeholder="多个域名用逗号" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.path')"><input v-model="m.h2Path" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.host')"><input v-model="m.h2Host" class="input" :placeholder="$t('admin.inboundEditor.stream.hostsCommaSep')" /></Row>
           </template>
 
           <!-- xhttp -->
           <template v-if="m.network === 'xhttp'">
-            <Row label="Path"><input v-model="m.xhttpPath" class="input" /></Row>
-            <Row label="Host"><input v-model="m.xhttpHost" class="input" /></Row>
-            <Row label="Mode">
+            <Row :label="$t('admin.inboundEditor.stream.path')"><input v-model="m.xhttpPath" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.host')"><input v-model="m.xhttpHost" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.mode')">
               <select v-model="m.xhttpMode" class="input">
                 <option value="auto">auto</option>
                 <option value="packet-up">packet-up</option>
@@ -987,12 +988,12 @@ const expiryDisplay = computed({
 
           <!-- kcp -->
           <template v-if="m.network === 'kcp'">
-            <Row label="MTU"><input v-model.number="m.kcpMtu" type="number" class="input" /></Row>
-            <Row label="TTI (ms)"><input v-model.number="m.kcpTti" type="number" class="input" /></Row>
-            <Row label="上行容量 (MB/s)"><input v-model.number="m.kcpUpCap" type="number" class="input" /></Row>
-            <Row label="下行容量 (MB/s)"><input v-model.number="m.kcpDownCap" type="number" class="input" /></Row>
-            <Row label="拥塞控制"><ToggleBtn v-model="m.kcpCongestion" /></Row>
-            <Row label="伪装 Header">
+            <Row :label="$t('admin.inboundEditor.stream.kcpMTU')"><input v-model.number="m.kcpMtu" type="number" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.kcpTTI')"><input v-model.number="m.kcpTti" type="number" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.upCap')"><input v-model.number="m.kcpUpCap" type="number" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.downCap')"><input v-model.number="m.kcpDownCap" type="number" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.congestion')"><ToggleBtn v-model="m.kcpCongestion" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.kcpHeader')">
               <select v-model="m.kcpHeader" class="input">
                 <option value="none">none</option>
                 <option value="srtp">srtp</option>
@@ -1002,20 +1003,20 @@ const expiryDisplay = computed({
                 <option value="wireguard">wireguard</option>
               </select>
             </Row>
-            <Row label="Seed"><input v-model="m.kcpSeed" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.kcpSeed')"><input v-model="m.kcpSeed" class="input" /></Row>
           </template>
 
           <!-- quic -->
           <template v-if="m.network === 'quic'">
-            <Row label="安全">
+            <Row :label="$t('admin.inboundEditor.stream.quicSecurity')">
               <select v-model="m.quicSecurity" class="input">
                 <option value="none">none</option>
                 <option value="aes-128-gcm">aes-128-gcm</option>
                 <option value="chacha20-poly1305">chacha20-poly1305</option>
               </select>
             </Row>
-            <Row label="Key" v-if="m.quicSecurity !== 'none'"><input v-model="m.quicKey" class="input" /></Row>
-            <Row label="伪装 Header">
+            <Row :label="$t('admin.inboundEditor.stream.quicKey')" v-if="m.quicSecurity !== 'none'"><input v-model="m.quicKey" class="input" /></Row>
+            <Row :label="$t('admin.inboundEditor.stream.quicHeader')">
               <select v-model="m.quicHeader" class="input">
                 <option value="none">none</option>
                 <option value="srtp">srtp</option>
@@ -1029,7 +1030,7 @@ const expiryDisplay = computed({
 
           <!-- Security -->
           <div class="my-4 border-t border-surface-200 pt-4 dark:border-surface-800">
-            <Row label="Security">
+            <Row :label="$t('admin.inboundEditor.stream.security')">
               <select v-model="m.security" class="input">
                 <option value="none">none</option>
                 <option value="tls">tls</option>
@@ -1038,7 +1039,7 @@ const expiryDisplay = computed({
             </Row>
 
             <template v-if="m.security === 'tls'">
-              <Row label="Server Name (SNI)"><input v-model="m.tlsServerName" class="input" placeholder="example.com" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.serverName')"><input v-model="m.tlsServerName" class="input" :placeholder="$t('admin.inboundEditor.stream.sniPlaceholder')" /></Row>
               <Row label="ALPN">
                 <div class="flex gap-3">
                   <label class="flex items-center gap-1 text-sm">
@@ -1049,9 +1050,9 @@ const expiryDisplay = computed({
                   </label>
                 </div>
               </Row>
-              <Row label="Fingerprint">
+              <Row :label="$t('admin.inboundEditor.stream.fingerprint')">
                 <select v-model="m.tlsFingerprint" class="input">
-                  <option value="">(none)</option>
+                  <option value="">{{ $t('admin.inboundEditor.stream.fingerprintNone') }}</option>
                   <option value="chrome">chrome</option>
                   <option value="firefox">firefox</option>
                   <option value="safari">safari</option>
@@ -1062,8 +1063,8 @@ const expiryDisplay = computed({
                   <option value="randomized">randomized</option>
                 </select>
               </Row>
-              <Row label="Allow Insecure"><ToggleBtn v-model="m.tlsAllowInsecure" /></Row>
-              <Row label="证书路径">
+              <Row :label="$t('admin.inboundEditor.stream.allowInsecure')"><ToggleBtn v-model="m.tlsAllowInsecure" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.certFile')">
                 <input
                   v-model="m.tlsCertificateFile"
                   type="text"
@@ -1071,7 +1072,7 @@ const expiryDisplay = computed({
                   placeholder="/etc/letsencrypt/live/example.com/fullchain.pem"
                 />
               </Row>
-              <Row label="私钥路径">
+              <Row :label="$t('admin.inboundEditor.stream.keyFile')">
                 <input
                   v-model="m.tlsKeyFile"
                   type="text"
@@ -1080,17 +1081,17 @@ const expiryDisplay = computed({
                 />
               </Row>
               <p class="pl-32 text-xs text-surface-500">
-                节点本地文件路径。两路径都留空 → Xray 使用 self-signed 证书。
+                {{ $t('admin.inboundEditor.stream.certNote') }}
               </p>
             </template>
 
             <template v-if="m.security === 'reality'">
-              <Row label="Dest"><input v-model="m.realityDest" class="input" placeholder="www.cloudflare.com:443" /></Row>
-              <Row label="Server Names"><input v-model="m.realityServerNames" class="input" placeholder="多个域名用逗号" /></Row>
-              <Row label="Private Key"><input v-model="m.realityPrivateKey" class="input" /></Row>
-              <Row label="Public Key"><input v-model="m.realityPublicKey" class="input" /></Row>
-              <Row label="Short IDs"><input v-model="m.realityShortIds" class="input" placeholder="多个用逗号，如 abcd,1234" /></Row>
-              <Row label="Fingerprint">
+              <Row :label="$t('admin.inboundEditor.stream.dest')"><input v-model="m.realityDest" class="input" placeholder="www.cloudflare.com:443" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.serverNames')"><input v-model="m.realityServerNames" class="input" :placeholder="$t('admin.inboundEditor.stream.serverNamesPlaceholder')" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.privateKey')"><input v-model="m.realityPrivateKey" class="input" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.publicKey')"><input v-model="m.realityPublicKey" class="input" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.shortIDs')"><input v-model="m.realityShortIds" class="input" :placeholder="$t('admin.inboundEditor.stream.shortIDsPlaceholder')" /></Row>
+              <Row :label="$t('admin.inboundEditor.stream.fingerprint')">
                 <select v-model="m.realityFingerprint" class="input">
                   <option value="chrome">chrome</option>
                   <option value="firefox">firefox</option>
@@ -1102,16 +1103,16 @@ const expiryDisplay = computed({
                   <option value="randomized">randomized</option>
                 </select>
               </Row>
-              <Info>Reality 的 private/public key 对要从节点的 3x-ui 面板 → 设置 → Reality 密钥对生成；或调 node panel 的 /server/getNewX25519Cert 拿。</Info>
+              <Info>{{ $t('admin.inboundEditor.realityInfo') }}</Info>
             </template>
           </div>
         </div>
 
         <!-- ============ Tab: Sniffing ============ -->
         <div v-else-if="activeTab === 'sniffing'" class="space-y-4">
-          <Row label="Enabled"><ToggleBtn v-model="m.sniffEnabled" /></Row>
+          <Row :label="$t('admin.inboundEditor.sniff.enabled')"><ToggleBtn v-model="m.sniffEnabled" /></Row>
           <template v-if="m.sniffEnabled">
-            <Row label="destOverride">
+            <Row :label="$t('admin.inboundEditor.sniff.destOverride')">
               <div class="flex flex-wrap gap-3">
                 <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" v-model="m.sniffHttp" /> http</label>
                 <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" v-model="m.sniffTls" /> tls</label>
@@ -1119,30 +1120,30 @@ const expiryDisplay = computed({
                 <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" v-model="m.sniffFakedns" /> fakedns</label>
               </div>
             </Row>
-            <Row label="Metadata Only"><ToggleBtn v-model="m.sniffMetadataOnly" /></Row>
-            <Row label="Route Only"><ToggleBtn v-model="m.sniffRouteOnly" /></Row>
+            <Row :label="$t('admin.inboundEditor.sniff.metadataOnly')"><ToggleBtn v-model="m.sniffMetadataOnly" /></Row>
+            <Row :label="$t('admin.inboundEditor.sniff.routeOnly')"><ToggleBtn v-model="m.sniffRouteOnly" /></Row>
           </template>
         </div>
 
         <!-- ============ Tab: 高级配置 ============ -->
         <div v-else-if="activeTab === 'advanced'" class="space-y-5">
-          <Info>勾选下方任意 override 后，对应字段会用 raw JSON 提交（绕过前几个 tab 的表单值）。用于配置我们暂未在表单里暴露的高级字段。</Info>
+          <Info>{{ $t('admin.inboundEditor.advanced.info') }}</Info>
 
           <AdvancedJSON
-            label="settings"
-            :description="'protocol-specific clients / decryption / fallbacks'"
+            :label="$t('admin.inboundEditor.advanced.labelSettings')"
+            :description="$t('admin.inboundEditor.advanced.labelSettingsDesc')"
             v-model:override="m.advSettingsOverride"
             v-model:value="m.advSettings"
           />
           <AdvancedJSON
-            label="streamSettings"
-            :description="'network / security / transport-specific settings'"
+            :label="$t('admin.inboundEditor.advanced.labelStream')"
+            :description="$t('admin.inboundEditor.advanced.labelStreamDesc')"
             v-model:override="m.advStreamOverride"
             v-model:value="m.advStream"
           />
           <AdvancedJSON
-            label="sniffing"
-            :description="'destOverride / metadataOnly / routeOnly'"
+            :label="$t('admin.inboundEditor.advanced.labelSniffing')"
+            :description="$t('admin.inboundEditor.advanced.labelSniffingDesc')"
             v-model:override="m.advSniffingOverride"
             v-model:value="m.advSniffing"
           />
@@ -1152,11 +1153,11 @@ const expiryDisplay = computed({
       <!-- Footer -->
       <footer class="flex items-center justify-between border-t border-surface-200 px-6 py-4 dark:border-surface-800">
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <p v-else class="text-xs text-surface-500">{{ mode === 'create' ? '所有 tab 的设置会一起提交' : '修改任何 tab 后保存即可' }}</p>
+        <p v-else class="text-xs text-surface-500">{{ mode === 'create' ? $t('admin.inboundEditor.footerHintCreate') : $t('admin.inboundEditor.footerHintEdit') }}</p>
         <div class="flex gap-2">
-          <button type="button" class="rounded-lg border border-surface-200 px-4 py-1.5 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">关闭</button>
+          <button type="button" class="rounded-lg border border-surface-200 px-4 py-1.5 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">{{ $t('admin.inboundEditor.close') }}</button>
           <button type="button" :disabled="busy" class="rounded-lg bg-accent-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60" @click="submit">
-            {{ busy ? '处理中…' : (mode === 'create' ? '创建' : '保存') }}
+            {{ busy ? $t('admin.inboundEditor.busy') : (mode === 'create' ? $t('admin.inboundEditor.submitCreate') : $t('admin.inboundEditor.submitSave')) }}
           </button>
         </div>
       </footer>

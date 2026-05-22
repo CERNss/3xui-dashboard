@@ -104,6 +104,9 @@ func (a *Assembler) Build(ctx context.Context, subID string, remarkFmt string) (
 	if user == nil {
 		return nil, ErrNotFound
 	}
+	if user.Status == model.UserStatusSuspended {
+		return nil, ErrNotFound
+	}
 	ownerships, err := a.ownership.ListByUser(ctx, user.ID)
 	if err != nil {
 		return nil, err

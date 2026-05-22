@@ -6,7 +6,7 @@ import type { Order } from '@/api/portal/billing'
 // Stub portalBillingApi BEFORE the component import so the modal's
 // pollOnce calls hit our mock.
 const apiStubs = vi.hoisted(() => ({
-  getOrder: vi.fn<[number], Promise<Order>>(),
+  getOrder: vi.fn<(id: number) => Promise<Order>>(),
 }))
 vi.mock('@/api/portal/billing', () => ({
   portalBillingApi: { getOrder: apiStubs.getOrder },
@@ -181,12 +181,11 @@ describe('AlipayPayModal', () => {
     expect(anchor!.getAttribute('href')).toBe('https://qr.alipay.com/bax12345')
   })
 
-  it('Escape key closes the modal (emits cancel via update:open)', async () => {
+  it('Escape key does not close while payment is waiting', async () => {
     const w = await mountModal({ open: true, order: makeOrder() })
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await w.vm.$nextTick()
-    expect(w.emitted('update:open')).toBeTruthy()
-    expect(w.emitted('update:open')![0]).toEqual([false])
+    expect(w.emitted('update:open')).toBeFalsy()
   })
 
   it('clicking the X button closes the modal', async () => {

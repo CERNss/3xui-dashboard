@@ -10,6 +10,12 @@ export interface SettingItem {
   value: string
   has_override: boolean
   env_fallback: string
+  // Optional Chinese variants. Backend started populating these so
+  // the admin UI can render localized labels/descriptions for the
+  // setting definitions themselves (which are defined server-side).
+  // Fallback to label/description if the backend hasn't shipped yet.
+  label_zh?: string
+  description_zh?: string
 }
 
 export const settingsApi = {
@@ -23,6 +29,18 @@ export const settingsApi = {
 
   clear: (key: string) =>
     adminClient.delete<void>(`/settings/${encodeURIComponent(key)}`),
+
+  uploadBrandIcon: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return adminClient
+      .post<{ key: string; value: string; url: string; content_type: string; size: number }>(
+        '/settings/branding/icon',
+        body,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      )
+      .then((r) => r.data)
+  },
 
   smtpTest: (to: string) =>
     adminClient

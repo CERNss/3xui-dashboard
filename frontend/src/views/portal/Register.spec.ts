@@ -38,7 +38,6 @@ async function mountRegister() {
   const w = mount(Register, {
     global: {
       plugins: [router, createPinia()],
-      mocks: { $t: (k: string) => k },
     },
     attachTo: document.body,
   })

@@ -9,6 +9,7 @@ export interface AdminPlan {
   traffic_limit_bytes: number
   price_cents: number
   ip_limit?: number
+  provisioning_pool_id?: number | null
   enabled: boolean
   created_at?: string
   updated_at?: string
@@ -21,6 +22,7 @@ export interface CreatePlanInput {
   traffic_limit_bytes: number
   price_cents: number
   ip_limit?: number
+  provisioning_pool_id?: number | null
   enabled: boolean
 }
 

@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { useThemeStore } from '@/stores/theme'
+import { useBrandingStore } from '@/stores/branding'
 
 defineProps<{
   /** Top-of-card title shown above the form. Optional — leave blank to skip. */
@@ -11,6 +13,7 @@ defineProps<{
 // Theme follows system preference pre-login (see stores/theme.ts readInitial).
 // The toggle lives in the post-login sidebar, not here.
 const theme = useThemeStore()
+const branding = useBrandingStore()
 </script>
 
 <template>
@@ -24,6 +27,10 @@ const theme = useThemeStore()
     doesn't load an extra asset.
   -->
   <div class="relative flex min-h-full flex-col items-center justify-center overflow-hidden bg-surface-50 px-6 py-10 dark:bg-[#0b1018]">
+    <div class="absolute right-4 top-4 z-20">
+      <LocaleSwitcher variant="toolbar" />
+    </div>
+
     <!-- L1a: ambient gradient blobs — Sub2API uses subtle tinted edges -->
     <div class="pointer-events-none absolute -left-40 -top-40 h-[480px] w-[480px] rounded-full bg-accent-300/20 blur-3xl dark:bg-accent-700/15"></div>
     <div class="pointer-events-none absolute -bottom-40 -right-40 h-[480px] w-[480px] rounded-full bg-primary-300/15 blur-3xl dark:bg-primary-700/10"></div>
@@ -48,7 +55,8 @@ const theme = useThemeStore()
       <div class="relative">
         <!-- Solid accent square (集换社-style chunky tile) with lightning glyph -->
         <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-elevated ring-1 ring-accent-700/40">
-          <svg class="h-9 w-9" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-10 w-10 rounded-xl object-cover" />
+          <svg v-else class="h-9 w-9" viewBox="0 0 24 24" fill="currentColor" stroke="none">
             <path d="M13 2 3 14h7l-1 8 11-13h-7l0-7z" />
           </svg>
         </div>
@@ -59,7 +67,7 @@ const theme = useThemeStore()
         3xui Central
       </h1>
       <p class="mt-2.5 text-sm text-surface-500 dark:text-surface-400">
-        Multi-node 3x-ui · Fleet 聚合 · 流量分账 · 订阅导出
+        {{ $t('brand.slogan') }}
       </p>
     </div>
 
@@ -78,7 +86,7 @@ const theme = useThemeStore()
 
     <!-- Footer -->
     <p class="relative z-10 mt-6 text-2xs text-surface-400 dark:text-surface-600">
-      © 2026 3xui Central · 自托管 multi-node 控制面板
+      {{ $t('brand.footer') }}
     </p>
   </div>
 </template>

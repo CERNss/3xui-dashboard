@@ -17,11 +17,11 @@ import (
 //
 // Cadence: @every 30s. Each tick:
 //
-//   1. Find payment_pending orders < expiryWindow old, ask the
-//      gateway what they look like, advance state accordingly.
-//   2. Find payment_pending orders older than expiryWindow, mark
-//      them payment_expired (alipay's QR has expired by then
-//      anyway).
+//  1. Find payment_pending orders < expiryWindow old, ask the
+//     gateway what they look like, advance state accordingly.
+//  2. Find payment_pending orders older than expiryWindow, mark
+//     them payment_expired (alipay's QR has expired by then
+//     anyway).
 //
 // Idempotent w.r.t. notify: ConfirmPayment uses a guarded status
 // transition, so a race between this job and the notify handler
@@ -108,8 +108,9 @@ func (j *PaymentPollJob) pollPending(ctx context.Context) error {
 }
 
 func (j *PaymentPollJob) expireOld(ctx context.Context) error {
-	cutoff := time.Now().UTC().Add(-j.expiryWindow)
-	rows, err := j.billing.ListExpiredPendingPayments(ctx, cutoff)
+	now := time.Now().UTC()
+	fallbackCutoff := now.Add(-j.expiryWindow)
+	rows, err := j.billing.ListExpiredPendingPayments(ctx, now, fallbackCutoff)
 	if err != nil {
 		return err
 	}

@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { useBrandingStore } from '@/stores/branding'
 import { useThemeStore } from '@/stores/theme'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAdminAuthStore()
+const branding = useBrandingStore()
 const theme = useThemeStore()
+const { t } = useI18n()
 
 // Mobile drawer state. Sidebar is always-on at md+ (md: visible),
 // off-canvas + toggleable below that. Close on route change so a
@@ -17,7 +22,7 @@ watch(() => route.fullPath, () => { drawerOpen.value = false })
 
 function logout() {
   auth.clear()
-  router.push({ name: 'admin.login' })
+  router.push({ name: 'login' })
 }
 
 interface NavItem {
@@ -31,78 +36,84 @@ interface NavSection {
 }
 
 // Inline SVG path bodies — heroicons-style, single-line.
-const sections: NavSection[] = [
+// Locale-aware: rebuild whenever t() changes so labels swap on locale toggle.
+const sections = computed<NavSection[]>(() => [
   {
-    title: '总览',
+    title: t('section.overview'),
     items: [
       {
         to: '/admin/status',
-        label: '系统状态',
+        label: t('nav.status'),
         icon: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 7v5l3 2',
       },
       {
         to: '/admin/stats',
-        label: '统计',
+        label: t('nav.stats'),
         icon: 'M3 17l6-6 4 4 8-8M14 7h7v7',
       },
     ],
   },
   {
-    title: '节点运维',
+    title: t('section.nodes'),
     items: [
       {
         to: '/admin/nodes',
-        label: '节点列表',
+        label: t('nav.nodes'),
         icon: 'M5 4h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 14h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM7 7h.01M7 17h.01',
       },
       {
         to: '/admin/inbounds',
-        label: '入站列表',
+        label: t('nav.inbounds'),
         icon: 'M4 6h16M4 12h16M4 18h16',
       },
     ],
   },
   {
-    title: '用户与计费',
+    title: t('section.users'),
     items: [
       {
         to: '/admin/users',
-        label: '用户管理',
+        label: t('nav.users'),
         icon: 'M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
       },
       {
         to: '/admin/plans',
-        label: '套餐管理',
+        label: t('nav.plansAdmin'),
         icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
       },
       {
+        to: '/admin/provisioning-pools',
+        label: t('nav.provisioningPools'),
+        icon: 'M4 7h16M7 7v10a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7M9 11h6M9 15h6',
+      },
+      {
         to: '/admin/orders',
-        label: '订单管理',
+        label: t('nav.ordersAdmin'),
         icon: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6',
       },
     ],
   },
   {
-    title: '系统',
+    title: t('section.system'),
     items: [
       {
         to: '/admin/webhooks',
-        label: 'Webhooks',
+        label: t('nav.webhooks'),
         icon: 'M13 10V3L4 14h7v7l9-11h-7z',
       },
       {
         to: '/admin/audit-log',
-        label: '审计日志',
+        label: t('nav.audit'),
         icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z',
       },
       {
         to: '/admin/settings',
-        label: '面板设置',
+        label: t('nav.settings'),
         icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
       },
     ],
   },
-]
+])
 
 const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
 </script>
@@ -127,13 +138,14 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
       <!-- Brand -->
       <div class="mb-7 flex items-center gap-3 px-2">
         <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-card ring-1 ring-accent-700/30">
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-6 w-6 rounded-lg object-cover" />
+          <svg v-else class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
         <div class="leading-tight">
           <div class="text-body-md font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('app.title') }}</div>
-          <div class="text-eyebrow uppercase tracking-eyebrow text-surface-400">central panel</div>
+          <div class="text-eyebrow uppercase tracking-eyebrow text-surface-400">{{ $t('brand.centralPanel') }}</div>
         </div>
       </div>
 
@@ -167,10 +179,12 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
         </div>
       </nav>
 
+      <LocaleSwitcher class="mt-3" variant="sidebar" />
+
       <!-- Theme toggle — Sub2API pattern: labeled sidebar item, not a tiny icon button. -->
       <button
         type="button"
-        class="group mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+        class="group mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
         @click="theme.toggle()"
       >
         <!-- Show the icon for the mode you'd switch TO (Sub2API convention). -->
@@ -181,7 +195,7 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
         <svg v-else class="h-[18px] w-[18px] shrink-0 transition-transform duration-200 ease-brand group-hover:scale-105" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <span>{{ theme.theme === 'dark' ? '浅色模式' : '深色模式' }}</span>
+        <span>{{ theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark') }}</span>
       </button>
 
       <!-- Footer: user + logout -->
@@ -192,18 +206,20 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
           </div>
           <div class="min-w-0 flex-1 leading-tight">
             <div class="truncate text-xs font-medium text-ink-900 dark:text-surface-50">{{ auth.username || 'admin' }}</div>
-            <div class="text-eyebrow uppercase tracking-wider text-surface-400">signed in</div>
+            <div class="text-eyebrow uppercase tracking-wider text-surface-400">{{ $t('brand.signedIn') }}</div>
           </div>
-          <button
-            :title="$t('nav.logout')"
-            class="flex h-8 w-8 items-center justify-center rounded-xl text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-            @click="logout"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15 12H4M11 16l-4-4 4-4M20 4v16" />
-            </svg>
-          </button>
         </div>
+        <button
+          type="button"
+          :aria-label="$t('nav.logout')"
+          class="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-red-200/80 bg-red-50 px-3 text-xs font-semibold text-red-700 shadow-sm transition-all duration-150 ease-brand hover:border-red-300 hover:bg-red-100 hover:text-red-800 active:scale-[0.98] dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50 dark:hover:text-red-200"
+          @click="logout"
+        >
+          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 12H4M11 16l-4-4 4-4M20 4v16" />
+          </svg>
+          <span>{{ $t('nav.logout') }}</span>
+        </button>
       </div>
     </aside>
 
@@ -213,7 +229,7 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
       <header class="flex h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-800 dark:bg-surface-900 md:hidden">
         <button
           type="button"
-          :aria-label="drawerOpen ? '关闭导航' : '打开导航'"
+          :aria-label="drawerOpen ? $t('a11y.closeNav') : $t('a11y.openNav')"
           class="flex h-9 w-9 items-center justify-center rounded-xl text-surface-600 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
           @click="drawerOpen = !drawerOpen"
         >

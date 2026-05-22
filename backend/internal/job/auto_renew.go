@@ -168,11 +168,12 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 
 	idem := autoRenewIdempotencyKey(o, now)
 	order, err := j.billing.Purchase(ctx, billing.PurchaseInput{
-		UserID:         user.ID,
-		PlanID:         plan.ID,
-		IdempotencyKey: idem,
-		NodeID:         o.NodeID,
-		InboundTag:     o.InboundTag,
+		UserID:              user.ID,
+		PlanID:              plan.ID,
+		IdempotencyKey:      idem,
+		NodeID:              o.NodeID,
+		InboundTag:          o.InboundTag,
+		AllowExplicitTarget: true,
 	})
 	if err != nil {
 		j.log.Error("auto-renew Purchase failed",
@@ -303,4 +304,3 @@ func autoRenewIdempotencyKey(o *model.ClientOwnership, now time.Time) string {
 	_, _ = rand.Read(salt[:])
 	return fmt.Sprintf("autorenew-%d-%s-%s", o.ID, day, hex.EncodeToString(salt[:]))
 }
-

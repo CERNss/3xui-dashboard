@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { formatError } from '@/utils/format'
 import QRCode from 'qrcode'
 
@@ -18,6 +19,8 @@ import { nodesApi, type Node } from '@/api/admin/nodes'
 import Skeleton from '@/components/common/Skeleton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import InboundEditorModal from './InboundEditorModal.vue'
+
+const { t } = useI18n()
 
 // ---- state -----------------------------------------------------------------
 
@@ -145,7 +148,7 @@ async function reload() {
     data.value = d
     nodes.value = n
   } catch (e: any) {
-    error.value = formatError(e, '加载失败')
+    error.value = formatError(e, t('admin.inbounds.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -155,7 +158,7 @@ async function loadSnapshot(nodeID: number) {
   try {
     snapshots.value[nodeID] = await clientsApi.snapshot(nodeID)
   } catch (e: any) {
-    flash('err', formatError(e, 'snapshot 加载失败'))
+    flash('err', formatError(e, t('admin.inbounds.snapshotFailed')))
   }
 }
 
@@ -178,7 +181,7 @@ async function toggleEnable(f: FleetInbound) {
     await inboundsApi.setEnable(f.node_id, f.inbound.tag, !f.inbound.enable)
     await reload()
   } catch (e: any) {
-    flash('err', formatError(e, '切换失败'))
+    flash('err', formatError(e, t('admin.inbounds.switchFailed')))
   }
 }
 
@@ -203,7 +206,7 @@ function openEditInbound(f: FleetInbound) {
 }
 
 async function onInboundSaved(created: Inbound) {
-  flash('ok', inboundModal.value.mode === 'create' ? `入站已创建 (port ${created.port})` : `入站已更新 (${created.tag})`)
+  flash('ok', inboundModal.value.mode === 'create' ? t('admin.inbounds.createdAt', { port: created.port }) : t('admin.inbounds.updated', { tag: created.tag }))
   await reload()
 }
 
@@ -212,18 +215,18 @@ async function onInboundSaved(created: Inbound) {
 function confirmDeleteInbound(f: FleetInbound) {
   confirmDialog.value = {
     open: true,
-    title: '删除入站',
-    message: `确认删除 ${f.node_name} 上的入站 "${f.inbound.tag}"（端口 ${f.inbound.port}）？\n此操作会同时删除入站下的所有客户端。`,
+    title: t('admin.inbounds.confirmDelete'),
+    message: t('admin.inbounds.confirmDeleteMsg', { nodeName: f.node_name, tag: f.inbound.tag, port: f.inbound.port }),
     busy: false,
     async onConfirm() {
       confirmDialog.value.busy = true
       try {
         await inboundsApi.remove(f.node_id, f.inbound.tag)
-        flash('ok', `已删除 ${f.inbound.tag}`)
+        flash('ok', t('admin.inbounds.deleted', { tag: f.inbound.tag }))
         confirmDialog.value.open = false
         await reload()
       } catch (e: any) {
-        flash('err', formatError(e, '删除失败'))
+        flash('err', formatError(e, t('admin.inbounds.client.operationFailed')))
       } finally {
         confirmDialog.value.busy = false
       }
@@ -234,19 +237,19 @@ function confirmDeleteInbound(f: FleetInbound) {
 function confirmResetInboundTraffic(f: FleetInbound) {
   confirmDialog.value = {
     open: true,
-    title: '重置入站流量',
-    message: `将 "${f.inbound.tag}" 上所有客户端的 up/down 计数清零（仅累计计数，不影响 inbound 配置和到期）。`,
+    title: t('admin.inbounds.confirmReset'),
+    message: t('admin.inbounds.confirmResetMsg', { tag: f.inbound.tag }),
     busy: false,
     async onConfirm() {
       confirmDialog.value.busy = true
       try {
         await trafficApi.resetInbound(f.node_id, f.inbound.tag)
-        flash('ok', `已重置入站 ${f.inbound.tag} 流量`)
+        flash('ok', t('admin.inbounds.resetTrafficOk', { tag: f.inbound.tag }))
         confirmDialog.value.open = false
         await reload()
         if (snapshots.value[f.node_id]) await loadSnapshot(f.node_id)
       } catch (e: any) {
-        flash('err', formatError(e, '重置失败'))
+        flash('err', formatError(e, t('admin.inbounds.resetFailed')))
       } finally {
         confirmDialog.value.busy = false
       }
@@ -323,23 +326,23 @@ async function submitClient() {
   m.err = null
   if (!m.row) return
   if (!m.client.email.trim()) {
-    m.err = 'email 必填'
+    m.err = t('admin.inbounds.client.emailRequired')
     return
   }
   const proto = m.row.inbound.protocol
   if (proto === 'trojan' || proto === 'shadowsocks') {
     if (!m.client.password) {
-      m.err = 'password 必填 (Trojan/SS)'
+      m.err = t('admin.inbounds.client.errPassword')
       return
     }
   } else if (proto === 'hysteria' || proto === 'hysteria2') {
     if (!m.client.auth) {
-      m.err = 'auth 必填 (Hysteria)'
+      m.err = t('admin.inbounds.client.errAuth')
       return
     }
   } else {
     if (!m.client.id) {
-      m.err = 'UUID 必填 (VLESS/VMess)'
+      m.err = t('admin.inbounds.client.errUUID')
       return
     }
   }
@@ -347,16 +350,16 @@ async function submitClient() {
   try {
     if (m.mode === 'create') {
       await clientsApi.add(m.row.node_id, m.row.inbound.tag, m.client)
-      flash('ok', `客户端已添加：${m.client.email}`)
+      flash('ok', t('admin.inbounds.client.updated', { email: m.client.email }))
     } else {
       await clientsApi.update(m.row.node_id, m.row.inbound.tag, m.origEmail, m.client)
-      flash('ok', `客户端已更新：${m.client.email}`)
+      flash('ok', t('admin.inbounds.client.saved', { email: m.client.email }))
     }
     m.open = false
     await reload()
     await loadSnapshot(m.row.node_id)
   } catch (e: any) {
-    m.err = formatError(e, '操作失败')
+    m.err = formatError(e, t('admin.inbounds.client.operationFailed'))
   } finally {
     m.busy = false
   }
@@ -365,19 +368,19 @@ async function submitClient() {
 function confirmDeleteClient(f: FleetInbound, c: Client) {
   confirmDialog.value = {
     open: true,
-    title: '删除客户端',
-    message: `确认在 ${f.inbound.tag} 上删除客户端 "${c.email}"？`,
+    title: t('admin.inbounds.client.confirmDelete'),
+    message: t('admin.inbounds.client.confirmDeleteMsg', { tag: f.inbound.tag, email: c.email }),
     busy: false,
     async onConfirm() {
       confirmDialog.value.busy = true
       try {
         await clientsApi.remove(f.node_id, f.inbound.tag, c.email)
-        flash('ok', `已删除 ${c.email}`)
+        flash('ok', t('admin.inbounds.client.deleted', { email: c.email }))
         confirmDialog.value.open = false
         await reload()
         await loadSnapshot(f.node_id)
       } catch (e: any) {
-        flash('err', formatError(e, '删除失败'))
+        flash('err', formatError(e, t('admin.inbounds.client.operationFailed')))
       } finally {
         confirmDialog.value.busy = false
       }
@@ -388,19 +391,19 @@ function confirmDeleteClient(f: FleetInbound, c: Client) {
 function confirmResetClientTraffic(f: FleetInbound, c: Client) {
   confirmDialog.value = {
     open: true,
-    title: '重置客户端流量',
-    message: `将客户端 "${c.email}" 在 ${f.inbound.tag} 的 up/down 计数清零。`,
+    title: t('admin.inbounds.client.confirmReset'),
+    message: t('admin.inbounds.client.confirmResetMsg', { tag: f.inbound.tag, email: c.email }),
     busy: false,
     async onConfirm() {
       confirmDialog.value.busy = true
       try {
         await trafficApi.resetClient(f.node_id, f.inbound.tag, c.email)
-        flash('ok', `已重置 ${c.email} 流量`)
+        flash('ok', t('admin.inbounds.client.reset', { email: c.email }))
         confirmDialog.value.open = false
         await reload()
         await loadSnapshot(f.node_id)
       } catch (e: any) {
-        flash('err', formatError(e, '重置失败'))
+        flash('err', formatError(e, t('admin.inbounds.resetFailed')))
       } finally {
         confirmDialog.value.busy = false
       }
@@ -492,21 +495,21 @@ function buildClientLink(f: FleetInbound, c: Client): string {
 async function copyLink(f: FleetInbound, c: Client) {
   const url = buildClientLink(f, c)
   if (!url) {
-    flash('err', '不支持的协议')
+    flash('err', t('admin.inbounds.protocolNotSupported'))
     return
   }
   try {
     await navigator.clipboard.writeText(url)
-    flash('ok', `链接已复制：${c.email}`)
+    flash('ok', t('admin.inbounds.client.linkCopied', { email: c.email }))
   } catch {
-    flash('err', '复制失败 — 浏览器拒绝剪贴板')
+    flash('err', t('admin.inbounds.client.copyLinkFailed'))
   }
 }
 
 async function openQR(f: FleetInbound, c: Client) {
   const url = buildClientLink(f, c)
   if (!url) {
-    flash('err', '不支持的协议')
+    flash('err', t('admin.inbounds.protocolNotSupported'))
     return
   }
   const dataURL = await QRCode.toDataURL(url, { width: 320, margin: 1 })
@@ -541,9 +544,9 @@ function regenAuth() {
 async function copyQRUrl() {
   try {
     await navigator.clipboard.writeText(qrModal.value.url)
-    flash('ok', '已复制')
+    flash('ok', t('admin.inbounds.copyOk'))
   } catch {
-    flash('err', '复制失败')
+    flash('err', t('admin.inbounds.copyFailed'))
   }
 }
 
@@ -629,8 +632,8 @@ onMounted(reload)
     <!-- Header -->
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">入站列表</h1>
-        <p class="mt-1.5 text-sm text-surface-500">跨节点聚合 · 流量 · 客户端 · 点击行展开看每个入站下的客户端</p>
+        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.inbounds.title') }}</h1>
+        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.inbounds.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -640,11 +643,11 @@ onMounted(reload)
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          添加入站
+          {{ $t('admin.inbounds.addInbound') }}
         </button>
         <button
           class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-surface-200 bg-surface-0 text-surface-600 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-700 dark:bg-surface-900 dark:hover:bg-surface-800"
-          title="刷新"
+          :title="$t('admin.inbounds.reload')"
           @click="reload"
         >
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -659,34 +662,34 @@ onMounted(reload)
       <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
         <div class="flex items-center gap-1.5 text-2xs font-medium text-surface-500">
           <svg class="h-3 w-3 text-accent-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-          上传
+          {{ $t('admin.inbounds.kpi.up') }}
         </div>
         <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.up) }}</div>
       </div>
       <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
         <div class="flex items-center gap-1.5 text-2xs font-medium text-surface-500">
           <svg class="h-3 w-3 text-primary-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
-          下载
+          {{ $t('admin.inbounds.kpi.down') }}
         </div>
         <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.down) }}</div>
       </div>
       <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">总用量</div>
+        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.totalUsed') }}</div>
         <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.up + stats.down) }}</div>
       </div>
       <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">累计</div>
+        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.accumulated') }}</div>
         <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.allTime) }}</div>
       </div>
       <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">入站</div>
+        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.inbounds') }}</div>
         <div class="mt-2 flex items-baseline gap-1.5">
           <span class="text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.inboundCount }}</span>
-          <span class="text-2xs text-surface-400">{{ stats.enabledCount }} 启用</span>
+          <span class="text-2xs text-surface-400">{{ stats.enabledCount }} {{ $t('admin.inbounds.kpi.enabledSuffix') }}</span>
         </div>
       </div>
       <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">客户端</div>
+        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.clients') }}</div>
         <div class="mt-2 text-lg font-semibold tracking-tight text-accent-600 tabular-nums dark:text-accent-400">{{ stats.clientCount }}</div>
       </div>
     </section>
@@ -698,7 +701,7 @@ onMounted(reload)
         <input
           v-model="query"
           type="text"
-          placeholder="搜索 备注 / 协议 / 端口 / 节点 / tag"
+          :placeholder="$t('admin.inbounds.searchPlaceholder')"
           class="h-9 w-80 rounded-xl border border-surface-200 bg-surface-0 pl-9 pr-3 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
         />
       </div>
@@ -712,7 +715,7 @@ onMounted(reload)
             : 'text-surface-500 hover:bg-surface-100 hover:text-ink-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-50'"
           @click="protocolFilter = p"
         >
-          {{ p === 'all' ? '全部' : p }}
+          {{ p === 'all' ? $t('admin.inbounds.filter.all') : p }}
         </button>
       </div>
     </div>
@@ -722,7 +725,7 @@ onMounted(reload)
       v-if="data.node_errors && Object.keys(data.node_errors).length"
       class="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
     >
-      <div class="mb-1 font-semibold">部分节点拉取失败（其他正常显示）：</div>
+      <div class="mb-1 font-semibold">{{ $t('admin.inbounds.nodeErrorsTitle') }}</div>
       <ul class="list-inside list-disc">
         <li v-for="(msg, id) in data.node_errors" :key="id"><b>node {{ id }}:</b> {{ msg }}</li>
       </ul>
@@ -738,16 +741,16 @@ onMounted(reload)
         <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
           <tr class="border-b border-surface-100 dark:border-surface-800">
             <th class="w-8 px-4 py-3 font-medium"></th>
-            <th class="px-4 py-3 font-medium">节点</th>
-            <th class="px-4 py-3 font-medium">备注 · Tag · 端口</th>
-            <th class="px-4 py-3 font-medium">协议</th>
+            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.node') }}</th>
+            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.remark') }}</th>
+            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.protocol') }}</th>
             <th class="hidden"></th>
-            <th class="px-4 py-3 font-medium">客户端</th>
-            <th class="px-4 py-3 font-medium">流量 · 用量</th>
-            <th class="px-4 py-3 text-right font-medium">累计</th>
-            <th class="px-4 py-3 font-medium">到期</th>
-            <th class="px-4 py-3 text-center font-medium">启用</th>
-            <th class="px-4 py-3 text-right font-medium">操作</th>
+            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.clients') }}</th>
+            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.traffic') }}</th>
+            <th class="px-4 py-3 text-right font-medium">{{ $t('admin.inbounds.column.accumulated') }}</th>
+            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.expiry') }}</th>
+            <th class="px-4 py-3 text-center font-medium">{{ $t('admin.inbounds.column.enable') }}</th>
+            <th class="px-4 py-3 text-right font-medium">{{ $t('admin.users.column.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
@@ -863,22 +866,22 @@ onMounted(reload)
               <!-- 操作 — always-visible labeled mini-buttons (Sub2API style) -->
               <td class="px-4 py-4" @click.stop>
                 <div class="flex items-center justify-end gap-1">
-                  <button title="编辑入站" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEditInbound(row)">
+                  <button :title="$t('admin.inbounds.editInbound')" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEditInbound(row)">
                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
-                    编辑
+                    {{ $t('admin.inbounds.edit') }}
                   </button>
-                  <button title="重置流量" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-300" @click="confirmResetInboundTraffic(row)">
+                  <button :title="$t('admin.inbounds.resetInboundTraffic')" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-300" @click="confirmResetInboundTraffic(row)">
                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
                       <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
                       <path d="M21 3v5h-5" />
                       <path d="M3 21v-5h5" />
                     </svg>
-                    重置
+                    {{ $t('admin.inbounds.reset') }}
                   </button>
-                  <button title="删除入站" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="confirmDeleteInbound(row)">
+                  <button :title="$t('admin.inbounds.confirmDelete')" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="confirmDeleteInbound(row)">
                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
-                    删除
+                    {{ $t('admin.inbounds.delete') }}
                   </button>
                 </div>
               </td>
@@ -889,7 +892,7 @@ onMounted(reload)
               <td colspan="11" class="bg-surface-50/60 px-6 py-4 dark:bg-surface-800/30">
                 <div class="mb-3 flex items-center justify-between">
                   <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">
-                    {{ row.inbound.tag }} · 客户端
+                    {{ row.inbound.tag }} · {{ $t('admin.inbounds.column.clients') }}
                     <span class="ml-1 text-xs text-surface-400">({{ parseClients(row.inbound).length }})</span>
                   </h3>
                   <button
@@ -897,7 +900,7 @@ onMounted(reload)
                     @click="openAddClient(row)"
                   >
                     <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-                    添加客户端
+                    {{ $t('admin.inbounds.addClient') }}
                   </button>
                 </div>
 
@@ -905,14 +908,14 @@ onMounted(reload)
                   <table class="min-w-full divide-y divide-surface-200 text-xs dark:divide-surface-800">
                     <thead class="bg-surface-50 text-left uppercase tracking-wider text-surface-400 dark:bg-surface-800/40">
                       <tr>
-                        <th class="px-3 py-2">状态</th>
+                        <th class="px-3 py-2">{{ $t('admin.users.column.status') }}</th>
                         <th class="px-3 py-2">Email</th>
-                        <th class="px-3 py-2">凭据</th>
-                        <th class="px-3 py-2 text-right">流量 ↑ / ↓</th>
-                        <th class="px-3 py-2 text-right">配额</th>
-                        <th class="px-3 py-2">到期</th>
-                        <th class="px-3 py-2">最后在线</th>
-                        <th class="px-3 py-2 text-right">操作</th>
+                        <th class="px-3 py-2">{{ $t('admin.inbounds.client.password') }}/{{ $t('admin.inbounds.client.uuid') }}</th>
+                        <th class="px-3 py-2 text-right">↑ / ↓</th>
+                        <th class="px-3 py-2 text-right">{{ $t('admin.inbounds.kpi.totalUsed') }}</th>
+                        <th class="px-3 py-2">{{ $t('admin.inbounds.column.expiry') }}</th>
+                        <th class="px-3 py-2">{{ $t('admin.inbounds.kpi.up') }}</th>
+                        <th class="px-3 py-2 text-right">{{ $t('admin.users.column.actions') }}</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-surface-200 dark:divide-surface-800">
@@ -921,7 +924,7 @@ onMounted(reload)
                           <span
                             class="inline-flex h-2 w-2 rounded-full"
                             :class="isOnline(row.node_id, c.email) ? 'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]' : 'bg-surface-300 dark:bg-surface-700'"
-                            :title="isOnline(row.node_id, c.email) ? 'online' : 'offline'"
+                            :title="isOnline(row.node_id, c.email) ? $t('admin.inbounds.online') : $t('admin.inbounds.offline')"
                           />
                         </td>
                         <td class="px-3 py-2 font-medium">{{ c.email }}</td>
@@ -941,13 +944,13 @@ onMounted(reload)
                         </td>
                         <td class="px-3 py-2">
                           <div class="flex justify-end gap-1">
-                            <button title="复制链接" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-accent-700 dark:hover:bg-surface-800" @click="copyLink(row, c)">
+                            <button :title="$t('admin.inbounds.copyLink')" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-accent-700 dark:hover:bg-surface-800" @click="copyLink(row, c)">
                               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                             </button>
-                            <button title="QR 码" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-primary-700 dark:hover:bg-surface-800" @click="openQR(row, c)">
+                            <button :title="$t('admin.inbounds.qrInbound')" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-primary-700 dark:hover:bg-surface-800" @click="openQR(row, c)">
                               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3M21 21v-7m0 0h-3" /></svg>
                             </button>
-                            <button title="重置流量" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-amber-700 dark:hover:bg-surface-800" @click="confirmResetClientTraffic(row, c)">
+                            <button :title="$t('admin.inbounds.resetInboundTraffic')" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-amber-700 dark:hover:bg-surface-800" @click="confirmResetClientTraffic(row, c)">
                               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
                                 <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
@@ -955,10 +958,10 @@ onMounted(reload)
                                 <path d="M3 21v-5h5" />
                               </svg>
                             </button>
-                            <button title="编辑" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-surface-900 dark:hover:bg-surface-800 dark:hover:text-surface-100" @click="openEditClient(row, c)">
+                            <button :title="$t('admin.inbounds.edit')" class="rounded p-1 text-surface-500 hover:bg-surface-100 hover:text-surface-900 dark:hover:bg-surface-800 dark:hover:text-surface-100" @click="openEditClient(row, c)">
                               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
                             </button>
-                            <button title="删除" class="rounded p-1 text-surface-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950" @click="confirmDeleteClient(row, c)">
+                            <button :title="$t('admin.inbounds.delete')" class="rounded p-1 text-surface-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950" @click="confirmDeleteClient(row, c)">
                               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
                             </button>
                           </div>
@@ -966,7 +969,7 @@ onMounted(reload)
                       </tr>
                       <tr v-if="parseClients(row.inbound).length === 0">
                         <td colspan="8" class="px-3 py-8 text-center text-surface-400">
-                          这个入站还没有客户端，点 "添加客户端" 开始。
+                          {{ $t('admin.inbounds.client.emptyHint') }}
                         </td>
                       </tr>
                     </tbody>
@@ -980,16 +983,16 @@ onMounted(reload)
               <EmptyState
                 v-if="data.inbounds.length === 0"
                 icon="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"
-                title="还没有入站"
-                description="入站是端口 + 协议的组合，把客户端流量送到节点。每个节点至少建一个。"
-                action-label="添加第一个入站"
+                :title="$t('admin.inbounds.empty')"
+                :description="$t('admin.inbounds.emptyDescription')"
+                :action-label="$t('admin.inbounds.emptyAction')"
                 @action="openCreateInbound"
               />
               <EmptyState
                 v-else
                 icon="M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"
-                title="没有匹配的入站"
-                :description="`搜索 ${JSON.stringify(query)} 在 ${data.inbounds.length} 个入站里没找到。换关键词或重置过滤。`"
+                :title="$t('admin.inbounds.noMatchTitle')"
+                :description="$t('admin.inbounds.noMatchDescription', { query: JSON.stringify(query), total: data.inbounds.length })"
               />
             </td>
           </tr>
@@ -1031,9 +1034,9 @@ onMounted(reload)
       <div class="w-full max-w-xl animate-scale-in rounded-2xl bg-surface-0 p-6 shadow-2xl dark:bg-surface-900">
         <header class="mb-5 flex items-center justify-between">
           <div>
-            <h2 class="text-lg font-semibold">{{ clientModal.mode === 'create' ? '添加客户端' : '编辑客户端' }}</h2>
+            <h2 class="text-lg font-semibold">{{ clientModal.mode === 'create' ? $t('admin.inbounds.client.addTitle') : $t('admin.inbounds.client.editTitle') }}</h2>
             <p class="mt-0.5 text-xs text-surface-500" v-if="clientModal.row">
-              在 <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">{{ clientModal.row.inbound.tag }}</code> ({{ clientModal.row.inbound.protocol }})
+              {{ $t('admin.inbounds.client.in') }} <code class="rounded bg-surface-100 px-1 dark:bg-surface-800">{{ clientModal.row.inbound.tag }}</code> ({{ clientModal.row.inbound.protocol }})
             </p>
           </div>
           <button class="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-800" @click="clientModal.open = false">
@@ -1044,69 +1047,69 @@ onMounted(reload)
         <form class="space-y-4" @submit.prevent="submitClient">
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Email (label)</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.emailFieldLabel') }}</label>
               <input v-model="clientModal.client.email" type="text" placeholder="alice or alice@example.com" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div v-if="clientModal.row && (clientModal.row.inbound.protocol === 'vless' || clientModal.row.inbound.protocol === 'vmess')">
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">UUID</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.uuid') }}</label>
               <div class="flex gap-1">
                 <input v-model="clientModal.client.id" type="text" class="flex-1 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" />
-                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenUUID" title="生成新 UUID">↻</button>
+                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenUUID" :title="$t('admin.inbounds.client.regenUUID')">↻</button>
               </div>
             </div>
             <div v-else-if="clientModal.row && (clientModal.row.inbound.protocol === 'hysteria' || clientModal.row.inbound.protocol === 'hysteria2')">
               <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Auth</label>
               <div class="flex gap-1">
                 <input v-model="clientModal.client.auth" type="text" class="flex-1 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" />
-                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenAuth" title="生成">↻</button>
+                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenAuth" :title="$t('admin.inbounds.client.regen')">↻</button>
               </div>
             </div>
             <div v-else-if="clientModal.row">
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Password</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.password') }}</label>
               <div class="flex gap-1">
                 <input v-model="clientModal.client.password" type="text" class="flex-1 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs dark:border-surface-700 dark:bg-surface-900" />
-                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenPassword" title="生成">↻</button>
+                <button type="button" class="rounded-lg border border-surface-200 px-2 text-xs hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="regenPassword" :title="$t('admin.inbounds.client.regen')">↻</button>
               </div>
             </div>
             <div v-if="clientModal.row && clientModal.row.inbound.protocol === 'vless'">
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Flow</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.flow') }}</label>
               <select v-model="clientModal.client.flow" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900">
-                <option value="">(none)</option>
+                <option value="">{{ $t('admin.inbounds.client.flowNone') }}</option>
                 <option value="xtls-rprx-vision">xtls-rprx-vision</option>
               </select>
             </div>
             <div>
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">流量限额 (bytes, 0=无限)</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.totalGB') }}</label>
               <input v-model.number="clientModal.client.totalGB" type="number" min="0" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">到期 (unix ms, 0=永不)</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.expiry') }}</label>
               <input v-model.number="clientModal.client.expiryTime" type="number" min="0" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">IP 限制 (0=无)</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.ipLimit') }}</label>
               <input v-model.number="clientModal.client.limitIp" type="number" min="0" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">Sub ID</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.subId') }}</label>
               <input v-model="clientModal.client.subId" type="text" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2">
-              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">备注</label>
+              <label class="mb-1 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.inbounds.client.comment') }}</label>
               <input v-model="clientModal.client.comment" type="text" class="w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2 flex items-center gap-2">
               <input id="client-enable" v-model="clientModal.client.enable" type="checkbox" class="h-4 w-4 rounded border-surface-300 text-accent-600" />
-              <label for="client-enable" class="text-sm text-surface-700 dark:text-surface-300">启用</label>
+              <label for="client-enable" class="text-sm text-surface-700 dark:text-surface-300">{{ $t('admin.inbounds.toggleEnable') }}</label>
             </div>
           </div>
 
           <p v-if="clientModal.err" class="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ clientModal.err }}</p>
 
           <footer class="flex justify-end gap-2 border-t border-surface-200 pt-4 dark:border-surface-800">
-            <button type="button" class="rounded-lg border border-surface-200 px-4 py-2 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="clientModal.open = false">取消</button>
+            <button type="button" class="rounded-lg border border-surface-200 px-4 py-2 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="clientModal.open = false">{{ $t('common.cancel') }}</button>
             <button type="submit" :disabled="clientModal.busy" class="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60">
-              {{ clientModal.busy ? '处理中…' : (clientModal.mode === 'create' ? '添加' : '保存') }}
+              {{ clientModal.busy ? $t('common.processing') : (clientModal.mode === 'create' ? $t('admin.inbounds.client.submitAdd') : $t('admin.inbounds.client.submitSave')) }}
             </button>
           </footer>
         </form>
@@ -1129,7 +1132,7 @@ onMounted(reload)
         <div class="flex flex-col items-center gap-4">
           <img :src="qrModal.dataURL" alt="QR" class="rounded-lg border border-surface-200 dark:border-surface-700" />
           <textarea readonly :value="qrModal.url" rows="3" class="w-full resize-none rounded-lg border border-surface-200 bg-surface-50 p-2 font-mono text-2xs dark:border-surface-700 dark:bg-surface-800"></textarea>
-          <button class="rounded-lg bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700" @click="copyQRUrl">复制链接</button>
+          <button class="rounded-lg bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700" @click="copyQRUrl">{{ $t('admin.inbounds.copyLink') }}</button>
         </div>
       </div>
     </div>
@@ -1144,9 +1147,9 @@ onMounted(reload)
         <h3 class="mb-2 text-lg font-semibold">{{ confirmDialog.title }}</h3>
         <p class="whitespace-pre-line text-sm text-surface-600 dark:text-surface-300">{{ confirmDialog.message }}</p>
         <footer class="mt-5 flex justify-end gap-2">
-          <button class="rounded-lg border border-surface-200 px-4 py-1.5 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="confirmDialog.open = false">取消</button>
+          <button class="rounded-lg border border-surface-200 px-4 py-1.5 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="confirmDialog.open = false">{{ $t('common.cancel') }}</button>
           <button :disabled="confirmDialog.busy" class="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60" @click="confirmDialog.onConfirm()">
-            {{ confirmDialog.busy ? '处理中…' : '确认' }}
+            {{ confirmDialog.busy ? $t('common.processing') : $t('admin.inbounds.confirm') }}
           </button>
         </footer>
       </div>

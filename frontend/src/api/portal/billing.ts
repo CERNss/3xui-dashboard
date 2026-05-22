@@ -9,6 +9,7 @@ export interface Plan {
   traffic_limit_bytes: number
   duration_days: number
   ip_limit?: number
+  provisioning_pool_id?: number | null
   enabled: boolean
   created_at?: string
 }
@@ -49,22 +50,6 @@ export interface PurchaseInput {
   plan_id: number
   /** RFC 4122 UUID — same key on retries deduplicates server-side. */
   idempotency_key: string
-  /** Which node + inbound to provision the new client on. Backend
-   *  requires both — sspanel-style "user picks where", not auto-pick. */
-  node_id: number
-  inbound_tag: string
-}
-
-/** PortalInbound is one user-purchasable inbound surfaced by
- *  GET /api/user/inbounds. Backend filters to enabled-only and strips
- *  admin-only fields (settings JSON, traffic, etc.). */
-export interface PortalInbound {
-  node_id: number
-  node_name: string
-  inbound_tag: string
-  protocol: string
-  remark: string
-  port: number
 }
 
 export const portalBillingApi = {
@@ -84,10 +69,6 @@ export const portalBillingApi = {
    */
   purchase: (input: PurchaseInput) =>
     portalClient.post<Order>('/purchase', input).then((r) => r.data),
-
-  /** List inbounds the user may purchase a plan onto. */
-  listInbounds: () =>
-    portalClient.get<{ inbounds: PortalInbound[] }>('/inbounds').then((r) => r.data.inbounds),
 
   /** Configured payment methods. Always includes "balance"; alipay
    *  appears only when ALIPAY_APP_ID/PRIVATE_KEY/PUBLIC_KEY are set. */

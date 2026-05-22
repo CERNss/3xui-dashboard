@@ -45,7 +45,7 @@ async function mountOrders() {
   await router.push('/admin/orders')
   await router.isReady()
   const w = mount(Orders, {
-    global: { plugins: [router], mocks: { $t: (k: string) => k } },
+    global: { plugins: [router] },
     attachTo: document.body,
   })
   await flushPromises()

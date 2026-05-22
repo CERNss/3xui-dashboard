@@ -9,9 +9,15 @@ const apiStubs = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  poolsList: vi.fn(),
 }))
 vi.mock('@/api/admin/plans', () => ({
   adminPlansApi: apiStubs,
+}))
+vi.mock('@/api/admin/provisioningPools', () => ({
+  provisioningPoolsApi: {
+    list: apiStubs.poolsList,
+  },
 }))
 
 import Plans from './Plans.vue'
@@ -25,6 +31,7 @@ function makePlan(over: Partial<AdminPlan> = {}): AdminPlan {
     traffic_limit_bytes: 100 * 1024 * 1024 * 1024,
     price_cents: 500,
     ip_limit: 0,
+    provisioning_pool_id: null,
     enabled: true,
     created_at: '2026-05-01T00:00:00Z',
     updated_at: '2026-05-01T00:00:00Z',
@@ -40,7 +47,7 @@ async function mountPlans() {
   await router.push('/admin/plans')
   await router.isReady()
   const w = mount(Plans, {
-    global: { plugins: [router], mocks: { $t: (k: string) => k } },
+    global: { plugins: [router] },
     attachTo: document.body,
   })
   await flushPromises()
@@ -51,6 +58,9 @@ beforeEach(() => {
   apiStubs.list.mockResolvedValue([
     makePlan(),
     makePlan({ id: 2, name: 'Basic 7d', price_cents: 100, duration_days: 7, enabled: false }),
+  ])
+  apiStubs.poolsList.mockResolvedValue([
+    { id: 10, name: 'basic-pool', enabled: true, auto_create: false, allowed_protocols: [], targets: [] },
   ])
 })
 afterEach(() => {
@@ -71,6 +81,7 @@ describe('admin/Plans.vue smoke', () => {
     expect(w.text()).toContain('¥5.00')   // 500 cents
     expect(w.text()).toContain('¥1.00')   // 100 cents
     expect(w.text()).toContain('100 GB')  // traffic_limit_bytes formatted
+    expect(w.text()).toContain('未绑定')
   })
 
   it('opens the create modal when "新建套餐" is clicked', async () => {
@@ -82,5 +93,6 @@ describe('admin/Plans.vue smoke', () => {
     expect(w.text()).toContain('新建套餐')
     // Form fields visible
     expect(w.html()).toContain('placeholder="例如：基础 30 天"')
+    expect(w.text()).toContain('basic-pool')
   })
 })

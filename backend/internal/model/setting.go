@@ -18,12 +18,27 @@ func (Setting) TableName() string { return "settings" }
 // Well-known setting keys. Service-layer code should reference these
 // constants instead of bare strings.
 const (
-	SettingPublicRegistrationEnabled = "public_registration_enabled"
-	SettingEmailDomainAllowlist      = "email_domain_allowlist"
-	SettingSubscriptionRemarkModel   = "subscription_remark_model"
-	SettingTrafficWarnPct            = "traffic_warn_pct"
-	SettingTrafficCriticalPct        = "traffic_critical_pct"
-	SettingExpiryWarnDays            = "expiry_warn_days"
+	SettingPublicRegistrationEnabled  = "public_registration_enabled"
+	SettingEmailVerificationRequired  = "email_verification_required"
+	SettingEmailDomainAllowlist       = "email_domain_allowlist"
+	SettingSubscriptionRemarkModel    = "subscription_remark_model"
+	SettingTrafficWarnPct             = "traffic_warn_pct"
+	SettingTrafficCriticalPct         = "traffic_critical_pct"
+	SettingExpiryWarnDays             = "expiry_warn_days"
+	SettingBrandIconURL               = "brand_icon_url"
+	SettingNewUserInitialBalanceCents = "new_user_initial_balance_cents"
+	SettingNewUserPlanIDs             = "new_user_plan_ids"
+	SettingOIDCIssuer                 = "oidc_issuer"
+	SettingOIDCClientID               = "oidc_client_id"
+	SettingOIDCClientSecret           = "oidc_client_secret"
+	SettingOIDCRedirectURL            = "oidc_redirect_url"
+	SettingOIDCScopes                 = "oidc_scopes"
+	SettingOIDCDisplayName            = "oidc_display_name"
+	SettingOIDCIconURL                = "oidc_icon_url"
+	SettingOIDCAuthURL                = "oidc_auth_url"
+	SettingOIDCTokenURL               = "oidc_token_url"
+	SettingOIDCJWKSURL                = "oidc_jwks_url"
+	SettingOIDCUserInfoURL            = "oidc_userinfo_url"
 
 	// Subscription format templates — admins override the embedded
 	// defaults shipped by internal/sub/template/defaults.go.

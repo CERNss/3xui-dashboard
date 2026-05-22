@@ -199,18 +199,24 @@ provider using the Authorization Code flow with PKCE.
 
 #### Scenario: First OIDC login provisions an account
 
-- **WHEN** a user completes OIDC login and no account exists for that provider subject
-- **THEN** the system SHALL create a `users` row linked to the OIDC subject (and email when present) and issue a user-audience JWT
+- **WHEN** a user completes OIDC login with an email claim and no account exists for that email
+- **THEN** the system SHALL create a `users` row using that email, link the OIDC subject to it, and issue a user-audience JWT
 
 #### Scenario: Returning OIDC user
 
-- **WHEN** a user completes OIDC login and an account already exists for that provider subject
+- **WHEN** a user completes OIDC login and the OIDC subject is already linked to the same email account
 - **THEN** the system SHALL log them into the existing account without creating a duplicate
 
-#### Scenario: OIDC account links to existing email
+#### Scenario: Existing email requires account decision
 
-- **WHEN** an OIDC login presents an email that already belongs to an email/password account
-- **THEN** the system SHALL link the OIDC identity to that existing account rather than creating a separate one
+- **WHEN** an OIDC login presents an email that already belongs to an account not linked to that OIDC subject
+- **THEN** the callback SHALL return a short-lived pending decision rather than silently linking or creating a duplicate
+- **AND** the frontend SHALL ask whether to bind the OIDC login to the existing account or recreate/reset that email identity
+
+#### Scenario: Missing OIDC email is rejected
+
+- **WHEN** an OIDC login succeeds at the provider but the ID token does not include an email claim
+- **THEN** the dashboard SHALL reject the login because email is the unique user identity
 
 ### Requirement: User Password Management
 

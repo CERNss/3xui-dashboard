@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -26,6 +27,7 @@ func NewUserHandler(users *usersvc.Service, repo *repository.UserRepo) *UserHand
 func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g := rg.Group("/users")
 	g.GET("", h.List)
+	g.POST("", h.Create)
 	g.GET("/:id", h.Get)
 	g.PUT("/:id", h.Update)
 	g.POST("/:id/suspend", h.Suspend)
@@ -43,6 +45,61 @@ func (h *UserHandler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"users": rows, "limit": limit, "offset": offset})
+}
+
+// createRequest is the JSON body for POST /api/admin/users. Validation
+// (email format, password length, non-negative balance) happens inside
+// AdminCreate so error mapping stays in one place.
+type createRequest struct {
+	Email               string `json:"email"`
+	Password            string `json:"password"`
+	InitialBalanceCents *int64 `json:"initial_balance_cents,omitempty"`
+}
+
+// Create provisions a new portal user under admin authority. The
+// admin path skips public-registration / domain-allowlist gates and
+// the email verification code dance (admins are vetting accounts
+// out-of-band).
+//
+// Responses:
+//   - 201 with the new user row on success
+//   - 400 invalid body / bad email / weak password / negative balance
+//   - 409 if the email is already taken
+//   - 500 on unexpected persistence failure
+func (h *UserHandler) Create(c *gin.Context) {
+	var req createRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
+		return
+	}
+	in := usersvc.AdminCreateInput{
+		Email:    req.Email,
+		Password: req.Password,
+	}
+	if req.InitialBalanceCents != nil {
+		in.InitialBalanceCents = *req.InitialBalanceCents
+	}
+	u, err := h.users.AdminCreate(c.Request.Context(), in)
+	if err != nil {
+		switch {
+		case errors.Is(err, usersvc.ErrEmailTaken):
+			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+		case errors.Is(err, usersvc.ErrInvalidEmail),
+			errors.Is(err, usersvc.ErrPasswordTooShort):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			// Negative-balance / other validation errors come from
+			// AdminCreate as plain fmt.Errorf; treat as 400 so the
+			// admin gets actionable feedback rather than a 500.
+			if strings.Contains(err.Error(), "initial_balance_cents") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusCreated, u)
 }
 
 func (h *UserHandler) Get(c *gin.Context) {

@@ -8,11 +8,9 @@ import (
 	inboundsvc "github.com/cern/3xui-dashboard/internal/service/inbound"
 )
 
-// InboundHandler exposes a slim, user-safe view of the fleet's
-// inbounds so the portal can render a "where to provision" picker
-// during plan purchase. Admin-only fields (settings JSON, traffic
-// counters, client list) are stripped — users only see what they
-// need to choose a node.
+// InboundHandler is kept only so older internal tests can construct
+// it. The portal no longer exposes fleet inbounds: purchases resolve
+// through plan-bound provisioning pools on the server.
 type InboundHandler struct {
 	svc *inboundsvc.Service
 }
@@ -22,9 +20,12 @@ func NewInboundHandler(s *inboundsvc.Service) *InboundHandler {
 	return &InboundHandler{svc: s}
 }
 
-// RegisterRoutes mounts /inbounds under the user group.
+// RegisterRoutes intentionally mounts no routes. User-facing inbound
+// selection was removed when provisioning pools became the only
+// purchase target source.
 func (h *InboundHandler) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.GET("/inbounds", h.List)
+	_ = h
+	_ = rg
 }
 
 // portalInbound is the slim shape returned to the portal. Keep field
@@ -47,25 +48,5 @@ type portalInbound struct {
 // admin view gets (an unreachable node just doesn't show up as a
 // choice).
 func (h *InboundHandler) List(c *gin.Context) {
-	res, err := h.svc.ListAll(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	out := make([]portalInbound, 0, len(res.Inbounds))
-	for _, fi := range res.Inbounds {
-		if !fi.Inbound.Enable {
-			continue
-		}
-		out = append(out, portalInbound{
-			NodeID:     fi.NodeID,
-			NodeName:   fi.NodeName,
-			InboundTag: fi.Inbound.Tag,
-			Protocol:   fi.Inbound.Protocol,
-			Remark:     fi.Inbound.Remark,
-			Port:       fi.Inbound.Port,
-		})
-	}
-	c.JSON(http.StatusOK, gin.H{"inbounds": out})
+	c.JSON(http.StatusGone, gin.H{"error": "user-facing inbound selection has been replaced by provisioning pools"})
 }

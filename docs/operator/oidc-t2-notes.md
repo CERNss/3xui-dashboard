@@ -113,10 +113,9 @@ docker exec pg-demo psql -U postgres -c "DROP DATABASE dashboard_t2"
 The spec drives one user. It does NOT exercise:
 
 - **Multiple distinct OIDC identities sharing an email**: the
-  dashboard's email-binding logic vs OIDC-only accounts. If a
-  user with `email=alice@x` registers via OIDC first, then a
-  different OIDC identity with the same email tries to log in,
-  what happens? Not tested here.
+  dashboard is now email-first. A different OIDC identity claiming
+  the same email receives a pending decision in the callback; the
+  browser asks whether to bind or recreate/reset that email identity.
 - **id_token claim mismatches**: bad `iss`, missing `aud`,
   expired tokens — these are covered by Go unit tests in
   `oidc_test.go`, not by this spec.

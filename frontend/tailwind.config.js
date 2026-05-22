@@ -48,8 +48,14 @@ export default {
           900: '#0c0e12',
           950: '#06080a'
         },
-        // Surface — warm neutral. Tinted slightly toward stone/sand so the
-        // page doesn't feel "Excel gray". Values approximate OKLCH(L 0.04C 60h).
+        // Surface — light side stays warm stone, dark side shifts to a cool
+        // warm-navy (sub2api / Marzban-style) so cards visibly float above
+        // the page in dark mode. 800–950 retuned 2026-05-21:
+        //   800 #232a36 — secondary fill (refresh / toolbar buttons)
+        //   900 #1a2030 — card surface (lighter than before #1c1917)
+        //   950 #0e1320 — page background (deeper warm navy, was #0c0a09)
+        // Borders use 700 (#363f4f) so `dark:border-surface-700` reads as a
+        // visible hairline against both 900 cards and 800 fills.
         surface: {
           0: '#ffffff',
           50: '#fafaf9',
@@ -59,10 +65,10 @@ export default {
           400: '#a8a29e',
           500: '#78716c',
           600: '#57534e',
-          700: '#44403c',
-          800: '#292524',
-          900: '#1c1917',
-          950: '#0c0a09'
+          700: '#363f4f',
+          800: '#232a36',
+          900: '#1a2030',
+          950: '#0e1320'
         }
       },
       fontFamily: {
@@ -181,7 +187,7 @@ export default {
         'skeleton-shimmer':
           'linear-gradient(90deg, rgba(231,229,228,0) 0%, rgba(231,229,228,0.6) 50%, rgba(231,229,228,0) 100%)',
         'skeleton-shimmer-dark':
-          'linear-gradient(90deg, rgba(41,37,36,0) 0%, rgba(41,37,36,0.7) 50%, rgba(41,37,36,0) 100%)'
+          'linear-gradient(90deg, rgba(54,63,79,0) 0%, rgba(54,63,79,0.8) 50%, rgba(54,63,79,0) 100%)'
       },
       // Page max-width — matches AdminLayout container.
       maxWidth: {

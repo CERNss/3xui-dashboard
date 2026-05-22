@@ -23,7 +23,7 @@ async function mountStatus() {
   await router.push('/admin/status')
   await router.isReady()
   const w = mount(Status, {
-    global: { plugins: [router], mocks: { $t: (k: string) => k } },
+    global: { plugins: [router] },
     attachTo: document.body,
   })
   await flushPromises()

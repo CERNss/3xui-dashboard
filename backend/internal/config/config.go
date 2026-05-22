@@ -229,7 +229,7 @@ func Load(envFile string) (*Config, error) {
 	v.SetDefault("OIDC_SCOPES", "openid,profile,email")
 	v.SetDefault("SMTP_PORT", 587)
 	v.SetDefault("SMTP_USE_TLS", true)
-	v.SetDefault("PUBLIC_REGISTRATION", false)
+	v.SetDefault("PUBLIC_REGISTRATION", true)
 	v.SetDefault("EMAIL_DOMAIN_ALLOWLIST", "")
 	v.SetDefault("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
 	v.SetDefault("STRIPE_CURRENCY", "usd")
