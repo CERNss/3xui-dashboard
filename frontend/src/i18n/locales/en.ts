@@ -882,8 +882,6 @@ export default {
     switchTo: 'Switch to {language}',
   },
   auth: {
-    adminLoginSubtitle: 'Sign in to manage nodes, users, and subscriptions.',
-    adminLoginTitle: 'Admin sign-in',
     codeFailedToSend: 'Failed to send verification code',
     codeMustBe6: 'Enter the 6-digit code you received',
     codePlaceholder: '6 digits',
@@ -928,7 +926,6 @@ export default {
     signInSubtitle: 'Sign in to your account to continue',
     signInWith: 'Sign in with {name}',
     submit: 'Continue',
-    toPortal: 'Go to portal →',
     username: 'Username',
     verificationCode: 'Email verification code',
     welcomeBack: 'Welcome back',

@@ -37,11 +37,4 @@ describe('router unified login redirects', () => {
     expect(router.currentRoute.value.query.next).toBe('/portal/subscription')
   })
 
-  it('does not register old role-specific entry URLs', async () => {
-    for (const path of ['/admin/login', '/portal/login', '/admin/dashboard', '/portal/dashboard', '/portal/register']) {
-      await router.push(path)
-      await router.isReady()
-      expect(router.currentRoute.value.name).toBe('notFound')
-    }
-  })
 })

@@ -92,7 +92,7 @@ describe('admin/Nodes.vue smoke', () => {
     await addBtn!.trigger('click')
     await flushPromises()
     // Modal header
-    expect(w.text()).toContain('填好面板地址和这个面板的 API 密钥后，dashboard 会自动探测')
+    expect(w.text()).toContain('填好面板地址和这个面板的 API 密钥后，控制台会自动探测')
   })
 
   it('opens an edit modal with the selected node and saves through update', async () => {

@@ -90,7 +90,7 @@ describe('admin/Overview.vue', () => {
     // nav.status / nav.stats (same string), so we look for both
     // tab labels but only the status subtitle.
     expect(w.text()).toContain('系统状态')
-    expect(w.text()).toContain('fleet 总览')
+    expect(w.text()).toContain('集群总览')
     // Stats panel must NOT have fetched (lazy mount).
     expect(apiStubs.statsGet).not.toHaveBeenCalled()
     expect(apiStubs.nodesList).toHaveBeenCalledTimes(1)

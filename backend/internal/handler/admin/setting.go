@@ -101,9 +101,9 @@ func firstNonEmpty(values ...string) string {
 
 const (
 	defaultBrandTitle       = "3xui Central"
-	defaultBrandSubtitle    = "central panel"
-	defaultBrandDescription = "Multi-node 3x-ui · Fleet aggregation · Traffic accounting · Subscription export"
-	defaultBrandFooter      = "© 2026 3xui Central · Self-hosted multi-node control panel"
+	defaultBrandSubtitle    = "中央面板"
+	defaultBrandDescription = "多节点 3x-ui · 集群聚合 · 流量分账 · 订阅导出"
+	defaultBrandFooter      = "© 2026 3xui Central · 自托管多节点控制面板"
 )
 
 func validateBrandText(key, value string) error {

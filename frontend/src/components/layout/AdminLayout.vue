@@ -194,11 +194,16 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
       </div>
 
       <!-- Nav -->
-      <nav class="flex-1 space-y-6 text-sm">
-        <div v-for="(section, sIdx) in sections" :key="sIdx" class="space-y-1">
+      <nav class="flex-1 pt-1 text-sm">
+        <div
+          v-for="(section, sIdx) in sections"
+          :key="sIdx"
+          :class="sIdx === 0 ? '' : 'mt-6'"
+          class="space-y-1 border-t border-surface-200/80 pt-3.5 dark:border-surface-700/70"
+        >
           <div
             :class="sidebarCollapsed ? 'md:hidden' : ''"
-            class="px-3 pb-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-surface-400 dark:text-surface-500"
+            class="px-3 pb-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-surface-500 dark:text-surface-400"
           >
             {{ section.title }}
           </div>
@@ -229,15 +234,13 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
         </div>
       </nav>
 
-      <LocaleSwitcher class="mt-3" variant="sidebar" :collapsed="sidebarCollapsed" />
-
       <!-- Theme toggle — Sub2API pattern: labeled sidebar item, not a tiny icon button. -->
       <button
         type="button"
         :title="sidebarCollapsed ? (theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark')) : undefined"
         :aria-label="theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark')"
         :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2' : 'gap-3 px-3'"
-        class="group mt-1 flex w-full items-center rounded-xl py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+        class="group mt-3 flex w-full items-center rounded-xl py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
         @click="theme.toggle()"
       >
         <!-- Show the icon for the mode you'd switch TO (Sub2API convention). -->
@@ -279,16 +282,19 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 
     <main class="flex flex-1 flex-col overflow-y-auto">
       <header class="hidden h-16 shrink-0 items-center justify-end border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-800 dark:bg-surface-900 md:flex lg:px-8">
-        <AccountMenu
-          :name="accountName"
-          :subtitle="$t('account.adminSubtitle')"
-          :role-label="$t('account.adminRole')"
-          :avatar-text="accountName"
-          :open-label="$t('account.openMenu')"
-          :logout-label="$t('nav.logout')"
-          :items="accountMenuItems"
-          @logout="logout"
-        />
+        <div class="flex items-center gap-2">
+          <LocaleSwitcher variant="toolbar" />
+          <AccountMenu
+            :name="accountName"
+            :subtitle="$t('account.adminSubtitle')"
+            :role-label="$t('account.adminRole')"
+            :avatar-text="accountName"
+            :open-label="$t('account.openMenu')"
+            :logout-label="$t('nav.logout')"
+            :items="accountMenuItems"
+            @logout="logout"
+          />
+        </div>
       </header>
 
       <!-- Mobile top bar: hamburger + brand. md:hidden because the
@@ -305,6 +311,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
           </svg>
         </button>
         <div class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ branding.title || $t('app.title') }}</div>
+        <LocaleSwitcher variant="toolbar" />
         <AccountMenu
           :name="accountName"
           :subtitle="$t('account.adminSubtitle')"

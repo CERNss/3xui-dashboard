@@ -12,9 +12,9 @@ interface State {
 
 const defaults = {
   title: '3xui Central',
-  subtitle: 'central panel',
-  description: 'Multi-node 3x-ui · Fleet aggregation · Traffic accounting · Subscription export',
-  footer: '© 2026 3xui Central · Self-hosted multi-node control panel',
+  subtitle: '中央面板',
+  description: '多节点 3x-ui · 集群聚合 · 流量分账 · 订阅导出',
+  footer: '© 2026 3xui Central · 自托管多节点控制面板',
 }
 
 function resolveIconUrl(raw: string): string {

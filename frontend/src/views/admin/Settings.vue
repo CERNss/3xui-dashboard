@@ -730,7 +730,7 @@ onMounted(load)
               </label>
               <label class="settings-stack-field">
                 <span>{{ $t('admin.settings.branding.subtitle') }}</span>
-                <input v-model="brandDrafts[BRAND_SUBTITLE_KEY]" type="text" maxlength="120" class="settings-input" placeholder="central panel" />
+                <input v-model="brandDrafts[BRAND_SUBTITLE_KEY]" type="text" maxlength="120" class="settings-input" :placeholder="$t('brand.centralPanel')" />
               </label>
               <label class="settings-stack-field md:col-span-2">
                 <span>{{ $t('admin.settings.branding.description') }}</span>
