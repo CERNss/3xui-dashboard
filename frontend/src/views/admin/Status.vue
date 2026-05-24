@@ -110,7 +110,7 @@ function nodeStateBadgeClass(n: Node): string {
     case 'offline':
       return 'bg-red-50 text-red-700 ring-red-200 dark:bg-red-500/15 dark:text-red-200 dark:ring-red-400/30'
     case 'disabled':
-      return 'bg-surface-100 text-surface-700 ring-surface-200 dark:bg-surface-700/55 dark:text-surface-100 dark:ring-surface-500/50'
+      return 'bg-surface-100 text-surface-700 ring-surface-200 dark:bg-surface-700/45 dark:text-surface-100 dark:ring-surface-500/60'
     default:
       return 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-400/30'
   }
@@ -273,7 +273,6 @@ defineExpose({ reload })
               :key="n.id"
               :class="{
                 'bg-red-50/30 dark:bg-red-950/10': nodeStateTone(n) === 'offline',
-                'bg-surface-50/70 dark:bg-surface-800/20': nodeStateTone(n) === 'disabled',
               }"
               class="transition-colors hover:bg-surface-50/70 dark:hover:bg-surface-800/45"
             >

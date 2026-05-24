@@ -85,6 +85,20 @@ describe('admin/Nodes.vue smoke', () => {
     expect(w.text()).toContain('1.8.13')
   })
 
+  it('shows disabled nodes as disabled instead of offline', async () => {
+    apiStubs.list.mockResolvedValue([
+      makeNode({ id: 1, name: 'failed-probe', enabled: true, status: 'offline' }),
+      makeNode({ id: 2, name: 'manual-disabled', enabled: false, status: 'offline' }),
+    ])
+    const w = await mountNodes()
+    const rows = w.findAll('tbody tr')
+
+    expect(rows[0].text()).toContain('离线')
+    expect(rows[0].text()).not.toContain('已停用')
+    expect(rows[1].text()).toContain('已停用')
+    expect(rows[1].text()).not.toContain('离线')
+  })
+
   it('opens the add-node modal when "添加节点" clicked', async () => {
     const w = await mountNodes()
     const addBtn = w.findAll('button').find((b) => b.text().includes('添加节点'))

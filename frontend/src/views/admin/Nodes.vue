@@ -152,11 +152,46 @@ async function submit() {
   }
 }
 
-function nodeStatusText(status: string | undefined | null): string {
-  if (status === 'online' || status === 'offline' || status === 'unknown') {
-    return t(`admin.nodes.status.${status}`)
+type NodeDisplayStatus = 'online' | 'offline' | 'unknown' | 'disabled'
+
+function nodeDisplayStatus(n: Node): NodeDisplayStatus {
+  if (!n.enabled) return 'disabled'
+  if (n.status === 'online' || n.status === 'offline' || n.status === 'unknown') {
+    return n.status
   }
-  return status || '—'
+  return 'unknown'
+}
+
+function nodeStatusText(n: Node): string {
+  const status = nodeDisplayStatus(n)
+  if (status === 'disabled') return t('admin.status.nodeState.disabled')
+  return t(`admin.nodes.status.${status}`)
+}
+
+function nodeStatusBadgeClass(n: Node): string {
+  switch (nodeDisplayStatus(n)) {
+    case 'online':
+      return 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800'
+    case 'offline':
+      return 'bg-red-50 text-red-600 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800'
+    case 'disabled':
+      return 'bg-surface-100 text-surface-600 ring-surface-200 dark:bg-surface-700/55 dark:text-surface-100 dark:ring-surface-500/50'
+    default:
+      return 'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700'
+  }
+}
+
+function nodeStatusDotClass(n: Node): string {
+  switch (nodeDisplayStatus(n)) {
+    case 'online':
+      return 'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]'
+    case 'offline':
+      return 'bg-red-500'
+    case 'disabled':
+      return 'bg-surface-500 dark:bg-surface-300'
+    default:
+      return 'bg-surface-400'
+  }
 }
 
 function normalizedBasePath(basePath: string | undefined | null): string {
@@ -222,7 +257,6 @@ onMounted(reload)
         <article
           v-for="n in nodes"
           :key="n.id"
-          :class="n.enabled ? '' : 'opacity-60'"
           class="rounded-2xl border border-surface-100 bg-surface-0 p-4 shadow-card dark:border-surface-800 dark:bg-surface-900"
         >
           <div class="flex items-start justify-between gap-3">
@@ -232,18 +266,10 @@ onMounted(reload)
             </div>
             <span
               class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset"
-              :class="{
-                'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800': n.status === 'online',
-                'bg-red-50 text-red-600 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800': n.status === 'offline',
-                'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700': n.status === 'unknown',
-              }"
+              :class="nodeStatusBadgeClass(n)"
             >
-              <span class="h-1.5 w-1.5 rounded-full" :class="{
-                'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]': n.status === 'online',
-                'bg-red-500': n.status === 'offline',
-                'bg-surface-400': n.status === 'unknown',
-              }" />
-              {{ nodeStatusText(n.status) }}
+              <span class="h-1.5 w-1.5 rounded-full" :class="nodeStatusDotClass(n)" />
+              {{ nodeStatusText(n) }}
             </span>
           </div>
 
@@ -363,7 +389,6 @@ onMounted(reload)
             <tr
               v-for="n in nodes"
               :key="n.id"
-              :class="n.enabled ? '' : 'opacity-60'"
               class="h-[68px] transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40"
             >
               <td class="px-3 align-middle font-mono text-xs tabular-nums text-surface-400">#{{ n.id }}</td>
@@ -392,18 +417,10 @@ onMounted(reload)
               <td class="px-3 align-middle">
                 <span
                   class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset"
-                  :class="{
-                    'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800': n.status === 'online',
-                    'bg-red-50 text-red-600 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800': n.status === 'offline',
-                    'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700': n.status === 'unknown',
-                  }"
+                  :class="nodeStatusBadgeClass(n)"
                 >
-                  <span class="h-1.5 w-1.5 rounded-full" :class="{
-                    'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]': n.status === 'online',
-                    'bg-red-500': n.status === 'offline',
-                    'bg-surface-400': n.status === 'unknown',
-                  }" />
-                  {{ nodeStatusText(n.status) }}
+                  <span class="h-1.5 w-1.5 rounded-full" :class="nodeStatusDotClass(n)" />
+                  {{ nodeStatusText(n) }}
                 </span>
               </td>
               <td class="px-3 align-middle">
