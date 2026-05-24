@@ -81,7 +81,7 @@ onMounted(reload)
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">
           {{ profile?.email ? $t('portal.dashboard.hi', { name: profile.email.split('@')[0] }) : $t('portal.dashboard.welcome') }}
         </h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('portal.dashboard.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('portal.dashboard.subtitle') }}</p>
       </div>
       <button
         class="inline-flex h-9 items-center gap-1.5 rounded-xl border border-surface-200 bg-surface-0 px-3 text-sm text-surface-600 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-700 dark:bg-surface-900 dark:hover:bg-surface-800"
@@ -207,7 +207,7 @@ onMounted(reload)
              A proper card view per breakpoint is a future-pass polish. -->
         <div v-if="clients.length > 0" class="overflow-x-auto">
         <table class="min-w-full text-sm">
-          <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+          <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
             <tr class="border-b border-surface-100 dark:border-surface-800">
               <th class="px-6 py-3 font-medium">{{ $t('portal.dashboard.column.node') }}</th>
               <th class="px-6 py-3 font-medium">{{ $t('portal.dashboard.column.inbound') }}</th>

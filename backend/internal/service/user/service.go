@@ -38,6 +38,7 @@ var (
 	ErrDomainNotAllowed   = errors.New("user: email domain not allowed")
 	ErrNotImplemented     = errors.New("user: not implemented in this build")
 	ErrOIDCEmailRequired  = errors.New("oidc: email claim is required")
+	ErrOIDCEmailMismatch  = errors.New("oidc: email does not match current account")
 	ErrOIDCPendingInvalid = errors.New("oidc: pending decision invalid or expired")
 	ErrOIDCActionInvalid  = errors.New("oidc: invalid account decision")
 )
@@ -155,6 +156,26 @@ type LoginInput struct {
 	Password string `json:"password"`
 }
 
+// LoginMethods describes the sign-in credentials visible on the
+// user's profile page.
+type LoginMethods struct {
+	Email LoginMethodEmail `json:"email"`
+	OIDC  LoginMethodOIDC  `json:"oidc"`
+}
+
+type LoginMethodEmail struct {
+	Bound    bool   `json:"bound"`
+	Email    string `json:"email,omitempty"`
+	Verified bool   `json:"verified"`
+}
+
+type LoginMethodOIDC struct {
+	Enabled bool   `json:"enabled"`
+	Bound   bool   `json:"bound"`
+	Name    string `json:"name,omitempty"`
+	Icon    string `json:"icon,omitempty"`
+}
+
 // Login verifies the credentials and returns the user row. Caller
 // (handler) issues the JWT.
 func (s *Service) Login(ctx context.Context, in LoginInput) (*model.User, error) {
@@ -228,6 +249,39 @@ func (s *Service) BindEmail(ctx context.Context, userID int64, email string) err
 	})
 }
 
+// LoginMethods returns the current user's visible login credentials.
+func (s *Service) LoginMethods(ctx context.Context, userID int64) (*LoginMethods, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, ErrUserNotFound
+	}
+	out := &LoginMethods{
+		Email: LoginMethodEmail{
+			Bound:    u.Email != nil && *u.Email != "",
+			Verified: u.EmailVerified,
+		},
+		OIDC: LoginMethodOIDC{
+			Bound: u.OIDCSubject != nil && *u.OIDCSubject != "",
+		},
+	}
+	if u.Email != nil {
+		out.Email.Email = *u.Email
+	}
+	oidc, err := s.effectiveOIDC(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if oidc.Enabled() {
+		out.OIDC.Enabled = true
+		out.OIDC.Name = OIDCDisplayName(oidc)
+		out.OIDC.Icon = strings.TrimSpace(oidc.IconURL)
+	}
+	return out, nil
+}
+
 // NOTE on email_verified: with SMTP disabled (v1) we can't actually
 // verify, so we leave email_verified=false rather than claiming
 // verified-without-checking. When SMTP support lands, this flow will
@@ -279,7 +333,31 @@ func (s *Service) OIDCStart(ctx context.Context, redirectAfter string) (string, 
 	if !oidc.Enabled() {
 		return "", ErrNotImplemented
 	}
-	return s.oidcStartImpl(ctx, oidc, redirectAfter)
+	return s.oidcStartImpl(ctx, oidc, redirectAfter, 0)
+}
+
+// OIDCLinkStart starts an OIDC authorization flow for a user who is
+// already signed in. The callback links the verified provider identity
+// to that same user instead of creating or resolving another account.
+func (s *Service) OIDCLinkStart(ctx context.Context, userID int64, redirectAfter string) (string, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if u == nil {
+		return "", ErrUserNotFound
+	}
+	if u.Status == model.UserStatusSuspended {
+		return "", ErrUserSuspended
+	}
+	oidc, err := s.effectiveOIDC(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !oidc.Enabled() {
+		return "", ErrNotImplemented
+	}
+	return s.oidcStartImpl(ctx, oidc, redirectAfter, userID)
 }
 
 // OIDCCallback exchanges the IDP-returned code for tokens, verifies

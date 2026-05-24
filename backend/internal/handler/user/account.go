@@ -26,8 +26,10 @@ func NewAccountHandler(users *usersvc.Service, repo *repository.UserRepo) *Accou
 // RegisterRoutes mounts the account endpoints under rg (RequireUser).
 func (h *AccountHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/profile", h.Profile)
+	rg.GET("/login-methods", h.LoginMethods)
 	rg.POST("/change-password", h.ChangePassword)
 	rg.POST("/bind-email", h.BindEmail)
+	rg.POST("/oidc/link/start", h.OIDCLinkStart)
 	rg.POST("/rotate-sub-id", h.RotateSubID)
 }
 
@@ -47,6 +49,25 @@ func (h *AccountHandler) Profile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, u)
+}
+
+// LoginMethods returns the authenticated user's linked sign-in methods.
+func (h *AccountHandler) LoginMethods(c *gin.Context) {
+	userID, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	methods, err := h.users.LoginMethods(c.Request.Context(), userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, usersvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, methods)
 }
 
 type changePasswordRequest struct {
@@ -108,6 +129,33 @@ func (h *AccountHandler) BindEmail(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// OIDCLinkStart starts provider binding for the authenticated user.
+func (h *AccountHandler) OIDCLinkStart(c *gin.Context) {
+	userID, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		RedirectAfter string `json:"redirect_after"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	authURL, err := h.users.OIDCLinkStart(c.Request.Context(), userID, req.RedirectAfter)
+	if err != nil {
+		switch {
+		case errors.Is(err, usersvc.ErrNotImplemented):
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
+		case errors.Is(err, usersvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, usersvc.ErrUserSuspended):
+			c.JSON(http.StatusForbidden, gin.H{"error": "account suspended"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"authorize_url": authURL})
 }
 
 // RotateSubID rotates the authenticated user's sub_id. The old

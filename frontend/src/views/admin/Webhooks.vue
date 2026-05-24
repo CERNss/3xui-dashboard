@@ -15,6 +15,10 @@ import Skeleton from '@/components/common/Skeleton.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { formatError } from '@/utils/format'
 
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), {
+  embedded: false,
+})
+
 const { t } = useI18n()
 
 const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfirm()
@@ -261,16 +265,32 @@ onMounted(reload)
 
 <template>
   <div>
-    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <header
+      :class="[
+        'flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between',
+        props.embedded ? 'mb-4' : 'mb-7',
+      ]"
+    >
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.webhooks.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.webhooks.subtitle') }}</p>
+        <component
+          :is="props.embedded ? 'h4' : 'h1'"
+          :class="[
+            'font-semibold tracking-tight text-ink-900 dark:text-surface-50',
+            props.embedded ? 'text-base' : 'text-2xl',
+          ]"
+        >
+          {{ props.embedded ? $t('admin.webhooks.embeddedTitle') : $t('admin.webhooks.title') }}
+        </component>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.webhooks.subtitle') }}</p>
       </div>
       <button
         type="button"
         class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500"
         @click="openCreate"
       >
+        <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
         {{ $t('admin.webhooks.createNew') }}
       </button>
     </header>
@@ -281,7 +301,7 @@ onMounted(reload)
 
     <div v-else-if="rows.length > 0" class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900">
       <table class="min-w-full text-sm">
-        <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+        <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
           <tr class="border-b border-surface-100 dark:border-surface-800">
             <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.name') }}</th>
             <th class="px-6 py-3 font-medium">{{ $t('admin.webhooks.column.method') }}</th>

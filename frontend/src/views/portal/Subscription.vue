@@ -147,7 +147,7 @@ watch([subURL, activeFormat], regenerateQR, { immediate: true })
   <div>
     <header class="mb-7">
       <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('portal.subscription.title') }}</h1>
-      <p class="mt-1.5 text-sm text-surface-500">{{ $t('portal.subscription.subtitle') }}</p>
+      <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('portal.subscription.subtitle') }}</p>
     </header>
 
     <p v-if="error" class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300">

@@ -10,10 +10,11 @@ import { usePortalAuthStore } from '@/stores/portalAuth'
 
 // ---- Admin route tree ------------------------------------------------------
 const adminRoutes: RouteRecordRaw[] = [
-  // Legacy alias — preserve old bookmarks. Redirects to unified /login.
   {
     path: '/admin/login',
-    redirect: (to) => ({ path: '/login', query: { ...to.query, hint: 'admin' } }),
+    name: 'admin.login',
+    component: () => import('@/views/Login.vue'),
+    meta: { titleKey: 'auth.login', authRole: 'admin' },
   },
   {
     path: '/admin',
@@ -73,7 +74,7 @@ const adminRoutes: RouteRecordRaw[] = [
       {
         path: 'webhooks',
         name: 'admin.webhooks',
-        component: () => import('@/views/admin/Webhooks.vue'),
+        redirect: { name: 'admin.settings', query: { tab: 'notifications' } },
         meta: { requiresAdmin: true, titleKey: 'nav.webhooks' },
       },
       {
@@ -94,16 +95,17 @@ const adminRoutes: RouteRecordRaw[] = [
 
 // ---- Portal route tree -----------------------------------------------------
 const portalRoutes: RouteRecordRaw[] = [
-  // Legacy alias — preserve old bookmarks. Redirects to unified /login.
   {
     path: '/portal/login',
-    redirect: (to) => ({ path: '/login', query: { ...to.query, hint: 'portal' } }),
+    name: 'portal.login',
+    component: () => import('@/views/Login.vue'),
+    meta: { titleKey: 'auth.login', authRole: 'portal' },
   },
   {
     path: '/portal/register',
     redirect: (to) => ({
-      path: '/login',
-      query: { ...to.query, mode: 'register', hint: 'portal' },
+      name: 'portal.login',
+      query: { ...to.query, mode: 'register' },
     }),
   },
   {
@@ -158,8 +160,7 @@ const portalRoutes: RouteRecordRaw[] = [
 ]
 
 const routes: RouteRecordRaw[] = [
-  // Unified login — single entrypoint for both admin and portal users.
-  // Picks which auth endpoint to hit based on credentials + optional ?hint=.
+  // Unified login for neutral entry. Role-specific aliases keep admin/user URLs clean.
   {
     path: '/login',
     name: 'login',
@@ -191,17 +192,50 @@ export const router = createRouter({
   routes,
 })
 
+type AuthHint = 'admin' | 'portal'
+
+const defaultAuthEntryPaths = {
+  admin: new Set(['/admin', '/admin/', '/admin/status', '/admin/dashboard']),
+  portal: new Set(['/portal', '/portal/', '/portal/subscription']),
+}
+
+const loginRouteByHint: Record<AuthHint, 'admin.login' | 'portal.login'> = {
+  admin: 'admin.login',
+  portal: 'portal.login',
+}
+
+function isAuthHint(value: unknown): value is AuthHint {
+  return value === 'admin' || value === 'portal'
+}
+
+function loginLocationFor(to: { path: string; fullPath: string }, hint: AuthHint) {
+  if (defaultAuthEntryPaths[hint].has(to.path)) {
+    return { name: loginRouteByHint[hint] }
+  }
+
+  return { name: loginRouteByHint[hint], query: { next: to.fullPath } }
+}
+
 const authGuard: NavigationGuardWithThis<undefined> = (to) => {
+  if (to.name === 'login' && isAuthHint(to.query.hint)) {
+    const next = typeof to.query.next === 'string' ? to.query.next : null
+    const query = next && !defaultAuthEntryPaths[to.query.hint].has(next)
+      ? { next }
+      : undefined
+
+    return { name: loginRouteByHint[to.query.hint], query }
+  }
+
   if (to.meta.requiresAdmin) {
     const adminAuth = useAdminAuthStore()
     if (!adminAuth.isAuthenticated) {
-      return { name: 'login', query: { next: to.fullPath, hint: 'admin' } }
+      return loginLocationFor(to, 'admin')
     }
   }
   if (to.meta.requiresUser) {
     const portalAuth = usePortalAuthStore()
     if (!portalAuth.isAuthenticated) {
-      return { name: 'login', query: { next: to.fullPath, hint: 'portal' } }
+      return loginLocationFor(to, 'portal')
     }
   }
   return true

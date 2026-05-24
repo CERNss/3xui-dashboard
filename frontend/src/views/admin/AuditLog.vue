@@ -15,6 +15,37 @@ const error = ref<string | null>(null)
 
 const filters = ref<ListAuditParams>({ limit: 100 })
 
+// Client-side sort: audit log is paged at limit=100 server-side, so sorting
+// in-memory is cheap and avoids a server round-trip. Default time-desc matches
+// the API's natural ordering (newest first).
+type SortKey = 'created_at' | 'admin_username' | 'method' | 'status_code'
+const sortKey = ref<SortKey>('created_at')
+const sortDir = ref<'asc' | 'desc'>('desc')
+
+const sortedRows = computed(() => {
+  const list = [...rows.value]
+  const key = sortKey.value
+  const sign = sortDir.value === 'asc' ? 1 : -1
+  return list.sort((a, b) => {
+    const av = a[key] as string | number | undefined
+    const bv = b[key] as string | number | undefined
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sign
+    return String(av).localeCompare(String(bv)) * sign
+  })
+})
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'desc'
+  }
+}
+
 async function reload() {
   loading.value = true
   error.value = null
@@ -67,27 +98,31 @@ onMounted(reload)
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.auditLog.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.auditLog.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.auditLog.subtitle') }}</p>
       </div>
     </header>
 
-    <!-- Filters -->
-    <div class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
-      <input
-        v-model="filters.username"
-        type="text"
-        :placeholder="$t('admin.auditLog.filterUsername')"
-        class="rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"
-      />
+    <!-- Filters — flex toolbar so inputs flow to natural widths and the
+         refresh stays a compact icon button (don't let a grid stretch it). -->
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <div class="relative w-full sm:w-64">
+        <svg class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+        <input
+          v-model="filters.username"
+          type="text"
+          :placeholder="$t('admin.auditLog.filterUsername')"
+          class="h-9 w-full rounded-lg border border-surface-200 bg-surface-0 pl-9 pr-3 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900"
+        />
+      </div>
       <input
         v-model="filters.resource"
         type="text"
         :placeholder="$t('admin.auditLog.filterResource')"
-        class="rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"
+        class="h-9 w-full rounded-lg border border-surface-200 bg-surface-0 px-3 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900 sm:w-64"
       />
       <select
         v-model="filters.method"
-        class="rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"
+        class="h-9 w-full rounded-lg border border-surface-200 bg-surface-0 px-3 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900 sm:w-40"
       >
         <option value="">{{ $t('admin.auditLog.anyMethod') }}</option>
         <option value="POST">POST</option>
@@ -97,10 +132,17 @@ onMounted(reload)
       </select>
       <button
         type="button"
-        class="rounded-lg border border-surface-200 px-3 py-2 text-sm font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800"
+        :title="$t('admin.auditLog.refresh')"
+        :aria-label="$t('admin.auditLog.refresh')"
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-200 bg-surface-0 text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
         @click="reload"
       >
-        {{ $t('admin.users.reload') }}
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+          <path d="M21 3v5h-5" />
+          <path d="M3 21v-5h5" />
+        </svg>
       </button>
     </div>
 
@@ -110,19 +152,51 @@ onMounted(reload)
 
     <div v-else-if="rows.length > 0" class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900">
       <table class="min-w-full text-sm">
-        <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+        <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
           <tr class="border-b border-surface-100 dark:border-surface-800">
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.time') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.admin') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.method') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.path') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.target') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.status') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.auditLog.column.ip') }}</th>
+            <th
+              class="cursor-pointer select-none px-6 py-3 transition-colors hover:text-ink-900 dark:hover:text-surface-50"
+              @click="toggleSort('created_at')"
+            >
+              <span class="inline-flex items-center gap-1">
+                {{ $t('admin.auditLog.column.time') }}
+                <svg v-if="sortKey === 'created_at'" class="h-3 w-3 transition-transform" :class="sortDir === 'asc' ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+              </span>
+            </th>
+            <th
+              class="cursor-pointer select-none px-6 py-3 transition-colors hover:text-ink-900 dark:hover:text-surface-50"
+              @click="toggleSort('admin_username')"
+            >
+              <span class="inline-flex items-center gap-1">
+                {{ $t('admin.auditLog.column.admin') }}
+                <svg v-if="sortKey === 'admin_username'" class="h-3 w-3 transition-transform" :class="sortDir === 'asc' ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+              </span>
+            </th>
+            <th
+              class="cursor-pointer select-none px-6 py-3 transition-colors hover:text-ink-900 dark:hover:text-surface-50"
+              @click="toggleSort('method')"
+            >
+              <span class="inline-flex items-center gap-1">
+                {{ $t('admin.auditLog.column.method') }}
+                <svg v-if="sortKey === 'method'" class="h-3 w-3 transition-transform" :class="sortDir === 'asc' ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+              </span>
+            </th>
+            <th class="px-6 py-3">{{ $t('admin.auditLog.column.path') }}</th>
+            <th class="px-6 py-3">{{ $t('admin.auditLog.column.target') }}</th>
+            <th
+              class="cursor-pointer select-none px-6 py-3 transition-colors hover:text-ink-900 dark:hover:text-surface-50"
+              @click="toggleSort('status_code')"
+            >
+              <span class="inline-flex items-center gap-1">
+                {{ $t('admin.auditLog.column.status') }}
+                <svg v-if="sortKey === 'status_code'" class="h-3 w-3 transition-transform" :class="sortDir === 'asc' ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+              </span>
+            </th>
+            <th class="px-6 py-3">{{ $t('admin.auditLog.column.ip') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
-          <tr v-for="r in rows" :key="r.id" class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
+          <tr v-for="r in sortedRows" :key="r.id" class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
             <td class="px-6 py-3.5 font-mono text-xs text-surface-500 whitespace-nowrap">{{ new Date(r.created_at).toLocaleString() }}</td>
             <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ r.admin_username || $t('admin.auditLog.unknownAdmin') }}</td>
             <td class="px-6 py-3.5">

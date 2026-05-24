@@ -29,9 +29,14 @@ const nodes = ref<Node[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const query = ref('')
-const protocolFilter = ref<'all' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard' | 'hysteria'>('all')
+const protocolOptions = ['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria'] as const
+type ProtocolFilter = typeof protocolOptions[number]
+
+const protocolFilters = ref<ProtocolFilter[]>([...protocolOptions])
+const protocolFilterOpen = ref(false)
 const expanded = ref<Set<string>>(new Set()) // "nodeID|tag"
 const snapshots = ref<Record<number, NodeSnapshot>>({}) // by node id
+const togglingInbound = ref<string | null>(null)
 
 // Inbound add/edit modal — full 3x-ui-grade editor lives in
 // InboundEditorModal.vue. Parent only tracks the open/mode/context.
@@ -177,11 +182,19 @@ async function toggleExpand(f: FleetInbound) {
 // ---- inbound actions -------------------------------------------------------
 
 async function toggleEnable(f: FleetInbound) {
+  const key = rowKey(f)
+  if (togglingInbound.value) return
+  const prev = f.inbound.enable
+  const next = !prev
+  togglingInbound.value = key
+  f.inbound.enable = next
   try {
-    await inboundsApi.setEnable(f.node_id, f.inbound.tag, !f.inbound.enable)
-    await reload()
+    await inboundsApi.setEnable(f.node_id, f.inbound.tag, next)
   } catch (e: any) {
+    f.inbound.enable = prev
     flash('err', formatError(e, t('admin.inbounds.switchFailed')))
+  } finally {
+    togglingInbound.value = null
   }
 }
 
@@ -554,9 +567,16 @@ async function copyQRUrl() {
 
 const filtered = computed<FleetInbound[]>(() => {
   const q = query.value.trim().toLowerCase()
+  const selectedProtocols = new Set(protocolFilters.value)
   return data.value.inbounds.filter((f) => {
     const i = f.inbound
-    if (protocolFilter.value !== 'all' && i.protocol.toLowerCase() !== protocolFilter.value) return false
+    if (selectedProtocols.size === 0) return false
+    const protocolKey = protocolFilterKey(i.protocol)
+    if (protocolKey) {
+      if (!selectedProtocols.has(protocolKey)) return false
+    } else if (selectedProtocols.size !== protocolOptions.length) {
+      return false
+    }
     if (!q) return true
     return (
       f.node_name.toLowerCase().includes(q) ||
@@ -567,6 +587,39 @@ const filtered = computed<FleetInbound[]>(() => {
     )
   })
 })
+
+const protocolFilterLabel = computed(() => {
+  if (protocolFilters.value.length === 0) return t('admin.inbounds.filter.protocolCount', { n: 0 })
+  if (protocolFilters.value.length === 1) return protocolFilters.value[0]
+  return t('admin.inbounds.filter.protocolCount', { n: protocolFilters.value.length })
+})
+
+function protocolFilterKey(protocol: string): ProtocolFilter | null {
+  const normalized = protocol.toLowerCase()
+  if (normalized === 'hysteria2') return 'hysteria'
+  return (protocolOptions as readonly string[]).includes(normalized)
+    ? normalized as ProtocolFilter
+    : null
+}
+
+function toggleProtocolFilter(protocol: ProtocolFilter) {
+  const next = new Set(protocolFilters.value)
+  if (next.has(protocol)) next.delete(protocol)
+  else next.add(protocol)
+  protocolFilters.value = protocolOptions.filter((p) => next.has(p))
+}
+
+function removeProtocolFilter(protocol: ProtocolFilter) {
+  protocolFilters.value = protocolFilters.value.filter((p) => p !== protocol)
+}
+
+function selectAllProtocolFilters() {
+  protocolFilters.value = [...protocolOptions]
+}
+
+function clearProtocolFilters() {
+  protocolFilters.value = []
+}
 
 const stats = computed(() => {
   const fleet = data.value.inbounds.map((f) => f.inbound)
@@ -579,22 +632,25 @@ const stats = computed(() => {
   return { up, down, allTime, inboundCount, enabledCount, clientCount }
 })
 
-function protoColor(p: string): string {
+// Inline text colour for the protocol in the single-line "vless · tcp · tls"
+// cell. We dropped the chip background to lower row density, but keep one
+// hue per protocol so the eye can still scan the column at a glance.
+function protoTextColor(p: string): string {
   return ({
-    vless: 'bg-accent-100 text-accent-800 ring-accent-200',
-    vmess: 'bg-primary-100 text-primary-800 ring-primary-200',
-    trojan: 'bg-amber-100 text-amber-800 ring-amber-200',
-    shadowsocks: 'bg-pink-100 text-pink-800 ring-pink-200',
-    wireguard: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-    hysteria: 'bg-sky-100 text-sky-800 ring-sky-200',
-    hysteria2: 'bg-sky-100 text-sky-800 ring-sky-200',
-  } as Record<string, string>)[p.toLowerCase()] ?? 'bg-surface-200 text-surface-800 ring-surface-300'
+    vless: 'text-accent-700 dark:text-accent-300',
+    vmess: 'text-primary-700 dark:text-primary-300',
+    trojan: 'text-amber-700 dark:text-amber-300',
+    shadowsocks: 'text-pink-700 dark:text-pink-300',
+    wireguard: 'text-emerald-700 dark:text-emerald-300',
+    hysteria: 'text-sky-700 dark:text-sky-300',
+    hysteria2: 'text-sky-700 dark:text-sky-300',
+  } as Record<string, string>)[p.toLowerCase()] ?? 'text-surface-700 dark:text-surface-300'
 }
 
-function securityColor(s: string): string {
-  if (s === 'reality') return 'bg-violet-100 text-violet-800 ring-violet-200'
-  if (s === 'tls' || s === 'xtls') return 'bg-primary-100 text-primary-700 ring-primary-200'
-  return 'bg-surface-100 text-surface-500 ring-surface-200'
+function securityTextColor(s: string): string {
+  if (s === 'reality') return 'text-violet-700 dark:text-violet-300'
+  if (s === 'tls' || s === 'xtls') return 'text-primary-700 dark:text-primary-300'
+  return 'text-surface-500 dark:text-surface-400'
 }
 
 // Row-level breakdown: how many clients per inbound are online vs offline.
@@ -628,12 +684,12 @@ onMounted(reload)
 </script>
 
 <template>
-  <div>
+  <div @click="protocolFilterOpen = false">
     <!-- Header -->
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.inbounds.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.inbounds.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.inbounds.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -657,68 +713,39 @@ onMounted(reload)
       </div>
     </header>
 
-    <!-- KPI strip — flat hairline cards. Single accent only on the leading "Up" icon. -->
-    <section class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="flex items-center gap-1.5 text-2xs font-medium text-surface-500">
-          <svg class="h-3 w-3 text-accent-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-          {{ $t('admin.inbounds.kpi.up') }}
+    <!-- KPI strip — 4 cards, no hover state. Sent/Received merged; "All-time"
+         dropped (semantically overlaps with "Total used" until traffic resets ship). -->
+    <section class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div class="rounded-xl border border-surface-100 bg-surface-0 px-4 py-3 dark:border-surface-800 dark:bg-surface-900">
+        <div class="text-2xs font-medium uppercase tracking-wider text-surface-500">{{ $t('admin.inbounds.kpi.sentReceived') }}</div>
+        <div class="mt-1.5 flex items-baseline gap-1.5 text-base font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">
+          <span class="inline-flex items-center gap-1">
+            <svg class="h-3 w-3 text-accent-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+            {{ formatBytes(stats.up) }}
+          </span>
+          <span class="text-surface-300 dark:text-surface-700">/</span>
+          <span class="inline-flex items-center gap-1">
+            <svg class="h-3 w-3 text-primary-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
+            {{ formatBytes(stats.down) }}
+          </span>
         </div>
-        <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.up) }}</div>
       </div>
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="flex items-center gap-1.5 text-2xs font-medium text-surface-500">
-          <svg class="h-3 w-3 text-primary-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
-          {{ $t('admin.inbounds.kpi.down') }}
-        </div>
-        <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.down) }}</div>
+      <div class="rounded-xl border border-surface-100 bg-surface-0 px-4 py-3 dark:border-surface-800 dark:bg-surface-900">
+        <div class="text-2xs font-medium uppercase tracking-wider text-surface-500">{{ $t('admin.inbounds.kpi.totalUsed') }}</div>
+        <div class="mt-1.5 text-base font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.up + stats.down) }}</div>
       </div>
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.totalUsed') }}</div>
-        <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.up + stats.down) }}</div>
-      </div>
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.accumulated') }}</div>
-        <div class="mt-2 text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(stats.allTime) }}</div>
-      </div>
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.inbounds') }}</div>
-        <div class="mt-2 flex items-baseline gap-1.5">
-          <span class="text-lg font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.inboundCount }}</span>
+      <div class="rounded-xl border border-surface-100 bg-surface-0 px-4 py-3 dark:border-surface-800 dark:bg-surface-900">
+        <div class="text-2xs font-medium uppercase tracking-wider text-surface-500">{{ $t('admin.inbounds.kpi.inbounds') }}</div>
+        <div class="mt-1.5 flex items-baseline gap-1.5">
+          <span class="text-base font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.inboundCount }}</span>
           <span class="text-2xs text-surface-400">{{ stats.enabledCount }} {{ $t('admin.inbounds.kpi.enabledSuffix') }}</span>
         </div>
       </div>
-      <div class="rounded-2xl border border-surface-100 bg-surface-0 p-4 transition-colors hover:border-surface-200 dark:border-surface-800 dark:bg-surface-900 dark:hover:border-surface-700">
-        <div class="text-2xs font-medium text-surface-500">{{ $t('admin.inbounds.kpi.clients') }}</div>
-        <div class="mt-2 text-lg font-semibold tracking-tight text-accent-600 tabular-nums dark:text-accent-400">{{ stats.clientCount }}</div>
+      <div class="rounded-xl border border-surface-100 bg-surface-0 px-4 py-3 dark:border-surface-800 dark:bg-surface-900">
+        <div class="text-2xs font-medium uppercase tracking-wider text-surface-500">{{ $t('admin.inbounds.kpi.clients') }}</div>
+        <div class="mt-1.5 text-base font-semibold tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.clientCount }}</div>
       </div>
     </section>
-
-    <!-- Toolbar -->
-    <div class="mb-4 flex flex-wrap items-center gap-3">
-      <div class="relative">
-        <svg class="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-        <input
-          v-model="query"
-          type="text"
-          :placeholder="$t('admin.inbounds.searchPlaceholder')"
-          class="h-9 w-80 rounded-xl border border-surface-200 bg-surface-0 pl-9 pr-3 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
-        />
-      </div>
-      <div class="flex h-9 items-center gap-0.5 rounded-xl border border-surface-200 bg-surface-0 p-1 text-xs dark:border-surface-700 dark:bg-surface-900">
-        <button
-          v-for="p in (['all','vless','vmess','trojan','shadowsocks','wireguard','hysteria'] as const)"
-          :key="p"
-          class="rounded-lg px-3 py-1 font-medium transition-all duration-150 ease-brand"
-          :class="protocolFilter === p
-            ? 'bg-ink-900 text-white shadow-card dark:bg-accent-600'
-            : 'text-surface-500 hover:bg-surface-100 hover:text-ink-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-50'"
-          @click="protocolFilter = p"
-        >
-          {{ p === 'all' ? $t('admin.inbounds.filter.all') : p }}
-        </button>
-      </div>
-    </div>
 
     <p v-if="error" class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800">{{ error }}</p>
     <div
@@ -731,172 +758,243 @@ onMounted(reload)
       </ul>
     </div>
 
-    <!-- Table -->
+    <!-- Inbound list -->
     <Skeleton v-if="loading" :rows="6" />
-    <div
+    <section
       v-else
-      class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
+      class="overflow-hidden rounded-2xl border border-surface-100 bg-surface-0 shadow-card dark:border-surface-800 dark:bg-surface-900"
     >
-      <table class="min-w-full text-sm">
-        <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
-          <tr class="border-b border-surface-100 dark:border-surface-800">
-            <th class="w-8 px-4 py-3 font-medium"></th>
-            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.node') }}</th>
-            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.remark') }}</th>
-            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.protocol') }}</th>
-            <th class="hidden"></th>
-            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.clients') }}</th>
-            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.traffic') }}</th>
-            <th class="px-4 py-3 text-right font-medium">{{ $t('admin.inbounds.column.accumulated') }}</th>
-            <th class="px-4 py-3 font-medium">{{ $t('admin.inbounds.column.expiry') }}</th>
-            <th class="px-4 py-3 text-center font-medium">{{ $t('admin.inbounds.column.enable') }}</th>
-            <th class="px-4 py-3 text-right font-medium">{{ $t('admin.users.column.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
-          <template v-for="row in filtered" :key="rowKey(row)">
-            <tr
-              class="group cursor-pointer transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40"
-              :class="!row.inbound.enable ? 'opacity-60' : ''"
-              @click="toggleExpand(row)"
+      <div class="border-b border-surface-100 bg-surface-0 px-4 py-3 dark:border-surface-800 dark:bg-surface-900">
+        <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+            <div class="relative min-w-0 flex-1 sm:max-w-md">
+              <svg class="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+              <input
+                v-model="query"
+                type="text"
+                :placeholder="$t('admin.inbounds.searchPlaceholder')"
+                class="h-9 w-full rounded-lg border border-surface-200 bg-surface-50/60 pl-9 pr-3 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:bg-surface-0 focus:outline-none focus:ring-2 focus:ring-accent-500/25 dark:border-surface-700 dark:bg-surface-950/30 dark:focus:bg-surface-950/50"
+              />
+            </div>
+            <div class="inline-flex h-9 shrink-0 items-center rounded-lg border border-surface-200 bg-surface-50/60 px-2.5 text-xs font-medium tabular-nums text-surface-500 dark:border-surface-700 dark:bg-surface-950/30 dark:text-surface-400">
+              {{ filtered.length }} / {{ data.inbounds.length }}
+            </div>
+          </div>
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              class="inline-flex h-9 min-w-40 items-center justify-between gap-3 rounded-lg border border-surface-300 bg-surface-900/70 px-3 text-sm font-medium text-surface-100 transition-colors hover:bg-surface-900 focus:outline-none focus:ring-2 focus:ring-accent-500/25 dark:border-surface-700 dark:bg-surface-950/30 dark:text-surface-200 dark:hover:bg-surface-900"
+              :aria-expanded="protocolFilterOpen"
+              @click.stop="protocolFilterOpen = !protocolFilterOpen"
             >
-              <td class="px-4 py-3.5">
-                <svg
-                  class="h-3.5 w-3.5 shrink-0 text-surface-400 transition-transform duration-200 ease-brand"
-                  :class="expanded.has(rowKey(row)) ? 'rotate-90 text-accent-600' : ''"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </td>
-              <!-- 节点 — chip + IP underneath -->
-              <td class="px-4 py-4">
-                <div class="inline-flex items-center gap-1.5 rounded-full bg-surface-100 px-2.5 py-0.5 text-xs font-medium text-surface-600 dark:bg-surface-800 dark:text-surface-300">
-                  <span class="h-1.5 w-1.5 rounded-full bg-accent-500"></span>
-                  {{ row.node_name }}
+              <span class="inline-flex min-w-0 items-center gap-2">
+                <span class="text-surface-300 dark:text-surface-400">{{ $t('admin.inbounds.filter.protocolLabel') }}</span>
+                <span class="truncate">{{ protocolFilterLabel }}</span>
+              </span>
+              <svg class="h-3.5 w-3.5 shrink-0 text-surface-400 transition-transform" :class="protocolFilterOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+
+            <div
+              v-if="protocolFilterOpen"
+              class="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-surface-300 bg-surface-900 p-2 shadow-elevated dark:border-surface-700 dark:bg-surface-950"
+              @click.stop
+            >
+              <div class="mb-2 min-h-10 rounded-lg border border-surface-700 bg-surface-800/80 p-1.5">
+                <div v-if="protocolFilters.length" class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="p in protocolFilters"
+                    :key="p"
+                    type="button"
+                    class="inline-flex h-6 items-center gap-1 rounded bg-surface-600 px-2 font-mono text-2xs text-surface-100 transition-colors hover:bg-surface-500"
+                    @click="removeProtocolFilter(p)"
+                  >
+                    <span>{{ p }}</span>
+                    <span class="text-surface-300">×</span>
+                  </button>
                 </div>
-                <div class="mt-1 font-mono text-2xs text-surface-400">node #{{ row.node_id }}</div>
-              </td>
-              <!-- 备注 / Tag / Port — three lines -->
-              <td class="px-4 py-4">
-                <div class="font-medium text-ink-900 dark:text-surface-50">{{ row.inbound.remark || '—' }}</div>
-                <div class="mt-0.5 font-mono text-2xs text-surface-400">{{ row.inbound.tag }}</div>
-                <div class="mt-1 font-mono text-2xs text-surface-500">:{{ row.inbound.port }}</div>
-              </td>
-              <!-- 协议 — protocol big, transport+security inline below -->
-              <td class="px-4 py-4">
-                <div class="flex flex-col gap-1">
-                  <span class="inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium ring-1 ring-inset" :class="protoColor(row.inbound.protocol)">
-                    <span class="h-1.5 w-1.5 rounded-full bg-current opacity-60"></span>
-                    {{ row.inbound.protocol }}
-                  </span>
-                  <div class="flex items-center gap-1">
-                    <span class="rounded-md bg-surface-100 px-1.5 py-0.5 text-2xs font-medium text-surface-600 ring-1 ring-inset ring-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:ring-surface-700">
-                      {{ parseTransport(row.inbound.streamSettings).network }}
-                    </span>
-                    <span class="rounded-md px-1.5 py-0.5 text-2xs font-medium ring-1 ring-inset" :class="securityColor(parseTransport(row.inbound.streamSettings).security)">
-                      {{ parseTransport(row.inbound.streamSettings).security }}
-                    </span>
-                  </div>
-                </div>
-              </td>
-              <!-- 端口 — collapsed into 备注 cell. Skip -->
-              <td class="hidden" />
-              <!-- 客户端 — count + online/offline breakdown -->
-              <td class="px-4 py-4">
-                <div class="text-sm font-semibold text-ink-900 tabular-nums dark:text-surface-50">{{ clientBreakdown(row).total }}</div>
-                <div class="mt-0.5 flex items-center gap-2 text-2xs text-surface-500">
-                  <span class="inline-flex items-center gap-1">
-                    <span class="h-1.5 w-1.5 rounded-full bg-accent-500"></span>
-                    {{ clientBreakdown(row).online }}
-                  </span>
-                  <span class="text-surface-300 dark:text-surface-700">·</span>
-                  <span class="inline-flex items-center gap-1">
-                    <span class="h-1.5 w-1.5 rounded-full bg-surface-300 dark:bg-surface-700"></span>
-                    {{ clientBreakdown(row).offline }}
-                  </span>
-                </div>
-              </td>
-              <!-- 流量 / 限额 — numbers + Marzban-style progress bar -->
-              <td class="px-4 py-4 tabular-nums">
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-sm font-medium text-ink-900 dark:text-surface-50">{{ formatBytes(row.inbound.up + row.inbound.down) }}</span>
-                  <span class="text-2xs text-surface-400">/ {{ formatLimit(row.inbound.total) }}</span>
-                </div>
-                <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-100 dark:bg-surface-800">
-                  <div
-                    class="h-full rounded-full transition-all duration-500 ease-brand"
-                    :class="trafficBarClass(trafficRatio(row))"
-                    :style="{ width: (trafficRatio(row) * 100).toFixed(1) + '%' }"
-                  />
-                </div>
-                <div class="mt-1 flex items-center gap-2 text-2xs text-surface-500">
-                  <span class="inline-flex items-center gap-0.5">
-                    <svg class="h-2.5 w-2.5 text-accent-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-                    {{ formatBytes(row.inbound.up) }}
-                  </span>
-                  <span class="inline-flex items-center gap-0.5">
-                    <svg class="h-2.5 w-2.5 text-primary-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
-                    {{ formatBytes(row.inbound.down) }}
-                  </span>
-                </div>
-              </td>
-              <!-- 累计 -->
-              <td class="px-4 py-4 text-right font-mono tabular-nums text-xs text-surface-500">{{ formatBytes(row.inbound.allTime) }}</td>
-              <!-- 到期 -->
-              <td class="px-4 py-4 text-xs text-surface-500">{{ formatExpiry(row.inbound.expiryTime) }}</td>
-              <!-- 启用 toggle -->
-              <td class="px-4 py-4 text-center">
                 <button
-                  class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ease-brand"
-                  :class="row.inbound.enable ? 'bg-accent-500' : 'bg-surface-200 dark:bg-surface-700'"
-                  @click.stop="toggleEnable(row)"
+                  v-else
+                  type="button"
+                  class="h-6 rounded px-2 text-left text-2xs text-surface-400 hover:text-surface-200"
+                  @click="selectAllProtocolFilters"
                 >
-                  <span
-                    class="inline-block h-4 w-4 transform rounded-full bg-white shadow-card transition-transform duration-200 ease-brand"
-                    :class="row.inbound.enable ? 'translate-x-4' : 'translate-x-0.5'"
-                  />
+                  {{ $t('admin.inbounds.filter.selectAll') }}
                 </button>
-              </td>
-              <!-- 操作 — always-visible labeled mini-buttons (Sub2API style) -->
-              <td class="px-4 py-4" @click.stop>
-                <div class="flex items-center justify-end gap-1">
-                  <button :title="$t('admin.inbounds.editInbound')" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEditInbound(row)">
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
-                    {{ $t('admin.inbounds.edit') }}
-                  </button>
-                  <button :title="$t('admin.inbounds.resetInboundTraffic')" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-300" @click="confirmResetInboundTraffic(row)">
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-                      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                      <path d="M21 3v5h-5" />
-                      <path d="M3 21v-5h5" />
-                    </svg>
-                    {{ $t('admin.inbounds.reset') }}
-                  </button>
-                  <button :title="$t('admin.inbounds.confirmDelete')" class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-2xs font-medium text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="confirmDeleteInbound(row)">
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
-                    {{ $t('admin.inbounds.delete') }}
-                  </button>
-                </div>
-              </td>
+              </div>
+              <div class="mb-1 flex items-center justify-between px-1">
+                <button type="button" class="text-2xs font-medium text-surface-300 hover:text-surface-50" @click="selectAllProtocolFilters">
+                  {{ $t('admin.inbounds.filter.selectAll') }}
+                </button>
+                <button type="button" class="text-2xs font-medium text-surface-500 hover:text-surface-200" @click="clearProtocolFilters">
+                  {{ $t('admin.inbounds.filter.clear') }}
+                </button>
+              </div>
+              <label
+                v-for="p in protocolOptions"
+                :key="p"
+                class="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-xs text-surface-200 transition-colors hover:bg-surface-800"
+              >
+                <input
+                  type="checkbox"
+                  class="h-3.5 w-3.5 rounded border-surface-500 bg-surface-800 text-accent-600 focus:ring-accent-500/25"
+                  :checked="protocolFilters.includes(p)"
+                  @change="toggleProtocolFilter(p)"
+                />
+                <span class="font-medium" :class="protoTextColor(p)">{{ p }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-surface-0 dark:bg-surface-900">
+        <table class="w-full table-fixed text-sm">
+          <colgroup>
+            <col class="w-9" />
+            <col class="w-[34%]" />
+            <col class="w-36" />
+            <col class="w-24" />
+            <col class="w-36" />
+            <col class="w-20" />
+            <col class="w-28" />
+          </colgroup>
+          <thead class="bg-surface-50/70 text-left text-2xs font-semibold uppercase tracking-caps text-surface-500 dark:bg-surface-900/70 dark:text-surface-400">
+            <tr class="border-b border-surface-100 dark:border-surface-800">
+              <th class="px-3 py-2.5 font-medium"></th>
+              <th class="px-3 py-2.5 font-medium">{{ $t('admin.inbounds.column.remark') }}</th>
+              <th class="px-3 py-2.5 text-center font-medium">{{ $t('admin.inbounds.column.protocol') }}</th>
+              <th class="px-3 py-2.5 font-medium">{{ $t('admin.inbounds.column.clients') }}</th>
+              <th class="px-3 py-2.5 font-medium">{{ $t('admin.inbounds.column.traffic') }}</th>
+              <th class="px-3 py-2.5 text-center font-medium">{{ $t('admin.inbounds.column.enable') }}</th>
+              <th class="px-3 py-2.5 text-right font-medium">{{ $t('admin.users.column.actions') }}</th>
             </tr>
+          </thead>
+          <tbody>
+            <template v-for="row in filtered" :key="rowKey(row)">
+              <tr
+                class="group cursor-pointer border-b border-surface-100/80 transition-colors duration-150 ease-brand hover:bg-surface-50/70 dark:border-surface-800/80 dark:hover:bg-surface-800/35"
+                :class="[
+                  !row.inbound.enable ? 'opacity-60' : '',
+                  expanded.has(rowKey(row)) ? 'bg-surface-50/70 dark:bg-surface-800/35' : ''
+                ]"
+                @click="toggleExpand(row)"
+              >
+                <td class="px-3 py-3">
+                  <svg
+                    class="h-3.5 w-3.5 shrink-0 text-surface-400 transition-transform duration-200 ease-brand"
+                    :class="expanded.has(rowKey(row)) ? 'rotate-90 text-accent-600' : ''"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </td>
+                <td class="px-3 py-3">
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-500"></span>
+                      <span class="truncate text-sm font-semibold text-ink-900 dark:text-surface-50">{{ row.inbound.remark || row.inbound.tag || '—' }}</span>
+                    </div>
+                    <div class="flex min-w-0 flex-wrap items-center gap-1.5 pl-3.5 text-2xs text-surface-500 dark:text-surface-400">
+                      <span class="inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-md bg-surface-50 px-1.5 py-0.5 ring-1 ring-inset ring-surface-200/80 dark:bg-surface-800/55 dark:ring-surface-700/70">
+                        <span class="shrink-0 text-surface-400">{{ $t('admin.inbounds.column.tag') }}</span>
+                        <span class="truncate font-mono text-surface-600 dark:text-surface-300">{{ row.inbound.tag }}</span>
+                      </span>
+                      <span class="inline-flex items-center gap-1 rounded-md bg-surface-50 px-1.5 py-0.5 ring-1 ring-inset ring-surface-200/80 dark:bg-surface-800/55 dark:ring-surface-700/70">
+                        <span class="text-surface-400">{{ $t('admin.inbounds.column.port') }}</span>
+                        <span class="font-mono text-surface-600 dark:text-surface-300">{{ row.inbound.port }}</span>
+                      </span>
+                      <span class="inline-flex min-w-0 max-w-[14rem] items-center gap-1 rounded-md bg-surface-50 px-1.5 py-0.5 ring-1 ring-inset ring-surface-200/80 dark:bg-surface-800/55 dark:ring-surface-700/70">
+                        <span class="shrink-0 text-surface-400">{{ $t('admin.inbounds.column.node') }}</span>
+                        <span class="truncate text-surface-600 dark:text-surface-300">{{ row.node_name }} #{{ row.node_id }}</span>
+                      </span>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-3 py-3 text-center">
+                  <div class="inline-flex max-w-full items-center justify-center gap-1.5 rounded-lg border border-surface-200/70 bg-surface-50/70 px-2.5 py-1 text-2xs dark:border-surface-700/70 dark:bg-surface-800/45">
+                    <span class="truncate font-semibold" :class="protoTextColor(row.inbound.protocol)">{{ row.inbound.protocol }}</span>
+                    <span class="truncate text-surface-500 dark:text-surface-400">{{ parseTransport(row.inbound.streamSettings).network }}</span>
+                    <span class="truncate" :class="securityTextColor(parseTransport(row.inbound.streamSettings).security)">{{ parseTransport(row.inbound.streamSettings).security }}</span>
+                  </div>
+                </td>
+                <td class="px-3 py-3">
+                  <div class="text-sm tabular-nums text-ink-900 dark:text-surface-50">
+                    <span class="font-semibold">{{ clientBreakdown(row).online }}</span>
+                    <span class="text-surface-300 dark:text-surface-700"> / </span>
+                    <span class="text-surface-500">{{ clientBreakdown(row).total }}</span>
+                  </div>
+                </td>
+                <td class="px-3 py-3 tabular-nums">
+                  <div class="flex min-w-0 items-baseline gap-1.5">
+                    <span class="truncate text-sm font-medium text-ink-900 dark:text-surface-50">{{ formatBytes(row.inbound.up + row.inbound.down) }}</span>
+                    <span class="shrink-0 text-2xs text-surface-400">/ {{ formatLimit(row.inbound.total) }}</span>
+                  </div>
+                  <div class="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-100 dark:bg-surface-800">
+                    <div
+                      class="h-full rounded-full transition-all duration-500 ease-brand"
+                      :class="trafficBarClass(trafficRatio(row))"
+                      :style="{ width: (trafficRatio(row) * 100).toFixed(1) + '%' }"
+                    />
+                  </div>
+                </td>
+                <td class="px-3 py-3 text-center">
+                  <button
+                    type="button"
+                    role="switch"
+                    :aria-checked="row.inbound.enable"
+                    :disabled="togglingInbound === rowKey(row)"
+                    class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ease-brand focus:outline-none focus:ring-2 focus:ring-accent-500/30 disabled:cursor-wait disabled:opacity-70"
+                    :class="row.inbound.enable ? 'bg-accent-500' : 'bg-surface-200 dark:bg-surface-700'"
+                    @click.stop="toggleEnable(row)"
+                  >
+                    <span
+                      class="inline-block h-4 w-4 transform rounded-full bg-white shadow-card transition-transform duration-200 ease-brand"
+                      :class="row.inbound.enable ? 'translate-x-4' : 'translate-x-0.5'"
+                    />
+                  </button>
+                </td>
+                <td class="px-3 py-3" @click.stop>
+                  <div class="flex items-center justify-end gap-1">
+                    <button :title="$t('admin.inbounds.editInbound')" :aria-label="$t('admin.inbounds.editInbound')" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 focus:outline-none focus:ring-2 focus:ring-accent-500/25 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEditInbound(row)">
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
+                    </button>
+                    <button :title="$t('admin.inbounds.resetInboundTraffic')" :aria-label="$t('admin.inbounds.resetInboundTraffic')" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500/25 dark:hover:bg-amber-950/40 dark:hover:text-amber-300" @click="confirmResetInboundTraffic(row)">
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                        <path d="M21 3v5h-5" />
+                        <path d="M3 21v-5h5" />
+                      </svg>
+                    </button>
+                    <button :title="$t('admin.inbounds.confirmDelete')" :aria-label="$t('admin.inbounds.confirmDelete')" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/25 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="confirmDeleteInbound(row)">
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
 
             <!-- Expanded row: clients sub-table -->
-            <tr v-if="expanded.has(rowKey(row))">
-              <td colspan="11" class="bg-surface-50/60 px-6 py-4 dark:bg-surface-800/30">
-                <div class="mb-3 flex items-center justify-between">
-                  <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">
+            <tr v-if="expanded.has(rowKey(row))" class="border-b border-surface-100/80 dark:border-surface-800/80">
+              <td colspan="7" class="bg-surface-50/70 px-5 py-4 dark:bg-surface-800/30">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                  <h3 class="min-w-0 truncate text-sm font-semibold text-surface-700 dark:text-surface-300">
                     {{ row.inbound.tag }} · {{ $t('admin.inbounds.column.clients') }}
                     <span class="ml-1 text-xs text-surface-400">({{ parseClients(row.inbound).length }})</span>
                   </h3>
+                  <div class="hidden items-center gap-2 text-2xs text-surface-500 lg:flex">
+                    <span>{{ $t('admin.inbounds.column.accumulated') }}: {{ formatBytes(row.inbound.allTime) }}</span>
+                    <span class="text-surface-300 dark:text-surface-700">·</span>
+                    <span>{{ $t('admin.inbounds.column.expiry') }}: {{ formatExpiry(row.inbound.expiryTime) }}</span>
+                  </div>
                   <button
-                    class="inline-flex items-center gap-1.5 rounded-md bg-accent-600 px-3 py-1 text-xs font-medium text-white hover:bg-accent-700"
+                    class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-ink-900 px-3 text-xs font-medium text-white shadow-card transition-colors hover:bg-ink-800 dark:bg-accent-600 dark:hover:bg-accent-500"
                     @click="openAddClient(row)"
                   >
                     <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -904,31 +1002,43 @@ onMounted(reload)
                   </button>
                 </div>
 
-                <div class="overflow-x-auto rounded-lg border border-surface-200 bg-surface-0 dark:border-surface-700 dark:bg-surface-900">
-                  <table class="min-w-full divide-y divide-surface-200 text-xs dark:divide-surface-800">
-                    <thead class="bg-surface-50 text-left uppercase tracking-wider text-surface-400 dark:bg-surface-800/40">
-                      <tr>
-                        <th class="px-3 py-2">{{ $t('admin.users.column.status') }}</th>
+                <div class="overflow-x-auto rounded-xl border border-surface-200 bg-surface-0 dark:border-surface-700 dark:bg-surface-900">
+                  <table class="min-w-[980px] w-full table-fixed text-xs">
+                    <colgroup>
+                      <col class="w-12" />
+                      <col class="w-[24%]" />
+                      <col class="w-[17%]" />
+                      <col class="w-24" />
+                      <col class="w-28" />
+                      <col class="w-36" />
+                      <col class="w-40" />
+                      <col class="w-36" />
+                    </colgroup>
+                    <thead class="bg-surface-50/80 text-left uppercase tracking-caps text-surface-400 dark:bg-surface-900/70">
+                      <tr class="border-b border-surface-100 dark:border-surface-800">
+                        <th class="px-3 py-2 text-center">{{ $t('admin.users.column.status') }}</th>
                         <th class="px-3 py-2">Email</th>
                         <th class="px-3 py-2">{{ $t('admin.inbounds.client.password') }}/{{ $t('admin.inbounds.client.uuid') }}</th>
                         <th class="px-3 py-2 text-right">↑ / ↓</th>
                         <th class="px-3 py-2 text-right">{{ $t('admin.inbounds.kpi.totalUsed') }}</th>
                         <th class="px-3 py-2">{{ $t('admin.inbounds.column.expiry') }}</th>
-                        <th class="px-3 py-2">{{ $t('admin.inbounds.kpi.up') }}</th>
+                        <th class="px-3 py-2">{{ $t('admin.inbounds.client.lastOnline') }}</th>
                         <th class="px-3 py-2 text-right">{{ $t('admin.users.column.actions') }}</th>
                       </tr>
                     </thead>
-                    <tbody class="divide-y divide-surface-200 dark:divide-surface-800">
-                      <tr v-for="c in parseClients(row.inbound)" :key="c.email" class="hover:bg-surface-50 dark:hover:bg-surface-800/30">
-                        <td class="px-3 py-2">
+                    <tbody>
+                      <tr v-for="c in parseClients(row.inbound)" :key="c.email" class="border-b border-surface-100/80 last:border-b-0 hover:bg-surface-50 dark:border-surface-800/80 dark:hover:bg-surface-800/30">
+                        <td class="px-3 py-2 text-center">
                           <span
                             class="inline-flex h-2 w-2 rounded-full"
                             :class="isOnline(row.node_id, c.email) ? 'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]' : 'bg-surface-300 dark:bg-surface-700'"
                             :title="isOnline(row.node_id, c.email) ? $t('admin.inbounds.online') : $t('admin.inbounds.offline')"
                           />
                         </td>
-                        <td class="px-3 py-2 font-medium">{{ c.email }}</td>
-                        <td class="px-3 py-2 font-mono text-2xs text-surface-500">
+                        <td class="min-w-0 px-3 py-2">
+                          <span class="block truncate font-medium text-ink-900 dark:text-surface-50">{{ c.email }}</span>
+                        </td>
+                        <td class="min-w-0 px-3 py-2 font-mono text-2xs text-surface-500">
                           {{ (c.id ?? c.password ?? '').slice(0, 12) }}{{ (c.id ?? c.password ?? '').length > 12 ? '…' : '' }}
                         </td>
                         <td class="px-3 py-2 text-right font-mono tabular-nums">
@@ -936,11 +1046,15 @@ onMounted(reload)
                           <div class="text-eyebrow text-surface-400">{{ formatBytes(clientStatsByEmail(row.inbound, c.email)?.down ?? 0) }}</div>
                         </td>
                         <td class="px-3 py-2 text-right font-mono tabular-nums">{{ formatLimit(c.totalGB ?? 0) }}</td>
-                        <td class="px-3 py-2 text-surface-500">{{ formatExpiry(c.expiryTime ?? 0) }}</td>
                         <td class="px-3 py-2 text-surface-500">
+                          <span class="block truncate">{{ formatExpiry(c.expiryTime ?? 0) }}</span>
+                        </td>
+                        <td class="px-3 py-2 text-surface-500">
+                          <span class="block truncate">
                           {{ lastOnlineAt(row.node_id, c.email)
                             ? new Date((lastOnlineAt(row.node_id, c.email) ?? 0) * 1000).toLocaleString()
                             : '—' }}
+                          </span>
                         </td>
                         <td class="px-3 py-2">
                           <div class="flex justify-end gap-1">
@@ -977,28 +1091,28 @@ onMounted(reload)
                 </div>
               </td>
             </tr>
-          </template>
-          <tr v-if="filtered.length === 0">
-            <td colspan="11" class="p-0">
-              <EmptyState
-                v-if="data.inbounds.length === 0"
-                icon="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"
-                :title="$t('admin.inbounds.empty')"
-                :description="$t('admin.inbounds.emptyDescription')"
-                :action-label="$t('admin.inbounds.emptyAction')"
-                @action="openCreateInbound"
-              />
-              <EmptyState
-                v-else
-                icon="M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"
-                :title="$t('admin.inbounds.noMatchTitle')"
-                :description="$t('admin.inbounds.noMatchDescription', { query: JSON.stringify(query), total: data.inbounds.length })"
-              />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </template>
+            <tr v-if="filtered.length === 0">
+              <td colspan="7" class="p-0">
+                <EmptyState
+                  v-if="data.inbounds.length === 0"
+                  icon="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"
+                  :title="$t('admin.inbounds.empty')"
+                  :action-label="$t('admin.inbounds.emptyAction')"
+                  @action="openCreateInbound"
+                />
+                <EmptyState
+                  v-else
+                  icon="M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"
+                  :title="$t('admin.inbounds.noMatchTitle')"
+                  :description="$t('admin.inbounds.noMatchDescription', { query: JSON.stringify(query), total: data.inbounds.length })"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <!-- Toast -->
     <transition name="fade">

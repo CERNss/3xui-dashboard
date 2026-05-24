@@ -32,6 +32,33 @@ func (r *UserRepo) Get(ctx context.Context, id int64) (*model.User, error) {
 	return &u, nil
 }
 
+// GetForUpdate behaves like Get but holds a SELECT ... FOR UPDATE row
+// lock. Only valid when r is the tx-bound repo passed to InTx; with the
+// outer DB the lock is released immediately and provides no protection.
+func (r *UserRepo) GetForUpdate(ctx context.Context, id int64) (*model.User, error) {
+	var u model.User
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&u, id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("UserRepo.GetForUpdate: %w", err)
+	}
+	return &u, nil
+}
+
+// InTx runs fn inside a database transaction. The repo handed to fn is
+// bound to the transaction connection, so any Get/Update/etc. calls on
+// it participate in the same transaction. Returning a non-nil error
+// from fn rolls back.
+func (r *UserRepo) InTx(ctx context.Context, fn func(tx *UserRepo) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(&UserRepo{db: tx})
+	})
+}
+
 // GetByEmail returns the user matching email (case-insensitive),
 // or (nil, nil) on miss.
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, error) {

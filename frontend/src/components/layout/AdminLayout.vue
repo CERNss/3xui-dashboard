@@ -2,10 +2,22 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AccountMenu, { type AccountMenuItem } from '@/components/common/AccountMenu.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { useBrandingStore } from '@/stores/branding'
 import { useThemeStore } from '@/stores/theme'
+
+const SIDEBAR_COLLAPSED_KEY = 'dashboard.admin.sidebar.collapsed'
+
+function readSidebarCollapsed(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -13,16 +25,27 @@ const auth = useAdminAuthStore()
 const branding = useBrandingStore()
 const theme = useThemeStore()
 const { t } = useI18n()
+const REPO_URL = 'https://github.com/cern/3xui-dashboard'
 
 // Mobile drawer state. Sidebar is always-on at md+ (md: visible),
 // off-canvas + toggleable below that. Close on route change so a
 // nav click doesn't leave the drawer hanging open.
 const drawerOpen = ref(false)
 watch(() => route.fullPath, () => { drawerOpen.value = false })
+const sidebarCollapsed = ref(readSidebarCollapsed())
+
+function toggleSidebarCollapsed() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed.value ? 'true' : 'false')
+  } catch {
+    // Ignore storage failures; the current session still updates.
+  }
+}
 
 function logout() {
   auth.clear()
-  router.push({ name: 'login' })
+  router.push({ name: 'admin.login' })
 }
 
 interface NavItem {
@@ -97,11 +120,6 @@ const sections = computed<NavSection[]>(() => [
     title: t('section.system'),
     items: [
       {
-        to: '/admin/webhooks',
-        label: t('nav.webhooks'),
-        icon: 'M13 10V3L4 14h7v7l9-11h-7z',
-      },
-      {
         to: '/admin/audit-log',
         label: t('nav.audit'),
         icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z',
@@ -115,7 +133,29 @@ const sections = computed<NavSection[]>(() => [
   },
 ])
 
-const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
+const accountName = computed(() => auth.username || 'admin')
+const accountMenuItems = computed<AccountMenuItem[]>(() => [
+  {
+    label: t('account.profile'),
+    to: '/admin/settings?tab=securityAuth',
+    icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
+  },
+  {
+    label: t('nav.nodes'),
+    to: '/admin/nodes',
+    icon: 'M4 7l8-4 8 4M4 7v10l8 4 8-4V7M4 7l8 4 8-4M12 11v10',
+  },
+  {
+    label: t('account.github'),
+    href: REPO_URL,
+    icon: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22',
+  },
+  {
+    label: t('account.guide'),
+    href: `${REPO_URL}#readme`,
+    icon: 'M12 20h9M12 4h9M4 19.5A2.5 2.5 0 0 1 6.5 17H21M4 4.5A2.5 2.5 0 0 1 6.5 2H21v15H6.5A2.5 2.5 0 0 0 4 19.5v-15z',
+  },
+])
 </script>
 
 <template>
@@ -131,36 +171,46 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
       :class="[
         'flex w-64 flex-col border-r border-surface-100/80 bg-surface-0 px-4 pb-5 pt-6 dark:border-surface-800 dark:bg-surface-900',
         'md:relative md:translate-x-0 md:shadow-none',
-        'fixed inset-y-0 left-0 z-40 shadow-elevated transition-transform duration-200 ease-brand',
+        'fixed inset-y-0 left-0 z-40 shadow-elevated transition-[width,transform,padding] duration-200 ease-brand',
+        sidebarCollapsed ? 'md:w-[76px] md:px-3' : 'md:w-64',
         drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
       ]"
     >
       <!-- Brand -->
-      <div class="mb-7 flex items-center gap-3 px-2">
-        <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-card ring-1 ring-accent-700/30">
-          <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-6 w-6 rounded-lg object-cover" />
+      <div
+        :class="sidebarCollapsed ? 'md:justify-center md:px-0' : 'px-2'"
+        class="mb-7 flex items-center gap-3"
+      >
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-card ring-1 ring-accent-700/30">
+          <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-6 w-6 rounded-lg object-cover" @error="branding.clearIcon()" />
           <svg v-else class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
-        <div class="leading-tight">
-          <div class="text-body-md font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('app.title') }}</div>
-          <div class="text-eyebrow uppercase tracking-eyebrow text-surface-400">{{ $t('brand.centralPanel') }}</div>
+        <div :class="sidebarCollapsed ? 'md:hidden' : ''" class="leading-tight">
+          <div class="text-body-md font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ branding.title || $t('app.title') }}</div>
+          <div class="text-eyebrow uppercase tracking-eyebrow text-surface-400">{{ branding.subtitle || $t('brand.centralPanel') }}</div>
         </div>
       </div>
 
       <!-- Nav -->
       <nav class="flex-1 space-y-6 text-sm">
         <div v-for="(section, sIdx) in sections" :key="sIdx" class="space-y-1">
-          <div class="px-3 pb-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-surface-400 dark:text-surface-500">
+          <div
+            :class="sidebarCollapsed ? 'md:hidden' : ''"
+            class="px-3 pb-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-surface-400 dark:text-surface-500"
+          >
             {{ section.title }}
           </div>
           <router-link
             v-for="item in section.items"
             :key="item.to"
             :to="item.to"
-            class="group relative flex items-center gap-3 rounded-xl px-3 py-2 font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
-            active-class="!bg-accent-50 !text-accent-700 shadow-rail dark:!bg-accent-950/40 dark:!text-accent-300"
+            :title="sidebarCollapsed ? item.label : undefined"
+            :aria-label="item.label"
+            :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2 md:before:left-0' : 'gap-3 px-3'"
+            class="group relative flex items-center rounded-xl py-2 font-medium text-surface-600 transition-all duration-150 ease-brand before:absolute before:inset-y-2 before:left-1 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+            active-class="!bg-surface-100 !text-accent-700 before:!bg-accent-500 dark:!bg-surface-800 dark:!text-accent-200 dark:before:!bg-accent-300"
             exact-active-class=""
           >
             <svg
@@ -174,17 +224,20 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
             >
               <path :d="item.icon" />
             </svg>
-            <span>{{ item.label }}</span>
+            <span :class="sidebarCollapsed ? 'md:hidden' : ''">{{ item.label }}</span>
           </router-link>
         </div>
       </nav>
 
-      <LocaleSwitcher class="mt-3" variant="sidebar" />
+      <LocaleSwitcher class="mt-3" variant="sidebar" :collapsed="sidebarCollapsed" />
 
       <!-- Theme toggle — Sub2API pattern: labeled sidebar item, not a tiny icon button. -->
       <button
         type="button"
-        class="group mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+        :title="sidebarCollapsed ? (theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark')) : undefined"
+        :aria-label="theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark')"
+        :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2' : 'gap-3 px-3'"
+        class="group mt-1 flex w-full items-center rounded-xl py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
         @click="theme.toggle()"
       >
         <!-- Show the icon for the mode you'd switch TO (Sub2API convention). -->
@@ -195,35 +248,49 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
         <svg v-else class="h-[18px] w-[18px] shrink-0 transition-transform duration-200 ease-brand group-hover:scale-105" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <span>{{ theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark') }}</span>
+        <span :class="sidebarCollapsed ? 'md:hidden' : ''">{{ theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark') }}</span>
       </button>
 
-      <!-- Footer: user + logout -->
-      <div class="mt-3 rounded-2xl border border-surface-100/80 bg-surface-50/60 p-2.5 dark:border-surface-800 dark:bg-surface-800/40">
-        <div class="flex items-center gap-2.5">
-          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-ink-900 text-xs font-semibold text-white dark:bg-ink-700">
-            {{ initial }}
-          </div>
-          <div class="min-w-0 flex-1 leading-tight">
-            <div class="truncate text-xs font-medium text-ink-900 dark:text-surface-50">{{ auth.username || 'admin' }}</div>
-            <div class="text-eyebrow uppercase tracking-wider text-surface-400">{{ $t('brand.signedIn') }}</div>
-          </div>
-        </div>
-        <button
-          type="button"
-          :aria-label="$t('nav.logout')"
-          class="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-red-200/80 bg-red-50 px-3 text-xs font-semibold text-red-700 shadow-sm transition-all duration-150 ease-brand hover:border-red-300 hover:bg-red-100 hover:text-red-800 active:scale-[0.98] dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50 dark:hover:text-red-200"
-          @click="logout"
+      <button
+        type="button"
+        :title="sidebarCollapsed ? $t('nav.expandSidebar') : $t('nav.collapseSidebar')"
+        :aria-label="sidebarCollapsed ? $t('nav.expandSidebar') : $t('nav.collapseSidebar')"
+        :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2' : 'gap-3 px-3'"
+        class="group mt-3 flex w-full items-center rounded-xl border-t border-surface-100 pt-3 pb-2 text-sm font-medium text-surface-600 transition-colors hover:text-ink-900 dark:border-surface-800 dark:text-surface-300 dark:hover:text-surface-50"
+        @click="toggleSidebarCollapsed"
+      >
+        <svg
+          class="h-[18px] w-[18px] shrink-0 transition-transform duration-200 ease-brand"
+          :class="sidebarCollapsed ? 'rotate-180' : ''"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 12H4M11 16l-4-4 4-4M20 4v16" />
-          </svg>
-          <span>{{ $t('nav.logout') }}</span>
-        </button>
-      </div>
+          <path d="m11 17-5-5 5-5" />
+          <path d="m18 17-5-5 5-5" />
+        </svg>
+        <span :class="sidebarCollapsed ? 'md:hidden' : ''">{{ $t('nav.collapseSidebar') }}</span>
+      </button>
+
     </aside>
 
     <main class="flex flex-1 flex-col overflow-y-auto">
+      <header class="hidden h-16 shrink-0 items-center justify-end border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-800 dark:bg-surface-900 md:flex lg:px-8">
+        <AccountMenu
+          :name="accountName"
+          :subtitle="$t('account.adminSubtitle')"
+          :role-label="$t('account.adminRole')"
+          :avatar-text="accountName"
+          :open-label="$t('account.openMenu')"
+          :logout-label="$t('nav.logout')"
+          :items="accountMenuItems"
+          @logout="logout"
+        />
+      </header>
+
       <!-- Mobile top bar: hamburger + brand. md:hidden because the
            sidebar is always-visible at md+. -->
       <header class="flex h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-800 dark:bg-surface-900 md:hidden">
@@ -237,7 +304,17 @@ const initial = computed(() => (auth.username || 'A').slice(0, 1).toUpperCase())
             <path d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <div class="text-sm font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('app.title') }}</div>
+        <div class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ branding.title || $t('app.title') }}</div>
+        <AccountMenu
+          :name="accountName"
+          :subtitle="$t('account.adminSubtitle')"
+          :role-label="$t('account.adminRole')"
+          :avatar-text="accountName"
+          :open-label="$t('account.openMenu')"
+          :logout-label="$t('nav.logout')"
+          :items="accountMenuItems"
+          @logout="logout"
+        />
       </header>
 
       <section class="mx-auto w-full max-w-page px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-9">

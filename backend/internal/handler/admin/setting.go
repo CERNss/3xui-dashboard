@@ -65,12 +65,63 @@ func (h *BrandingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 func (h *BrandingHandler) Get(c *gin.Context) {
-	iconURL, _, err := h.repo.Get(c.Request.Context(), model.SettingBrandIconURL)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	ctx := c.Request.Context()
+	values := map[string]string{}
+	for _, key := range []string{
+		model.SettingBrandIconURL,
+		model.SettingBrandTitle,
+		model.SettingBrandSubtitle,
+		model.SettingBrandDescription,
+		model.SettingBrandFooter,
+	} {
+		value, _, err := h.repo.Get(ctx, key)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		values[key] = value
 	}
-	c.JSON(http.StatusOK, gin.H{"icon_url": iconURL})
+	c.JSON(http.StatusOK, gin.H{
+		"icon_url":    values[model.SettingBrandIconURL],
+		"title":       firstNonEmpty(values[model.SettingBrandTitle], defaultBrandTitle),
+		"subtitle":    firstNonEmpty(values[model.SettingBrandSubtitle], defaultBrandSubtitle),
+		"description": firstNonEmpty(values[model.SettingBrandDescription], defaultBrandDescription),
+		"footer":      firstNonEmpty(values[model.SettingBrandFooter], defaultBrandFooter),
+	})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+const (
+	defaultBrandTitle       = "3xui Central"
+	defaultBrandSubtitle    = "central panel"
+	defaultBrandDescription = "Multi-node 3x-ui · Fleet aggregation · Traffic accounting · Subscription export"
+	defaultBrandFooter      = "© 2026 3xui Central · Self-hosted multi-node control panel"
+)
+
+func validateBrandText(key, value string) error {
+	limit := 0
+	switch key {
+	case model.SettingBrandTitle:
+		limit = 80
+	case model.SettingBrandSubtitle:
+		limit = 120
+	case model.SettingBrandDescription, model.SettingBrandFooter:
+		limit = 240
+	default:
+		return nil
+	}
+	if len([]rune(strings.TrimSpace(value))) > limit {
+		return fmt.Errorf("%s must be %d characters or fewer", key, limit)
+	}
+	return nil
 }
 
 // SMTPTest sends a one-shot test email so the admin can verify
@@ -104,6 +155,12 @@ func (h *SettingHandler) SMTPTest(c *gin.Context) {
 const (
 	brandIconMaxBytes = 1 << 20 // 1 MiB
 	brandUploadDir    = "uploads/branding"
+)
+
+const (
+	templateProxiesPlaceholder     = "${proxies}"
+	templateProxyNamesPlaceholder  = "${proxy_names}"
+	templateProxyGroupsPlaceholder = "${proxy_groups}"
 )
 
 var allowedBrandIconTypes = map[string]string{
@@ -418,6 +475,46 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "面板品牌图标地址。建议使用上方上传控件；手动值必须是 /uploads/ 相对地址或 http(s) URL。",
 	},
 	{
+		Key:           model.SettingBrandTitle,
+		Label:         "Brand title",
+		LabelZh:       "品牌标题",
+		Type:          "string",
+		Group:         "other",
+		Default:       defaultBrandTitle,
+		Description:   "Main display name shown in the login page, admin shell, and user portal.",
+		DescriptionZh: "展示在登录页、后台侧栏和用户端顶部的主名称。",
+	},
+	{
+		Key:           model.SettingBrandSubtitle,
+		Label:         "Brand subtitle",
+		LabelZh:       "品牌副标题",
+		Type:          "string",
+		Group:         "other",
+		Default:       defaultBrandSubtitle,
+		Description:   "Short label shown under the main brand title in compact navigation surfaces.",
+		DescriptionZh: "展示在主标题下方的短说明，用于后台侧栏等紧凑区域。",
+	},
+	{
+		Key:           model.SettingBrandDescription,
+		Label:         "Brand description",
+		LabelZh:       "品牌描述",
+		Type:          "string",
+		Group:         "other",
+		Default:       defaultBrandDescription,
+		Description:   "Supporting copy shown on the login page.",
+		DescriptionZh: "登录页标题下方的展示文案。",
+	},
+	{
+		Key:           model.SettingBrandFooter,
+		Label:         "Brand footer",
+		LabelZh:       "品牌页脚",
+		Type:          "string",
+		Group:         "other",
+		Default:       defaultBrandFooter,
+		Description:   "Footer line shown under the login panel.",
+		DescriptionZh: "登录面板下方展示的页脚文案。",
+	},
+	{
 		Key:           model.SettingClashTemplateYAML,
 		Label:         "Clash template (YAML)",
 		LabelZh:       "Clash 模板（YAML）",
@@ -638,29 +735,29 @@ func validate(key, value string) error {
 			// into a map (not `any`) rejects bare scalars like
 			// "::not::yaml::" that would otherwise pass as a string.
 			var probe map[string]any
-			if err := yaml.Unmarshal([]byte(value), &probe); err != nil {
+			if err := yaml.Unmarshal([]byte(protectTemplateYAMLPlaceholders(value)), &probe); err != nil {
 				return fmt.Errorf("clash_template_yaml: invalid YAML: %w", err)
 			}
 			if probe == nil {
 				return errors.New("clash_template_yaml: must be a YAML object (got null or scalar)")
 			}
 			// Require the placeholder so we know where to inject proxies.
-			if !strings.Contains(value, "${proxies}") {
-				return errors.New("clash_template_yaml: must contain the ${proxies} placeholder")
+			if !strings.Contains(value, templateProxiesPlaceholder) {
+				return errors.New("clash_template_yaml: must contain the " + templateProxiesPlaceholder + " placeholder")
 			}
 		case model.SettingSingBoxTemplateJSON:
 			if strings.TrimSpace(value) == "" {
 				return nil
 			}
 			var probe map[string]any
-			if err := json.Unmarshal([]byte(value), &probe); err != nil {
+			if err := json.Unmarshal([]byte(protectTemplateJSONPlaceholders(value)), &probe); err != nil {
 				return fmt.Errorf("singbox_template_json: invalid JSON: %w", err)
 			}
 			if probe == nil {
 				return errors.New("singbox_template_json: must be a JSON object")
 			}
-			if !strings.Contains(value, "${proxies}") {
-				return errors.New("singbox_template_json: must contain the ${proxies} placeholder")
+			if !strings.Contains(value, templateProxiesPlaceholder) {
+				return errors.New("singbox_template_json: must contain the " + templateProxiesPlaceholder + " placeholder")
 			}
 		case model.SettingProxyGroupStrategy:
 			switch strings.TrimSpace(value) {
@@ -675,6 +772,10 @@ func validate(key, value string) error {
 				return nil
 			}
 			return errors.New("brand_icon_url must be empty, an /uploads/ URL, or an http(s) URL")
+		case model.SettingBrandTitle, model.SettingBrandSubtitle, model.SettingBrandDescription, model.SettingBrandFooter:
+			if err := validateBrandText(key, value); err != nil {
+				return err
+			}
 		case model.SettingNewUserPlanIDs:
 			for _, part := range strings.Split(value, ",") {
 				part = strings.TrimSpace(part)
@@ -722,4 +823,42 @@ func validateOptionalURL(key, value string) error {
 	default:
 		return fmt.Errorf("%s must use http or https", key)
 	}
+}
+
+func protectTemplateJSONPlaceholders(value string) string {
+	replacements := map[string]string{
+		templateProxiesPlaceholder:    `{"__3xui_template_placeholder":"proxies"}`,
+		templateProxyNamesPlaceholder: `"__3xui_template_proxy_names__"`,
+	}
+	out := value
+	for placeholder, replacement := range replacements {
+		out = strings.ReplaceAll(out, placeholder, replacement)
+	}
+	return out
+}
+
+func protectTemplateYAMLPlaceholders(value string) string {
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
+		indent := line[:indentLen]
+		switch trimmed {
+		case templateProxiesPlaceholder:
+			if indent == "" {
+				indent = "  "
+			}
+			lines[i] = indent + "[]"
+		case templateProxyGroupsPlaceholder:
+			lines[i] = indent + "proxy-groups: []"
+		default:
+			replacer := strings.NewReplacer(
+				templateProxiesPlaceholder, "__3xui_template_proxies__",
+				templateProxyNamesPlaceholder, "__3xui_template_proxy_names__",
+				templateProxyGroupsPlaceholder, "__3xui_template_proxy_groups__",
+			)
+			lines[i] = replacer.Replace(line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }

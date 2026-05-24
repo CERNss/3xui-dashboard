@@ -30,10 +30,14 @@ func (h *StatsHandler) RegisterRoutes(r *gin.RouterGroup) {
 // StatsResponse is the wire shape — keep it stable, the frontend
 // destructures every field by name.
 type StatsResponse struct {
-	Users        repository.UserStats    `json:"users"`
-	Plans        repository.PlanStats    `json:"plans"`
-	Orders       repository.OrderStats   `json:"orders"`
-	RecentOrders []repository.RecentOrder `json:"recent_orders"`
+	Users        repository.UserStats      `json:"users"`
+	Plans        repository.PlanStats      `json:"plans"`
+	Orders       repository.OrderStats     `json:"orders"`
+	Traffic      repository.TrafficStats   `json:"traffic"`
+	TopNodes     []repository.TrafficRanking `json:"top_nodes"`
+	TopUsers     []repository.TrafficRanking `json:"top_users"`
+	Audit        repository.AuditSeverity  `json:"audit"`
+	RecentOrders []repository.RecentOrder  `json:"recent_orders"`
 }
 
 func (h *StatsHandler) get(c *gin.Context) {
@@ -43,8 +47,12 @@ func (h *StatsHandler) get(c *gin.Context) {
 	// server's local timezone.
 	now := time.Now().UTC()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	// Previous month: from prevMonthStart to monthStart. AddDate
+	// handles January (year-1, month=12) correctly.
+	prevMonthStart := monthStart.AddDate(0, -1, 0)
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	users, err := h.repo.Users(ctx)
+	users, err := h.repo.Users(ctx, monthStart, prevMonthStart)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -59,6 +67,26 @@ func (h *StatsHandler) get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	traffic, err := h.repo.Traffic(ctx, monthStart, dayStart, now)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	topNodes, err := h.repo.TopNodes(ctx, dayStart, now, 6)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	topUsers, err := h.repo.TopUsers(ctx, dayStart, now, 6)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	audit, err := h.repo.Audit(ctx, monthStart)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	recent, err := h.repo.RecentOrders(ctx, 5)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -68,6 +96,10 @@ func (h *StatsHandler) get(c *gin.Context) {
 		Users:        users,
 		Plans:        plans,
 		Orders:       orders,
+		Traffic:      traffic,
+		TopNodes:     topNodes,
+		TopUsers:     topUsers,
+		Audit:        audit,
 		RecentOrders: recent,
 	})
 }

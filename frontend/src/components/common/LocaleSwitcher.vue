@@ -5,8 +5,10 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore, type Locale } from '@/stores/app'
 
 const props = withDefaults(defineProps<{
+  collapsed?: boolean
   variant?: 'sidebar' | 'toolbar'
 }>(), {
+  collapsed: false,
   variant: 'sidebar',
 })
 
@@ -19,7 +21,10 @@ const nextLanguage = computed(() => nextLocale.value === 'zh' ? t('language.chin
 const ariaLabel = computed(() => t('language.switchTo', { language: nextLanguage.value }))
 
 const buttonClass = computed(() => props.variant === 'sidebar'
-  ? 'group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50'
+  ? [
+      'group flex w-full items-center rounded-xl py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50',
+      props.collapsed ? 'gap-3 px-3 md:justify-center md:gap-0 md:px-2' : 'gap-3 px-3',
+    ]
   : 'flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50')
 </script>
 
@@ -48,10 +53,10 @@ const buttonClass = computed(() => props.variant === 'sidebar'
       <path d="M13 21l4-9 4 9" />
       <path d="M14.4 18h5.2" />
     </svg>
-    <span v-if="variant === 'sidebar'">{{ $t('language.label') }}</span>
+    <span v-if="variant === 'sidebar'" :class="collapsed ? 'md:hidden' : ''">{{ $t('language.label') }}</span>
     <span
       :class="variant === 'sidebar'
-        ? 'ml-auto rounded-md border border-surface-200 px-1.5 py-0.5 text-2xs font-semibold tracking-wide text-surface-500 dark:border-surface-700 dark:text-surface-400'
+        ? ['ml-auto rounded-md border border-surface-200 px-1.5 py-0.5 text-2xs font-semibold tracking-wide text-surface-500 dark:border-surface-700 dark:text-surface-400', collapsed ? 'md:hidden' : '']
         : 'hidden sm:inline'"
     >
       {{ currentCode }}

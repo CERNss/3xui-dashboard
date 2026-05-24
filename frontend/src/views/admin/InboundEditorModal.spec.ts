@@ -142,4 +142,13 @@ describe('admin/InboundEditorModal smoke', () => {
     await closeBtn.trigger('click')
     expect(w.emitted('close')).toBeTruthy()
   })
+
+  it('does not close when the backdrop is clicked', async () => {
+    const w = mountEditor()
+    await flushPromises()
+    const backdrop = w.find('.fixed.inset-0')
+    expect(backdrop.exists()).toBe(true)
+    await backdrop.trigger('click')
+    expect(w.emitted('close')).toBeFalsy()
+  })
 })

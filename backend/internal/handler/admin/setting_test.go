@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cern/3xui-dashboard/internal/model"
@@ -27,6 +28,34 @@ func TestValidateRegistrationSettings(t *testing.T) {
 	}
 	if err := validate(model.SettingEmailVerificationRequired, "sometimes"); err == nil {
 		t.Fatal("bad email verification bool should be rejected")
+	}
+}
+
+func TestValidateBrandSettings(t *testing.T) {
+	if err := validate(model.SettingBrandTitle, "Acme Network"); err != nil {
+		t.Fatalf("brand title rejected: %v", err)
+	}
+	if err := validate(model.SettingBrandFooter, "© 2026 Acme Network"); err != nil {
+		t.Fatalf("brand footer rejected: %v", err)
+	}
+	if err := validate(model.SettingBrandTitle, strings.Repeat("x", 81)); err == nil {
+		t.Fatal("overlong brand title should be rejected")
+	}
+}
+
+func TestValidateSubscriptionTemplatePlaceholders(t *testing.T) {
+	clash := "mixed-port: 7890\nproxies:\n  ${proxies}\nproxy-groups:\n  - name: 节点选择\n    type: select\n    proxies: [${proxy_names}]\nrules:\n  - MATCH,节点选择\n"
+	if err := validate(model.SettingClashTemplateYAML, clash); err != nil {
+		t.Fatalf("clash template with placeholders rejected: %v", err)
+	}
+
+	singbox := `{"outbounds":[${proxies},{"type":"direct","tag":"direct"}],"route":{"final":"select","tags":[${proxy_names}]}}`
+	if err := validate(model.SettingSingBoxTemplateJSON, singbox); err != nil {
+		t.Fatalf("singbox template with placeholders rejected: %v", err)
+	}
+
+	if err := validate(model.SettingSingBoxTemplateJSON, `{"outbounds":[]}`); err == nil {
+		t.Fatal("singbox template without ${proxies} should be rejected")
 	}
 }
 

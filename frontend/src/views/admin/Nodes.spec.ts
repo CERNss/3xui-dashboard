@@ -92,7 +92,7 @@ describe('admin/Nodes.vue smoke', () => {
     await addBtn!.trigger('click')
     await flushPromises()
     // Modal header
-    expect(w.text()).toContain('填好 host / token，dashboard 会自动探测')
+    expect(w.text()).toContain('填好面板地址和这个面板的 API 密钥后，dashboard 会自动探测')
   })
 
   it('opens an edit modal with the selected node and saves through update', async () => {
@@ -107,7 +107,7 @@ describe('admin/Nodes.vue smoke', () => {
     expect(w.text()).toContain('编辑节点 · tokyo-1')
     expect(w.find('input[placeholder="tokyo-1"]').element).toHaveProperty('value', 'tokyo-1')
     expect(w.find('input[placeholder="node1.example.com"]').element).toHaveProperty('value', 'node1.example.com')
-    expect(w.find('input[placeholder="留空则保留当前 API Token"]').exists()).toBe(true)
+    expect(w.find('input[placeholder="留空则保留当前面板 API 密钥"]').exists()).toBe(true)
 
     await w.find('input[placeholder="tokyo-1"]').setValue('tokyo-renamed')
     await w.find('form').trigger('submit.prevent')

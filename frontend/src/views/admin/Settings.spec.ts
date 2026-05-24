@@ -10,6 +10,13 @@ const apiStubs = vi.hoisted(() => ({
   uploadBrandIcon: vi.fn(),
   smtpTest: vi.fn(),
   listPlans: vi.fn(),
+  listWebhooks: vi.fn(),
+  createWebhook: vi.fn(),
+  updateWebhook: vi.fn(),
+  removeWebhook: vi.fn(),
+  testWebhook: vi.fn(),
+  webhookDeliveries: vi.fn(),
+  replayWebhook: vi.fn(),
 }))
 vi.mock('@/api/admin/settings', () => ({
   settingsApi: {
@@ -23,6 +30,17 @@ vi.mock('@/api/admin/settings', () => ({
 vi.mock('@/api/admin/plans', () => ({
   adminPlansApi: {
     list: apiStubs.listPlans,
+  },
+}))
+vi.mock('@/api/admin/webhooks', () => ({
+  adminWebhooksApi: {
+    list: apiStubs.listWebhooks,
+    create: apiStubs.createWebhook,
+    update: apiStubs.updateWebhook,
+    remove: apiStubs.removeWebhook,
+    test: apiStubs.testWebhook,
+    deliveries: apiStubs.webhookDeliveries,
+    replay: apiStubs.replayWebhook,
   },
 }))
 
@@ -66,7 +84,8 @@ beforeEach(() => {
       description: 'Require email verification',
       description_zh: '新用户注册时需要验证邮箱',
     },
-    { key: 'expiry_warn_days', label: '到期提醒天数', group: 'other', value: '3', has_override: false },
+    { key: 'expiry_warn_days', label: '到期提醒天数', group: 'traffic', type: 'int', value: '3', has_override: false },
+    { key: 'traffic_warn_pct', label: '流量预警 %', group: 'traffic', type: 'int', value: '80', has_override: false },
     {
       key: 'new_user_initial_balance_cents',
       label: 'New-user initial balance',
@@ -88,6 +107,54 @@ beforeEach(() => {
       has_override: true,
       description: 'Starter plans',
       description_zh: '初始可选套餐',
+    },
+    {
+      key: 'brand_title',
+      label: 'Brand title',
+      label_zh: '品牌标题',
+      group: 'other',
+      type: 'string',
+      value: 'Acme Panel',
+      has_override: true,
+      default: '3xui Central',
+      description: 'Main display name',
+      description_zh: '主名称',
+    },
+    {
+      key: 'brand_subtitle',
+      label: 'Brand subtitle',
+      label_zh: '品牌副标题',
+      group: 'other',
+      type: 'string',
+      value: 'node service',
+      has_override: true,
+      default: 'central panel',
+      description: 'Short label',
+      description_zh: '短说明',
+    },
+    {
+      key: 'brand_description',
+      label: 'Brand description',
+      label_zh: '品牌描述',
+      group: 'other',
+      type: 'string',
+      value: 'Private network dashboard',
+      has_override: true,
+      default: 'Multi-node 3x-ui',
+      description: 'Login page copy',
+      description_zh: '登录页文案',
+    },
+    {
+      key: 'brand_footer',
+      label: 'Brand footer',
+      label_zh: '品牌页脚',
+      group: 'other',
+      type: 'string',
+      value: '© 2026 Acme',
+      has_override: true,
+      default: '© 2026 3xui Central',
+      description: 'Footer line',
+      description_zh: '页脚',
     },
     {
       key: 'oidc_issuer',
@@ -129,6 +196,39 @@ beforeEach(() => {
       env_fallback: '',
       description: 'OIDC redirect URL',
     },
+    {
+      key: 'subscription_remark_model',
+      label: 'Subscription remark model',
+      label_zh: '订阅链接备注格式',
+      group: 'subscription',
+      type: 'string',
+      value: '-ieo',
+      has_override: true,
+      description: 'Remark model',
+      description_zh: '订阅节点显示名称格式',
+    },
+    {
+      key: 'clash_template_yaml',
+      label: 'Clash template (YAML)',
+      label_zh: 'Clash 模板（YAML）',
+      group: 'subscription',
+      type: 'string',
+      value: 'proxies:\n  ${proxies}\nrules:\n  - MATCH,节点选择\n',
+      has_override: false,
+      description: 'Clash template',
+      description_zh: 'Clash/Mihomo 模板',
+    },
+    {
+      key: 'singbox_template_json',
+      label: 'Sing-box template (JSON)',
+      label_zh: 'Sing-box 模板（JSON）',
+      group: 'subscription',
+      type: 'string',
+      value: '{"outbounds":[${proxies},{"type":"direct","tag":"direct"}],"route":{"final":"select"}}',
+      has_override: false,
+      description: 'Sing-box template',
+      description_zh: 'Sing-box 模板',
+    },
   ])
   apiStubs.listPlans.mockResolvedValue([
     {
@@ -140,6 +240,23 @@ beforeEach(() => {
       enabled: true,
     },
   ])
+  apiStubs.listWebhooks.mockResolvedValue([
+    {
+      id: 1,
+      name: 'ops-slack',
+      url: 'https://hooks.slack.com/services/T/B/X',
+      events: ['order.*'],
+      enabled: true,
+      allow_private: false,
+      method: 'POST',
+      headers: {},
+      body_template: '',
+      template_format: 'json',
+      created_at: '2026-05-21T10:00:00Z',
+      updated_at: '2026-05-21T10:00:00Z',
+    },
+  ])
+  apiStubs.webhookDeliveries.mockResolvedValue([])
 })
 afterEach(() => {
   vi.clearAllMocks()
@@ -147,13 +264,10 @@ afterEach(() => {
 })
 
 async function mountSettings() {
-  // RouterLink in the 通知 tab needs a router instance to resolve.
-  // A memory-history stub is enough — tests don't exercise navigation.
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/admin/settings', component: { template: '<div/>' } },
-      { path: '/admin/webhooks', component: { template: '<div/>' } },
     ],
   })
   await router.push('/admin/settings')
@@ -164,6 +278,12 @@ async function mountSettings() {
   })
   await flushPromises()
   return w
+}
+
+function tabByText(wrapper: any, text: string) {
+  const tab = wrapper.findAll('button[role="tab"]').find((button: any) => button.text().includes(text))
+  expect(tab).toBeTruthy()
+  return tab!
 }
 
 describe('admin/Settings.vue smoke', () => {
@@ -185,21 +305,41 @@ describe('admin/Settings.vue smoke', () => {
     expect(w.find('#new-user-initial-balance').isVisible()).toBe(false)
 
     const tabButtons = w.findAll('button[role="tab"]')
-    expect(tabButtons).toHaveLength(5)
-    await tabButtons[2].trigger('click')
+    expect(tabButtons).toHaveLength(7)
+    await tabByText(w, '用户默认值').trigger('click')
 
     expect(w.find('#new-user-initial-balance').isVisible()).toBe(true)
     expect(w.text()).toContain('新用户策略')
     expect(w.text()).toContain('Starter 100G')
   })
 
+  it('edits brand info on the general tab', async () => {
+    const w = await mountSettings()
+
+    expect(w.text()).toContain('品牌信息')
+    expect(w.text()).toContain('Acme Panel')
+    expect(w.find('#setting-brand_title').exists()).toBe(false)
+
+    const titleInput = w.get('input[placeholder="3xui Central"]')
+    await titleInput.setValue('Nova Panel')
+    const saveButton = w.findAll('button').find((button) => button.text().includes('保存品牌信息'))
+    expect(saveButton).toBeTruthy()
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(apiStubs.set).toHaveBeenCalledWith('brand_title', 'Nova Panel')
+    expect(apiStubs.set).toHaveBeenCalledWith('brand_subtitle', 'node service')
+    expect(apiStubs.set).toHaveBeenCalledWith('brand_description', 'Private network dashboard')
+    expect(apiStubs.set).toHaveBeenCalledWith('brand_footer', '© 2026 Acme')
+  })
+
   it('renders OIDC settings as a dedicated admin settings card', async () => {
     const w = await mountSettings()
 
     const tabButtons = w.findAll('button[role="tab"]')
-    expect(tabButtons[1].text()).toContain('安全与认证')
+    expect(tabButtons.map((button) => button.text())).toContain('安全与认证')
     expect(w.get('section[style*="display: none"] input[placeholder="https://auth.example.com"]').isVisible()).toBe(false)
-    await tabButtons[1].trigger('click')
+    await tabByText(w, '安全与认证').trigger('click')
 
     expect(w.text()).toContain('OIDC 登录')
     expect(w.text()).toContain('注册设置')
@@ -246,5 +386,83 @@ describe('admin/Settings.vue smoke', () => {
     expect(text).not.toContain('Returns 503')
     expect(text).not.toContain('SMTP_*')
     expect(text).not.toContain('NOTIFY_ROUTES')
+  })
+
+  it('keeps subscription generation settings in their own tab', async () => {
+    const w = await mountSettings()
+
+    const tabButtons = w.findAll('button[role="tab"]')
+    expect(tabButtons[0].text()).toContain('通用')
+    expect(tabButtons[1].text()).toContain('订阅配置')
+    expect(w.text()).toContain('品牌信息')
+    expect(w.find('#setting-clash_template_yaml').isVisible()).toBe(false)
+
+    await tabByText(w, '订阅配置').trigger('click')
+    expect(w.find('#setting-clash_template_yaml').isVisible()).toBe(true)
+    await tabByText(w, '告警配置').trigger('click')
+    expect(w.find('#setting-clash_template_yaml').isVisible()).toBe(false)
+
+    await tabByText(w, '订阅配置').trigger('click')
+
+    expect(w.text()).toContain('订阅配置')
+    expect(w.text()).toContain('订阅链接备注格式')
+    expect(w.text()).toContain('Clash 模板')
+    expect(w.text()).toContain('Clash/Mihomo 模板')
+    expect(w.find('#setting-clash_template_yaml').isVisible()).toBe(true)
+  })
+
+  it('renders template settings as full-width format-aware editors', async () => {
+    const w = await mountSettings()
+    await tabByText(w, '订阅配置').trigger('click')
+
+    const clashRow = w.get('[data-setting-key="clash_template_yaml"]')
+    expect(clashRow.text()).toContain('Clash 模板')
+    expect(clashRow.text()).not.toContain('Clash 模板（YAML）')
+    expect(clashRow.text()).toContain('YAML')
+    expect(clashRow.text()).toContain('格式化')
+    expect(clashRow.find('.settings-code-editor').exists()).toBe(true)
+
+    const singboxRow = w.get('[data-setting-key="singbox_template_json"]')
+    expect(singboxRow.text()).toContain('Sing-box 模板')
+    expect(singboxRow.text()).toContain('JSON')
+
+    await singboxRow.find('button').trigger('click')
+    await flushPromises()
+
+    const singboxEditor = w.get('#setting-singbox_template_json').element as HTMLTextAreaElement
+    expect(singboxEditor.value).toContain('\n  "outbounds": [\n')
+    expect(singboxEditor.value).toContain('${proxies}')
+    expect(singboxRow.text()).toContain('JSON 已格式化')
+  })
+
+  it('keeps traffic and expiry thresholds in the alert config tab', async () => {
+    const w = await mountSettings()
+
+    const tabButtons = w.findAll('button[role="tab"]')
+    expect(tabButtons[0].text()).toContain('通用')
+    expect(tabButtons[2].text()).toContain('告警配置')
+    expect(w.find('#setting-traffic_warn_pct').isVisible()).toBe(false)
+
+    await tabByText(w, '告警配置').trigger('click')
+
+    expect(w.text()).toContain('告警配置')
+    expect(w.text()).toContain('流量预警 %')
+    expect(w.text()).toContain('到期提醒天数')
+    expect(w.find('#setting-traffic_warn_pct').isVisible()).toBe(true)
+    expect(w.find('#setting-expiry_warn_days').isVisible()).toBe(true)
+  })
+
+  it('configures webhooks inside the notifications tab without a page jump', async () => {
+    const w = await mountSettings()
+
+    await tabByText(w, '通知').trigger('click')
+    await flushPromises()
+
+    expect(w.text()).toContain('运营通知')
+    expect(w.text()).toContain('Webhook 推送')
+    expect(w.text()).toContain('ops-slack')
+    expect(w.text()).toContain('新建 webhook')
+    expect(apiStubs.listWebhooks).toHaveBeenCalledTimes(1)
+    expect(w.find('a[href="/admin/webhooks"]').exists()).toBe(false)
   })
 })

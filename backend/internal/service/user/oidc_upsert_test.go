@@ -312,3 +312,84 @@ func TestUpsertOIDC_NoEmailRejected(t *testing.T) {
 		t.Fatalf("want ErrOIDCEmailRequired, got %v", err)
 	}
 }
+
+func TestLinkOIDCToUser_SameEmail(t *testing.T) {
+	db, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	seeded := seedEmailUser(t, db, "alice@example.com", "")
+
+	res, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-profile-link", "alice@example.com", true, "/portal/profile")
+	if err != nil {
+		t.Fatalf("link oidc: %v", err)
+	}
+	if res.User == nil || res.User.ID != seeded.ID {
+		t.Fatalf("expected same user, got %+v", res.User)
+	}
+	if res.RedirectAfter != "/portal/profile" {
+		t.Fatalf("redirect_after = %q", res.RedirectAfter)
+	}
+	if res.User.OIDCSubject == nil || *res.User.OIDCSubject != "sub-profile-link" {
+		t.Fatalf("oidc_subject not linked: %v", res.User.OIDCSubject)
+	}
+	if !res.User.EmailVerified {
+		t.Fatal("email_verified should be refreshed when provider verifies email")
+	}
+}
+
+func TestLinkOIDCToUser_RejectsSubjectOwnedByAnotherUser(t *testing.T) {
+	db, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	target := seedEmailUser(t, db, "alice@example.com", "")
+	_ = seedEmailUser(t, db, "bob@example.com", "sub-owned")
+
+	_, err := svc.linkOIDCToUser(ctx, target.ID, "sub-owned", "alice@example.com", true, "")
+	if !errors.Is(err, ErrOIDCEmailConflict) {
+		t.Fatalf("want ErrOIDCEmailConflict, got %v", err)
+	}
+}
+
+func TestLinkOIDCToUser_RejectsDifferentEmail(t *testing.T) {
+	db, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	seeded := seedEmailUser(t, db, "alice@example.com", "")
+
+	_, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-mismatch", "other@example.com", true, "")
+	if !errors.Is(err, ErrOIDCEmailMismatch) {
+		t.Fatalf("want ErrOIDCEmailMismatch, got %v", err)
+	}
+}
+
+// User with no email on record (OIDC-only account, or admin-created
+// stub) tries to link an OIDC identity whose claimed email already
+// belongs to a different user. The link must reject so we don't end
+// up with two rows sharing the same email.
+func TestLinkOIDCToUser_NoEmailRejectsTakenEmail(t *testing.T) {
+	db, svc := setupOIDCDB(t)
+	ctx := context.Background()
+
+	// Target user has no email yet.
+	target := &model.User{Status: model.UserStatusActive, SubID: "seed-no-email"}
+	if err := db.Create(target).Error; err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	_ = seedEmailUser(t, db, "taken@example.com", "")
+
+	_, err := svc.linkOIDCToUser(ctx, target.ID, "sub-new", "taken@example.com", true, "")
+	if !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("want ErrEmailTaken, got %v", err)
+	}
+}
+
+// User already bound to a different OIDC subject must not be silently
+// rebound, even when the new sub is otherwise unused. This guards the
+// hoisted pre-check that prevents stomping an established identity.
+func TestLinkOIDCToUser_RejectsExistingDifferentSub(t *testing.T) {
+	db, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	seeded := seedEmailUser(t, db, "alice@example.com", "sub-existing")
+
+	_, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-other", "alice@example.com", true, "")
+	if !errors.Is(err, ErrOIDCEmailConflict) {
+		t.Fatalf("want ErrOIDCEmailConflict, got %v", err)
+	}
+}

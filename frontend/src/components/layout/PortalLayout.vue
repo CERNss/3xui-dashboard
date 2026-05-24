@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { portalProfileApi, type UserProfile } from '@/api/portal/profile'
+import AccountMenu, { type AccountMenuItem } from '@/components/common/AccountMenu.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { useBrandingStore } from '@/stores/branding'
 import { usePortalAuthStore } from '@/stores/portalAuth'
@@ -9,11 +11,13 @@ import { useThemeStore } from '@/stores/theme'
 import { formatError } from '@/utils/format'
 
 const router = useRouter()
+const { t } = useI18n()
 const auth = usePortalAuthStore()
 const branding = useBrandingStore()
 const theme = useThemeStore()
 const profile = ref<UserProfile | null>(null)
 const profileError = ref<string | null>(null)
+const REPO_URL = 'https://github.com/cern/3xui-dashboard'
 
 const navItems = computed(() => [
   { to: '/portal/subscription', label: 'nav.subscription', icon: 'M4 5h16v14H4zM9 9h6v6H9z' },
@@ -24,6 +28,33 @@ const navItems = computed(() => [
 ])
 
 const displayEmail = computed(() => profile.value?.email || auth.user?.email || '')
+const accountName = computed(() => {
+  const email = displayEmail.value
+  if (!email) return 'AI'
+  return email.split('@')[0] || email
+})
+const accountMenuItems = computed<AccountMenuItem[]>(() => [
+  {
+    label: t('account.profile'),
+    to: '/portal/profile',
+    icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
+  },
+  {
+    label: t('nav.subscription'),
+    to: '/portal/subscription',
+    icon: 'M4 5h16v3H4zM4 11h16v3H4zM4 17h10v3H4z',
+  },
+  {
+    label: t('account.github'),
+    href: REPO_URL,
+    icon: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22',
+  },
+  {
+    label: t('account.guide'),
+    href: `${REPO_URL}#readme`,
+    icon: 'M12 20h9M12 4h9M4 19.5A2.5 2.5 0 0 1 6.5 17H21M4 4.5A2.5 2.5 0 0 1 6.5 2H21v15H6.5A2.5 2.5 0 0 0 4 19.5v-15z',
+  },
+])
 
 function formatYuan(cents: number): string {
   return '¥' + (cents / 100).toFixed(2)
@@ -40,7 +71,7 @@ async function loadProfile() {
 
 function logout() {
   auth.clear()
-  router.push({ name: 'login', query: { hint: 'portal' } })
+  router.push({ name: 'portal.login' })
 }
 
 onMounted(loadProfile)
@@ -54,12 +85,12 @@ onMounted(loadProfile)
       <div class="min-w-0 shrink-0">
         <div class="flex items-center gap-2 text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">
           <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-500 text-white">
-            <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-5 w-5 rounded-md object-cover" />
+            <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-5 w-5 rounded-md object-cover" @error="branding.clearIcon()" />
             <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" stroke="none">
               <path d="M13 2 3 14h7l-1 8 11-13h-7l0-7z" />
             </svg>
           </span>
-          <span>{{ $t('app.title') }}</span>
+          <span>{{ branding.title || $t('app.title') }}</span>
         </div>
         <div v-if="displayEmail" class="mt-0.5 hidden max-w-[220px] truncate text-2xs text-surface-500 sm:block">{{ displayEmail }}</div>
       </div>
@@ -104,16 +135,16 @@ onMounted(loadProfile)
           </svg>
         </button>
         <!-- Phone: text label hidden, only icon visible; sm+: text -->
-        <button
-          :title="$t('nav.logout')"
-          class="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 font-medium text-surface-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-surface-300 dark:hover:bg-red-950/40 dark:hover:text-red-400 sm:px-3 sm:py-1.5"
-          @click="logout"
-        >
-          <svg class="h-4 w-4 lg:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 12H4M11 16l-4-4 4-4M20 4v16" />
-          </svg>
-          <span class="hidden lg:inline">{{ $t('nav.logout') }}</span>
-        </button>
+        <AccountMenu
+          :name="accountName"
+          :subtitle="displayEmail"
+          :role-label="$t('account.userRole')"
+          :avatar-text="accountName"
+          :open-label="$t('account.openMenu')"
+          :logout-label="$t('nav.logout')"
+          :items="accountMenuItems"
+          @logout="logout"
+        />
       </div>
     </header>
     <section class="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 lg:pb-6">

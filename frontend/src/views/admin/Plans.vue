@@ -191,7 +191,7 @@ onMounted(reload)
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.plans.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.plans.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.plans.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -220,7 +220,7 @@ onMounted(reload)
       class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
     >
       <table class="min-w-full text-sm">
-        <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+        <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
           <tr class="border-b border-surface-100 dark:border-surface-800">
             <th class="px-6 py-3 font-medium">{{ $t('admin.plans.column.id') }}</th>
             <th class="px-6 py-3 font-medium">{{ $t('admin.plans.column.name') }}</th>
@@ -293,36 +293,36 @@ onMounted(reload)
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.name') }}</label>
               <input v-model="modal.form.name" type="text" required :placeholder="$t('admin.plans.namePlaceholder')"
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.description') }}</label>
               <input v-model="modal.form.description" type="text" :placeholder="$t('admin.plans.descriptionPlaceholder')"
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.price') }}</label>
               <input v-model.number="priceYuan" type="number" step="0.01" min="0" required
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.durationDays') }}</label>
               <input v-model.number="modal.form.duration_days" type="number" min="1" required
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.trafficGB') }}</label>
               <input v-model.number="trafficGB" type="number" min="0" required
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.ipLimit') }}</label>
               <input v-model.number="modal.form.ip_limit" type="number" min="0"
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.plans.provisioningPool') }}</label>
-              <select v-model="modal.form.provisioning_pool_id" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900">
+              <select v-model="modal.form.provisioning_pool_id" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900">
                 <option :value="null">{{ $t('admin.plans.provisioningPoolNone') }}</option>
                 <option v-for="pool in pools" :key="pool.id" :value="pool.id">
                   {{ pool.name }}{{ pool.enabled ? '' : ' · disabled' }}

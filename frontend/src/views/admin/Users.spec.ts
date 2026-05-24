@@ -6,6 +6,8 @@ import type { AdminUser } from '@/api/admin/users'
 
 const apiStubs = vi.hoisted(() => ({
   list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
   suspend: vi.fn(),
   unsuspend: vi.fn(),
   remove: vi.fn(),
@@ -88,5 +90,25 @@ describe('Users.vue smoke', () => {
     await flushPromises()
     expect(w.text()).toContain('alice@example.com')
     expect(w.text()).not.toContain('bob@example.com')
+  })
+
+  it('creates users when initial balance is provided by a number input', async () => {
+    apiStubs.create.mockResolvedValue(makeUser({ id: 3, email: 'carol@example.com' }))
+    const w = await mountUsers()
+
+    const addButton = w.findAll('button').find((button) => button.text().includes('新建用户'))
+    expect(addButton).toBeTruthy()
+    await addButton!.trigger('click')
+    await w.find('#create-email').setValue('carol@example.com')
+    await w.find('#create-password').setValue('testpass1234')
+    await w.find('#create-balance').setValue(12.34)
+    await w.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(apiStubs.create).toHaveBeenCalledWith({
+      email: 'carol@example.com',
+      password: 'testpass1234',
+      initial_balance_cents: 1234,
+    })
   })
 })

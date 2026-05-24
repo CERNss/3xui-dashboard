@@ -145,7 +145,7 @@ onMounted(load)
     <header class="mb-7 flex items-end justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('portal.orders.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('portal.orders.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('portal.orders.subtitle') }}</p>
       </div>
       <div v-if="profile" class="text-right">
         <div class="text-xs text-surface-500">{{ $t('portal.orders.balance') }}</div>
@@ -174,7 +174,7 @@ onMounted(load)
       class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
     >
       <table class="min-w-full text-sm">
-        <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+        <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
           <tr class="border-b border-surface-100 dark:border-surface-800">
             <th class="px-6 py-3 font-medium">{{ $t('portal.orders.column.orderId') }}</th>
             <th class="px-6 py-3 font-medium">{{ $t('portal.orders.column.plan') }}</th>

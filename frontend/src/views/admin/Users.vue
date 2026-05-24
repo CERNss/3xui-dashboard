@@ -226,7 +226,7 @@ async function submitCreate() {
   }
   // Yuan → cents. Float math is safe here because the form is bounded
   // by step=0.01; round to integer cents to dodge 12.34 → 1233.9999.
-  const yuan = m.initialBalanceYuan.trim()
+  const yuan = String(m.initialBalanceYuan ?? '').trim()
   let initialCents: number | undefined
   if (yuan) {
     const parsed = Number(yuan)
@@ -580,7 +580,7 @@ onUnmounted(() => {
              smoke test mocks $t to return the raw key. t() goes
              through the real i18n plugin and yields zh/en strings. -->
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ t('admin.users.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ t('admin.users.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ t('admin.users.subtitle') }}</p>
       </div>
     </header>
 
@@ -599,150 +599,155 @@ onUnmounted(() => {
       >{{ flash.text }}</p>
     </Transition>
 
-    <!-- Toolbar: search left, multi-filters + sort + refresh + auto-refresh
-         + 更多操作 + Add user on right. Dropdowns wrap on narrow viewports
-         (flex-wrap) so the row never overflows horizontally. -->
-    <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div class="relative flex-1 sm:max-w-md">
-        <svg class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-        <input
-          v-model="query"
-          type="text"
-          :placeholder="$t('admin.users.searchPlaceholder')"
-          class="h-9 w-full rounded-xl border border-surface-200 bg-surface-0 pl-9 pr-3 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
-        />
+    <!-- Toolbar: two-layer layout. Search gets its own row; filters and
+         actions sit on the second row so the control surface stays scannable. -->
+    <section class="mb-4 rounded-2xl border border-surface-100 bg-surface-0 p-3 shadow-card dark:border-surface-800 dark:bg-surface-900">
+      <div class="flex items-center">
+        <div class="relative w-full max-w-2xl">
+          <svg class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+          <input
+            v-model="query"
+            type="text"
+            :placeholder="$t('admin.users.searchPlaceholder')"
+            class="h-10 w-full rounded-xl border border-surface-200 bg-surface-50/60 pl-9 pr-3 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:bg-surface-0 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-950/30 dark:text-surface-100 dark:focus:bg-surface-950/50"
+          />
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="relative">
-          <select
-            v-model="statusFilter"
-            :aria-label="$t('admin.users.filterStatus')"
-            class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
-          >
-            <option value="">{{ $t('admin.users.filterAll') }}</option>
-            <option value="active">{{ $t('admin.users.status.active') }}</option>
-            <option value="suspended">{{ $t('admin.users.status.suspended') }}</option>
-          </select>
-          <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+      <div class="mt-3 flex flex-col gap-3 border-t border-surface-100 pt-3 dark:border-surface-800 xl:flex-row xl:items-center xl:justify-between">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <div class="relative">
+            <select
+              v-model="statusFilter"
+              :aria-label="$t('admin.users.filterStatus')"
+              class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
+            >
+              <option value="">{{ $t('admin.users.filterAll') }}</option>
+              <option value="active">{{ $t('admin.users.status.active') }}</option>
+              <option value="suspended">{{ $t('admin.users.status.suspended') }}</option>
+            </select>
+            <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </div>
+          <div class="relative">
+            <select
+              v-model="verifiedFilter"
+              :aria-label="$t('admin.users.filterVerified')"
+              class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
+            >
+              <option value="">{{ $t('admin.users.filterVerifiedAll') }}</option>
+              <option value="verified">{{ $t('admin.users.verified') }}</option>
+              <option value="unverified">{{ $t('admin.users.unverified') }}</option>
+            </select>
+            <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </div>
+          <div class="relative">
+            <select
+              v-model="oidcFilter"
+              :aria-label="$t('admin.users.filterRegisterMethod')"
+              class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
+            >
+              <option value="">{{ $t('admin.users.filterRegisterAll') }}</option>
+              <option value="email">{{ $t('admin.users.filterRegisterEmail') }}</option>
+              <option value="oidc">{{ $t('admin.users.filterRegisterOidc') }}</option>
+            </select>
+            <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </div>
+          <div class="relative">
+            <select
+              v-model="sort"
+              :aria-label="$t('admin.users.sortLabel')"
+              class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
+            >
+              <option value="created_at:desc">{{ $t('admin.users.sort.createdDesc') }}</option>
+              <option value="created_at:asc">{{ $t('admin.users.sort.createdAsc') }}</option>
+              <option value="balance:desc">{{ $t('admin.users.sort.balanceDesc') }}</option>
+              <option value="balance:asc">{{ $t('admin.users.sort.balanceAsc') }}</option>
+              <option value="id:desc">{{ $t('admin.users.sort.idDesc') }}</option>
+            </select>
+            <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </div>
         </div>
-        <div class="relative">
-          <select
-            v-model="verifiedFilter"
-            :aria-label="$t('admin.users.filterVerified')"
-            class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
+        <div class="flex shrink-0 flex-wrap items-center justify-start gap-2 xl:justify-end">
+          <button
+            class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-surface-200 bg-surface-0 text-surface-600 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50"
+            :title="$t('admin.users.reload')"
+            @click="reload"
           >
-            <option value="">{{ $t('admin.users.filterVerifiedAll') }}</option>
-            <option value="verified">{{ $t('admin.users.verified') }}</option>
-            <option value="unverified">{{ $t('admin.users.unverified') }}</option>
-          </select>
-          <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-        </div>
-        <div class="relative">
-          <select
-            v-model="oidcFilter"
-            :aria-label="$t('admin.users.filterRegisterMethod')"
-            class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
-          >
-            <option value="">{{ $t('admin.users.filterRegisterAll') }}</option>
-            <option value="email">{{ $t('admin.users.filterRegisterEmail') }}</option>
-            <option value="oidc">{{ $t('admin.users.filterRegisterOidc') }}</option>
-          </select>
-          <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-        </div>
-        <div class="relative">
-          <select
-            v-model="sort"
-            :aria-label="$t('admin.users.sortLabel')"
-            class="h-9 appearance-none rounded-xl border border-surface-200 bg-surface-0 pl-3 pr-8 text-sm text-surface-700 transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200"
-          >
-            <option value="created_at:desc">{{ $t('admin.users.sort.createdDesc') }}</option>
-            <option value="created_at:asc">{{ $t('admin.users.sort.createdAsc') }}</option>
-            <option value="balance:desc">{{ $t('admin.users.sort.balanceDesc') }}</option>
-            <option value="balance:asc">{{ $t('admin.users.sort.balanceAsc') }}</option>
-            <option value="id:desc">{{ $t('admin.users.sort.idDesc') }}</option>
-          </select>
-          <svg class="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-        </div>
-        <button
-          class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-surface-200 bg-surface-0 text-surface-600 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50"
-          :title="$t('admin.users.reload')"
-          @click="reload"
-        >
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M3 21v-5h5" /></svg>
-        </button>
-        <!-- Auto-refresh toggle. Pill flips to accent when on; the
-             pulsing dot is purely cosmetic to signal "live data". -->
-        <button
-          type="button"
-          :title="$t('admin.users.autoRefresh')"
-          class="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-sm font-medium transition-all ease-brand active:scale-[0.98]"
-          :class="autoRefresh
-            ? 'border-accent-500/40 bg-accent-50 text-accent-700 dark:border-accent-500/40 dark:bg-accent-500/15 dark:text-accent-300'
-            : 'border-surface-200 bg-surface-0 text-surface-600 hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50'"
-          @click="toggleAutoRefresh"
-        >
-          <span class="relative flex h-2 w-2">
-            <span
-              v-if="autoRefresh"
-              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75"
-            />
-            <span
-              class="relative inline-flex h-2 w-2 rounded-full"
-              :class="autoRefresh ? 'bg-accent-500' : 'bg-surface-400 dark:bg-surface-500'"
-            />
-          </span>
-          {{ $t('admin.users.autoRefresh') }}
-        </button>
-        <!-- 更多操作 menu — anchored. data-more-menu lets click-outside
-             ignore clicks inside the wrapper. -->
-        <div class="relative" data-more-menu>
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M3 21v-5h5" /></svg>
+          </button>
+          <!-- Auto-refresh toggle. Pill flips to accent when on; the
+               pulsing dot is purely cosmetic to signal "live data". -->
           <button
             type="button"
-            class="inline-flex h-9 items-center gap-1 rounded-xl border border-surface-200 bg-surface-0 px-3 text-sm font-medium text-surface-700 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50"
-            :aria-expanded="moreMenuOpen"
-            aria-haspopup="menu"
-            @click="moreMenuOpen = !moreMenuOpen"
+            :title="$t('admin.users.autoRefresh')"
+            class="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-sm font-medium transition-all ease-brand active:scale-[0.98]"
+            :class="autoRefresh
+              ? 'border-accent-500/40 bg-accent-50 text-accent-700 dark:border-accent-500/40 dark:bg-accent-500/15 dark:text-accent-300'
+              : 'border-surface-200 bg-surface-0 text-surface-600 hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50'"
+            @click="toggleAutoRefresh"
           >
-            {{ $t('admin.users.more.label') }}
-            <svg class="h-3 w-3 transition-transform" :class="moreMenuOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+            <span class="relative flex h-2 w-2">
+              <span
+                v-if="autoRefresh"
+                class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75"
+              />
+              <span
+                class="relative inline-flex h-2 w-2 rounded-full"
+                :class="autoRefresh ? 'bg-accent-500' : 'bg-surface-400 dark:bg-surface-500'"
+              />
+            </span>
+            {{ $t('admin.users.autoRefresh') }}
           </button>
-          <Transition name="fade">
-            <div
-              v-if="moreMenuOpen"
-              role="menu"
-              class="absolute right-0 z-30 mt-1 w-64 origin-top-right overflow-hidden rounded-xl border border-surface-200 bg-surface-0 shadow-elevated dark:border-surface-700 dark:bg-surface-900"
+          <!-- 更多操作 menu — anchored. data-more-menu lets click-outside
+               ignore clicks inside the wrapper. -->
+          <div class="relative" data-more-menu>
+            <button
+              type="button"
+              class="inline-flex h-9 items-center gap-1 rounded-xl border border-surface-200 bg-surface-0 px-3 text-sm font-medium text-surface-700 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50"
+              :aria-expanded="moreMenuOpen"
+              aria-haspopup="menu"
+              @click="moreMenuOpen = !moreMenuOpen"
             >
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-surface-700 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:text-surface-200 dark:hover:bg-surface-800 dark:hover:text-surface-50"
-                @click="exportCsv"
+              {{ $t('admin.users.more.label') }}
+              <svg class="h-3 w-3 transition-transform" :class="moreMenuOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+            <Transition name="fade">
+              <div
+                v-if="moreMenuOpen"
+                role="menu"
+                class="absolute right-0 z-30 mt-1 w-64 origin-top-right overflow-hidden rounded-xl border border-surface-200 bg-surface-0 shadow-elevated dark:border-surface-700 dark:bg-surface-900"
               >
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
-                {{ $t('admin.users.more.exportCsv') }}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center gap-2 border-t border-surface-100 px-3 py-2 text-left text-sm text-surface-700 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-800 dark:text-surface-200 dark:hover:bg-surface-800 dark:hover:text-surface-50"
-                @click="purgeClientCache"
-              >
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /></svg>
-                {{ $t('admin.users.more.purgeCache') }}
-              </button>
-            </div>
-          </Transition>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-surface-700 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:text-surface-200 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+                  @click="exportCsv"
+                >
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+                  {{ $t('admin.users.more.exportCsv') }}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="flex w-full items-center gap-2 border-t border-surface-100 px-3 py-2 text-left text-sm text-surface-700 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-800 dark:text-surface-200 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+                  @click="purgeClientCache"
+                >
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /></svg>
+                  {{ $t('admin.users.more.purgeCache') }}
+                </button>
+              </div>
+            </Transition>
+          </div>
+          <button
+            type="button"
+            class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-accent-600 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-accent-500 active:scale-[0.98] dark:bg-accent-500 dark:hover:bg-accent-400"
+            @click="openCreate"
+          >
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+            {{ $t('admin.users.addUser') }}
+          </button>
         </div>
-        <button
-          type="button"
-          class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-accent-600 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-accent-500 active:scale-[0.98] dark:bg-accent-500 dark:hover:bg-accent-400"
-          @click="openCreate"
-        >
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-          {{ $t('admin.users.addUser') }}
-        </button>
       </div>
-    </div>
+    </section>
 
     <!-- Batch action bar — slides in just below the toolbar whenever
          the selection set is non-empty. Sits above the table so it
@@ -794,11 +799,133 @@ onUnmounted(() => {
     <Skeleton v-if="loading" :rows="6" />
 
     <template v-else>
-      <div
-        v-if="paged.length > 0"
-        class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-700 dark:bg-surface-900"
-      >
-        <table class="min-w-full text-sm">
+      <template v-if="paged.length > 0">
+        <div class="grid gap-3 2xl:hidden">
+          <article
+            v-for="u in paged"
+            :key="u.id"
+            class="rounded-2xl border border-surface-100 bg-surface-0 p-4 shadow-card transition-colors dark:border-surface-800 dark:bg-surface-900"
+            :class="[
+              u.status === 'suspended' ? 'opacity-70' : '',
+              selected.has(u.id) ? 'border-accent-500/30 bg-accent-50/40 dark:border-accent-500/40 dark:bg-accent-500/10' : '',
+            ]"
+          >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="flex min-w-0 items-start gap-3">
+                <input
+                  type="checkbox"
+                  class="mt-2 h-4 w-4 shrink-0 cursor-pointer rounded border-surface-300 text-accent-600 focus:ring-accent-500 focus:ring-offset-0 dark:border-surface-600 dark:bg-surface-800"
+                  :checked="selected.has(u.id)"
+                  :aria-label="$t('admin.users.batch.toggleRow', { email: u.email || '#' + u.id })"
+                  @change="(e) => toggleOne(u.id, e)"
+                />
+                <div :class="['flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold', avatarClass(u)]">{{ avatarInitial(u) }}</div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="break-all font-medium leading-6 text-ink-900 dark:text-surface-50">{{ u.email || '—' }}</span>
+                    <span
+                      v-if="u.email"
+                      class="inline-flex shrink-0 whitespace-nowrap items-center rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ring-inset"
+                      :class="u.email_verified
+                        ? 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-500/15 dark:text-accent-300 dark:ring-accent-500/30'
+                        : 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/30'"
+                    >
+                      {{ u.email_verified ? $t('admin.users.verified') : $t('admin.users.unverified') }}
+                    </span>
+                  </div>
+                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-2xs text-surface-400 dark:text-surface-500">
+                    <span>#{{ u.id }}</span>
+                    <span class="max-w-full truncate">{{ u.sub_id.slice(0, 12) }}…</span>
+                  </div>
+                </div>
+              </div>
+              <span
+                class="inline-flex w-fit shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset sm:mt-1"
+                :class="u.status === 'active'
+                  ? 'bg-accent-50 text-accent-700 ring-accent-200 dark:bg-accent-500/15 dark:text-accent-300 dark:ring-accent-500/40'
+                  : 'bg-red-50 text-red-600 ring-red-200 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-500/40'"
+              >
+                <span class="h-1.5 w-1.5 rounded-full" :class="u.status === 'active' ? 'bg-accent-500' : 'bg-red-500'" />
+                {{ u.status === 'active' ? t('admin.users.status.active') : t('admin.users.status.suspended') }}
+              </span>
+            </div>
+
+            <dl class="mt-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+              <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+                <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.users.column.balance') }}</dt>
+                <dd class="mt-1 flex flex-wrap items-center gap-2">
+                  <span class="font-medium tabular-nums text-ink-900 dark:text-surface-50">{{ formatYuan(u.balance_cents) }}</span>
+                  <button
+                    :title="$t('admin.users.balance.adjust')"
+                    class="inline-flex h-6 items-center rounded-lg border border-surface-200 bg-surface-0 px-2 text-2xs font-medium text-surface-600 transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:border-accent-500/30 dark:hover:bg-accent-500/20 dark:hover:text-accent-200"
+                    @click="openBalance(u)"
+                  >{{ $t('admin.users.balance.adjustShort') }}</button>
+                </dd>
+              </div>
+              <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+                <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.users.column.autoRenew') }}</dt>
+                <dd class="mt-1">
+                  <button
+                    type="button"
+                    role="switch"
+                    :aria-checked="u.auto_renew"
+                    :title="u.auto_renew ? $t('admin.users.autoRenewOff') : $t('admin.users.autoRenewOn')"
+                    :disabled="autoRenewBusy === u.id"
+                    class="inline-flex h-7 items-center gap-2 rounded-full border px-2 text-xs font-medium transition-colors disabled:opacity-50"
+                    :class="u.auto_renew
+                      ? 'border-accent-500/30 bg-accent-50 text-accent-700 dark:border-accent-500/30 dark:bg-accent-500/15 dark:text-accent-300'
+                      : 'border-surface-200 bg-surface-0 text-surface-500 hover:bg-surface-50 hover:text-surface-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-200'"
+                    @click="toggleAutoRenew(u)"
+                  >
+                    <span
+                      class="relative h-4 w-7 rounded-full transition-colors"
+                      :class="u.auto_renew ? 'bg-accent-500' : 'bg-surface-300 dark:bg-surface-700'"
+                    >
+                      <span
+                        class="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform"
+                        :class="u.auto_renew ? 'translate-x-3' : 'translate-x-0'"
+                      />
+                    </span>
+                    <span>{{ autoRenewBusy === u.id ? $t('admin.users.autoRenewUpdating') : (u.auto_renew ? $t('admin.users.on') : $t('admin.users.off')) }}</span>
+                  </button>
+                </dd>
+              </div>
+              <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+                <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.users.column.registered') }}</dt>
+                <dd class="mt-1 truncate text-xs text-surface-700 dark:text-surface-200" :title="absoluteTime(u.created_at)">{{ relativeTime(u.created_at) }}</dd>
+              </div>
+              <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+                <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.users.column.lastActive') }}</dt>
+                <dd class="mt-1 truncate text-xs text-surface-700 dark:text-surface-200">
+                  <span v-if="u.last_active_at" :title="absoluteTime(u.last_active_at)">{{ relativeTime(u.last_active_at) }}</span>
+                  <span v-else class="text-surface-400 dark:text-surface-600">—</span>
+                </dd>
+              </div>
+            </dl>
+
+            <div class="mt-4 flex flex-wrap items-center justify-end gap-1.5 border-t border-surface-100 pt-3 dark:border-surface-800">
+              <button
+                :title="u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend')"
+                class="inline-flex h-8 items-center rounded-lg border border-surface-200 bg-surface-0 px-2.5 text-xs font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+                @click="toggleSuspend(u)"
+              >
+                {{ u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend') }}
+              </button>
+              <button
+                :title="$t('admin.users.delete')"
+                class="inline-flex h-8 items-center rounded-lg border border-transparent px-2.5 text-xs font-medium text-red-600 transition-colors hover:border-red-200 hover:bg-red-50 dark:text-red-400 dark:hover:border-red-500/30 dark:hover:bg-red-500/15"
+                @click="destroy(u)"
+              >
+                {{ $t('admin.users.delete') }}
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div
+          class="hidden overflow-hidden rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-700 dark:bg-surface-900 2xl:block"
+        >
+        <table class="w-full min-w-[1120px] text-sm">
           <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-400">
             <tr class="border-b border-surface-100 dark:border-surface-700">
               <th class="w-10 px-4 py-3">
@@ -823,10 +950,10 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('email')" class="text-accent-500">{{ sortIndicator('email') }}</span>
                 </span>
               </th>
-              <th class="px-6 py-3 font-medium">{{ $t('admin.users.column.id') }}</th>
-              <th class="px-6 py-3 font-medium">{{ $t('admin.users.column.status') }}</th>
+              <th class="px-4 py-3 font-medium">{{ $t('admin.users.column.id') }}</th>
+              <th class="px-4 py-3 font-medium">{{ $t('admin.users.column.status') }}</th>
               <th
-                class="cursor-pointer select-none px-6 py-3 text-right font-medium transition-colors hover:text-ink-900 dark:hover:text-surface-50"
+                class="cursor-pointer select-none px-4 py-3 text-right font-medium transition-colors hover:text-ink-900 dark:hover:text-surface-50"
                 @click="sortBy('balance')"
               >
                 <span class="inline-flex items-center justify-end gap-1">
@@ -834,8 +961,9 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('balance')" class="text-accent-500">{{ sortIndicator('balance') }}</span>
                 </span>
               </th>
+              <th class="px-4 py-3 font-medium">{{ $t('admin.users.column.autoRenew') }}</th>
               <th
-                class="cursor-pointer select-none px-6 py-3 font-medium transition-colors hover:text-ink-900 dark:hover:text-surface-50"
+                class="cursor-pointer select-none px-4 py-3 font-medium transition-colors hover:text-ink-900 dark:hover:text-surface-50"
                 @click="sortBy('created_at')"
               >
                 <span class="inline-flex items-center gap-1">
@@ -843,8 +971,8 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('created_at')" class="text-accent-500">{{ sortIndicator('created_at') }}</span>
                 </span>
               </th>
-              <th class="px-6 py-3 font-medium">{{ $t('admin.users.column.lastActive') }}</th>
-              <th class="px-6 py-3 text-right font-medium">{{ $t('admin.users.column.actions') }}</th>
+              <th class="px-4 py-3 font-medium">{{ $t('admin.users.column.lastActive') }}</th>
+              <th class="sticky right-0 z-10 min-w-[148px] border-l border-surface-100 bg-surface-0 px-4 py-3 text-right font-medium dark:border-surface-700 dark:bg-surface-900">{{ $t('admin.users.column.actions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-surface-100 dark:divide-surface-700">
@@ -873,7 +1001,7 @@ onUnmounted(() => {
                   <div class="min-w-0">
                     <div class="flex items-center gap-1.5">
                       <span class="truncate font-medium text-ink-900 dark:text-surface-50">{{ u.email || '—' }}</span>
-                      <span v-if="u.email" class="inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ring-inset"
+                      <span v-if="u.email" class="inline-flex shrink-0 whitespace-nowrap items-center rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ring-inset"
                         :class="u.email_verified
                           ? 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-500/15 dark:text-accent-300 dark:ring-accent-500/30'
                           : 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/30'">
@@ -884,8 +1012,8 @@ onUnmounted(() => {
                   </div>
                 </div>
               </td>
-              <td class="px-6 py-3.5 font-mono text-xs text-surface-400 tabular-nums dark:text-surface-400">#{{ u.id }}</td>
-              <td class="px-6 py-3.5">
+              <td class="px-4 py-3.5 font-mono text-xs text-surface-400 tabular-nums dark:text-surface-400">#{{ u.id }}</td>
+              <td class="px-4 py-3.5">
                 <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
                   :class="u.status === 'active'
                     ? 'bg-accent-50 text-accent-700 ring-accent-200 dark:bg-accent-500/15 dark:text-accent-300 dark:ring-accent-500/40'
@@ -894,49 +1022,71 @@ onUnmounted(() => {
                   {{ u.status === 'active' ? t('admin.users.status.active') : t('admin.users.status.suspended') }}
                 </span>
               </td>
-              <!-- Balance: right-aligned, on row-hover reveal +/- quick chips. -->
-              <td class="px-6 py-3.5">
+              <td class="px-4 py-3.5">
                 <div class="flex items-center justify-end gap-2">
+                  <span class="text-right font-medium tabular-nums text-ink-900 dark:text-surface-50">{{ formatYuan(u.balance_cents) }}</span>
                   <button
                     :title="$t('admin.users.balance.adjust')"
-                    class="hidden h-6 items-center rounded-full bg-surface-100 px-2 text-2xs font-medium text-surface-600 opacity-0 transition-opacity hover:bg-accent-100 hover:text-accent-700 group-hover/row:flex group-hover/row:opacity-100 dark:bg-surface-800 dark:text-surface-300 dark:hover:bg-accent-500/20 dark:hover:text-accent-200"
+                    class="inline-flex h-7 items-center rounded-lg border border-surface-200 bg-surface-0 px-2 text-xs font-medium text-surface-600 transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:border-accent-500/30 dark:hover:bg-accent-500/20 dark:hover:text-accent-200"
                     @click="openBalance(u)"
-                  >+</button>
-                  <span class="text-right font-medium tabular-nums text-ink-900 dark:text-surface-50">{{ formatYuan(u.balance_cents) }}</span>
+                  >{{ $t('admin.users.balance.adjustShort') }}</button>
                 </div>
               </td>
-              <td class="px-6 py-3.5 text-xs text-surface-500 dark:text-surface-400">
+              <td class="px-4 py-3.5">
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="u.auto_renew"
+                  :title="u.auto_renew ? $t('admin.users.autoRenewOff') : $t('admin.users.autoRenewOn')"
+                  :disabled="autoRenewBusy === u.id"
+                  class="inline-flex h-7 items-center gap-2 rounded-full border px-2 text-xs font-medium transition-colors disabled:opacity-50"
+                  :class="u.auto_renew
+                    ? 'border-accent-500/30 bg-accent-50 text-accent-700 dark:border-accent-500/30 dark:bg-accent-500/15 dark:text-accent-300'
+                    : 'border-surface-200 bg-surface-0 text-surface-500 hover:bg-surface-50 hover:text-surface-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-200'"
+                  @click="toggleAutoRenew(u)"
+                >
+                  <span
+                    class="relative h-4 w-7 rounded-full transition-colors"
+                    :class="u.auto_renew ? 'bg-accent-500' : 'bg-surface-300 dark:bg-surface-700'"
+                  >
+                    <span
+                      class="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform"
+                      :class="u.auto_renew ? 'translate-x-3' : 'translate-x-0'"
+                    />
+                  </span>
+                  <span>{{ autoRenewBusy === u.id ? $t('admin.users.autoRenewUpdating') : (u.auto_renew ? $t('admin.users.on') : $t('admin.users.off')) }}</span>
+                </button>
+              </td>
+              <td class="px-4 py-3.5 text-xs text-surface-500 dark:text-surface-400">
                 <span :title="absoluteTime(u.created_at)">{{ relativeTime(u.created_at) }}</span>
               </td>
-              <td class="px-6 py-3.5 text-xs text-surface-500 dark:text-surface-400">
+              <td class="px-4 py-3.5 text-xs text-surface-500 dark:text-surface-400">
                 <span v-if="u.last_active_at" :title="absoluteTime(u.last_active_at)">{{ relativeTime(u.last_active_at) }}</span>
                 <span v-else class="text-surface-400 dark:text-surface-600">—</span>
               </td>
-              <td class="px-6 py-3.5">
-                <div class="flex items-center justify-end gap-0.5">
-                  <button :title="$t('admin.users.balance.adjust')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-accent-50 hover:text-accent-700 dark:text-surface-300 dark:hover:bg-accent-500/20 dark:hover:text-accent-200" @click="openBalance(u)">
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 6v2M12 16v2" /></svg>
+              <td class="sticky right-0 border-l border-surface-100 bg-surface-0 px-4 py-3.5 whitespace-nowrap transition-colors group-hover/row:bg-surface-50/95 dark:border-surface-700 dark:bg-surface-900 dark:group-hover/row:bg-surface-800/95">
+                <div class="flex items-center justify-end gap-1.5">
+                  <button
+                    :title="u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend')"
+                    class="inline-flex h-7 items-center rounded-lg border border-surface-200 bg-surface-0 px-2 text-xs font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+                    @click="toggleSuspend(u)"
+                  >
+                    {{ u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend') }}
                   </button>
-                  <button :title="$t('admin.users.autoRenew')" :disabled="autoRenewBusy === u.id" class="flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-50"
-                    :class="u.auto_renew
-                      ? 'text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-500/20'
-                      : 'text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:text-surface-500 dark:hover:bg-surface-700 dark:hover:text-surface-300'"
-                    @click="toggleAutoRenew(u)">
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M3 21v-5h5" /></svg>
-                  </button>
-                  <button :title="u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-700 dark:hover:text-surface-50" @click="toggleSuspend(u)">
-                    <svg v-if="u.status === 'suspended'" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                    <svg v-else class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-                  </button>
-                  <button :title="$t('admin.users.delete')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-surface-300 dark:hover:bg-red-500/15 dark:hover:text-red-400" @click="destroy(u)">
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+                  <button
+                    :title="$t('admin.users.delete')"
+                    class="inline-flex h-7 items-center rounded-lg border border-transparent px-2 text-xs font-medium text-red-600 transition-colors hover:border-red-200 hover:bg-red-50 dark:text-red-400 dark:hover:border-red-500/30 dark:hover:bg-red-500/15"
+                    @click="destroy(u)"
+                  >
+                    {{ $t('admin.users.delete') }}
                   </button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
-      </div>
+        </div>
+      </template>
 
       <!-- "No matches" — different from the totally-empty state because
            the user just typed a filter that returned nothing. -->
@@ -1015,7 +1165,7 @@ onUnmounted(() => {
               required
               autocomplete="off"
               :placeholder="$t('admin.users.create.emailPlaceholder')"
-              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
             />
           </div>
           <div>
@@ -1029,7 +1179,7 @@ onUnmounted(() => {
                 minlength="8"
                 autocomplete="new-password"
                 :placeholder="$t('admin.users.create.passwordPlaceholder')"
-                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 pr-11 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 pr-11 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
               />
               <button
                 type="button"
@@ -1051,7 +1201,7 @@ onUnmounted(() => {
               min="0"
               step="0.01"
               :placeholder="$t('admin.users.create.initialBalancePlaceholder')"
-              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
             />
             <p class="mt-1 text-2xs text-surface-500 dark:text-surface-400">{{ $t('admin.users.create.initialBalanceHint') }}</p>
           </div>
@@ -1088,7 +1238,7 @@ onUnmounted(() => {
               type="number"
               required
               :placeholder="$t('admin.users.balance.amountPlaceholder')"
-              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
             />
             <p class="mt-1 text-2xs text-surface-500 dark:text-surface-400">{{ balanceModal.delta > 0 ? '+' : '' }}{{ formatYuan(balanceModal.delta) }}（{{ balanceModal.delta > 0 ? $t('admin.users.balance.deposit') : balanceModal.delta < 0 ? $t('admin.users.balance.deduct') : $t('admin.users.balance.zeroMarker') }}）</p>
           </div>
@@ -1099,7 +1249,7 @@ onUnmounted(() => {
               type="text"
               required
               :placeholder="$t('admin.users.balance.reasonPlaceholder')"
-              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
             />
             <p class="mt-1 text-2xs text-surface-500 dark:text-surface-400">{{ $t('admin.users.balance.ledgerNote') }}</p>
           </div>

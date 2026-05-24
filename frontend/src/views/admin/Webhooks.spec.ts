@@ -10,6 +10,8 @@ const apiStubs = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   test: vi.fn(),
+  deliveries: vi.fn(),
+  replay: vi.fn(),
 }))
 vi.mock('@/api/admin/webhooks', () => ({
   adminWebhooksApi: {
@@ -18,6 +20,8 @@ vi.mock('@/api/admin/webhooks', () => ({
     update: apiStubs.update,
     remove: apiStubs.remove,
     test: apiStubs.test,
+    deliveries: apiStubs.deliveries,
+    replay: apiStubs.replay,
   },
 }))
 
@@ -57,6 +61,7 @@ async function mountWebhooks() {
 }
 
 beforeEach(() => {
+  apiStubs.deliveries.mockResolvedValue([])
   apiStubs.list.mockResolvedValue([
     makeWebhook(),
     makeWebhook({
@@ -110,7 +115,7 @@ describe('admin/Webhooks.vue smoke', () => {
     // Modal-specific heading appears (Chinese title "新建 webhook"
     // also appears as the open trigger, so check for an
     // editor-only label).
-    expect(w.text()).toMatch(/Body Template/)
+    expect(w.text()).toMatch(/请求内容/)
   })
 
   it('triggers the test API when "test" is clicked', async () => {

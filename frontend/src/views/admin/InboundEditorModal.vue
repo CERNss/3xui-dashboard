@@ -12,10 +12,10 @@ const { t } = useI18n()
 
 const Row = defineComponent({
   props: { label: { type: String, required: true } },
-  setup(props, { slots }) {
+  setup(props, { slots, attrs }) {
     return () =>
-      h('div', { class: 'flex items-center gap-4' }, [
-        h('label', { class: 'w-32 shrink-0 text-right text-sm text-surface-600 dark:text-surface-300' }, props.label),
+      h('div', { ...attrs, class: ['flex min-w-0 items-center gap-3', attrs.class] }, [
+        h('label', { class: 'w-28 shrink-0 text-right text-xs leading-4 text-surface-600 dark:text-surface-300' }, props.label),
         h('div', { class: 'flex-1' }, slots.default?.()),
       ])
   },
@@ -82,15 +82,21 @@ const AdvancedJSON = defineComponent({
     value: { type: String, required: true },
   },
   emits: ['update:override', 'update:value'],
-  setup(props, { emit }) {
+  setup(props, { emit, attrs }) {
     return () =>
-      h('div', { class: 'space-y-2' }, [
-        h('div', { class: 'flex items-center justify-between' }, [
-          h('div', {}, [
-            h('div', { class: 'font-mono text-sm font-semibold' }, props.label),
-            props.description ? h('div', { class: 'text-xs text-surface-500' }, props.description) : null,
+      h('div', {
+        ...attrs,
+        class: [
+          'min-w-0 space-y-2 rounded-lg border border-surface-200 bg-surface-50/70 p-3 dark:border-surface-800 dark:bg-surface-950/30',
+          attrs.class,
+        ],
+      }, [
+        h('div', { class: 'flex min-w-0 items-start justify-between gap-2' }, [
+          h('div', { class: 'min-w-0' }, [
+            h('div', { class: 'truncate font-mono text-xs font-semibold text-ink-900 dark:text-surface-50' }, props.label),
+            props.description ? h('div', { class: 'mt-0.5 truncate text-2xs text-surface-500' }, props.description) : null,
           ]),
-          h('label', { class: 'flex items-center gap-2 text-xs' }, [
+          h('label', { class: 'flex shrink-0 items-center gap-1.5 text-2xs text-surface-600 dark:text-surface-300' }, [
             h('input', {
               type: 'checkbox',
               checked: props.override,
@@ -101,12 +107,11 @@ const AdvancedJSON = defineComponent({
           ]),
         ]),
         h('textarea', {
-          rows: 6,
           value: props.value,
           onInput: (e: Event) => emit('update:value', (e.target as HTMLTextAreaElement).value),
           spellcheck: 'false',
           class: [
-            'w-full rounded-lg border bg-surface-50 px-3 py-2 font-mono text-xs leading-relaxed transition-colors dark:bg-surface-800',
+            'h-64 w-full resize-none rounded-lg border bg-surface-0 px-3 py-2 font-mono text-2xs leading-relaxed transition-colors dark:bg-surface-900',
             props.override
               ? 'border-accent-300 focus:ring-2 focus:ring-accent-200 dark:border-accent-700'
               : 'border-surface-200 text-surface-500 dark:border-surface-700',
@@ -739,24 +744,23 @@ const expiryDisplay = computed({
 <template>
   <div
     v-if="open"
-    class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-    @click.self="$emit('close')"
+    class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-4"
   >
-    <div class="flex h-[640px] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-surface-0 shadow-elevated dark:bg-surface-900">
+    <div class="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-surface-0 shadow-elevated dark:bg-surface-900 sm:max-h-[calc(100vh-2rem)]">
       <!-- Title bar -->
-      <header class="flex items-center justify-between border-b border-surface-200 px-6 py-4 dark:border-surface-800">
-        <h2 class="text-lg font-semibold">{{ mode === 'create' ? $t('admin.inboundEditor.createTitle') : $t('admin.inboundEditor.editTitle', { tag }) }}</h2>
-        <button class="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+      <header class="flex h-12 shrink-0 items-center justify-between border-b border-surface-200 px-5 dark:border-surface-800">
+        <h2 class="text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ mode === 'create' ? $t('admin.inboundEditor.createTitle') : $t('admin.inboundEditor.editTitle', { tag }) }}</h2>
+        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       </header>
 
       <!-- Tab bar -->
-      <nav class="flex border-b border-surface-200 px-6 dark:border-surface-800">
+      <nav class="flex shrink-0 border-b border-surface-200 px-5 dark:border-surface-800">
         <button
           v-for="t in visibleTabs"
           :key="t.key"
-          class="-mb-px border-b-2 px-4 py-3 text-sm font-medium transition-brand transition"
+          class="-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-brand transition"
           :class="
             activeTab === t.key
               ? 'border-primary-600 text-primary-700 dark:text-primary-300'
@@ -769,9 +773,9 @@ const expiryDisplay = computed({
       </nav>
 
       <!-- Body -->
-      <form class="flex-1 overflow-y-auto px-6 py-5" @submit.prevent="submit">
+      <form class="min-h-0 flex-1 overflow-y-auto px-5 py-4" @submit.prevent="submit">
         <!-- ============ Tab: 基础配置 ============ -->
-        <div v-if="activeTab === 'basic'" class="space-y-4">
+        <div v-if="activeTab === 'basic'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-5">
           <Row :label="$t('admin.inboundEditor.basicEnable')">
             <ToggleBtn v-model="m.enable" />
           </Row>
@@ -799,10 +803,10 @@ const expiryDisplay = computed({
               <option value="hysteria">hysteria</option>
             </select>
           </Row>
-          <p v-if="m.protocol === 'wireguard'" class="text-xs text-surface-500 pl-32">
+          <p v-if="m.protocol === 'wireguard'" class="text-xs leading-5 text-surface-500 sm:col-span-2 sm:pl-28">
             {{ $t('admin.inboundEditor.wireguardInfo') }}
           </p>
-          <p v-if="m.protocol === 'hysteria'" class="text-xs text-surface-500 pl-32">
+          <p v-if="m.protocol === 'hysteria'" class="text-xs leading-5 text-surface-500 sm:col-span-2 sm:pl-28">
             {{ $t('admin.inboundEditor.hysteriaInfo') }}
           </p>
           <Row :label="$t('admin.inboundEditor.basicAddress')">
@@ -1126,37 +1130,39 @@ const expiryDisplay = computed({
         </div>
 
         <!-- ============ Tab: 高级配置 ============ -->
-        <div v-else-if="activeTab === 'advanced'" class="space-y-5">
+        <div v-else-if="activeTab === 'advanced'" class="space-y-3">
           <Info>{{ $t('admin.inboundEditor.advanced.info') }}</Info>
 
-          <AdvancedJSON
-            :label="$t('admin.inboundEditor.advanced.labelSettings')"
-            :description="$t('admin.inboundEditor.advanced.labelSettingsDesc')"
-            v-model:override="m.advSettingsOverride"
-            v-model:value="m.advSettings"
-          />
-          <AdvancedJSON
-            :label="$t('admin.inboundEditor.advanced.labelStream')"
-            :description="$t('admin.inboundEditor.advanced.labelStreamDesc')"
-            v-model:override="m.advStreamOverride"
-            v-model:value="m.advStream"
-          />
-          <AdvancedJSON
-            :label="$t('admin.inboundEditor.advanced.labelSniffing')"
-            :description="$t('admin.inboundEditor.advanced.labelSniffingDesc')"
-            v-model:override="m.advSniffingOverride"
-            v-model:value="m.advSniffing"
-          />
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <AdvancedJSON
+              :label="$t('admin.inboundEditor.advanced.labelSettings')"
+              :description="$t('admin.inboundEditor.advanced.labelSettingsDesc')"
+              v-model:override="m.advSettingsOverride"
+              v-model:value="m.advSettings"
+            />
+            <AdvancedJSON
+              :label="$t('admin.inboundEditor.advanced.labelStream')"
+              :description="$t('admin.inboundEditor.advanced.labelStreamDesc')"
+              v-model:override="m.advStreamOverride"
+              v-model:value="m.advStream"
+            />
+            <AdvancedJSON
+              :label="$t('admin.inboundEditor.advanced.labelSniffing')"
+              :description="$t('admin.inboundEditor.advanced.labelSniffingDesc')"
+              v-model:override="m.advSniffingOverride"
+              v-model:value="m.advSniffing"
+            />
+          </div>
         </div>
       </form>
 
       <!-- Footer -->
-      <footer class="flex items-center justify-between border-t border-surface-200 px-6 py-4 dark:border-surface-800">
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <p v-else class="text-xs text-surface-500">{{ mode === 'create' ? $t('admin.inboundEditor.footerHintCreate') : $t('admin.inboundEditor.footerHintEdit') }}</p>
+      <footer class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-surface-200 px-5 py-3 dark:border-surface-800">
+        <p v-if="error" class="min-w-0 flex-1 truncate text-sm text-red-600">{{ error }}</p>
+        <p v-else class="min-w-0 flex-1 truncate text-xs text-surface-500">{{ mode === 'create' ? $t('admin.inboundEditor.footerHintCreate') : $t('admin.inboundEditor.footerHintEdit') }}</p>
         <div class="flex gap-2">
-          <button type="button" class="rounded-lg border border-surface-200 px-4 py-1.5 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">{{ $t('admin.inboundEditor.close') }}</button>
-          <button type="button" :disabled="busy" class="rounded-lg bg-accent-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60" @click="submit">
+          <button type="button" class="inline-flex h-9 items-center rounded-lg border border-surface-200 px-4 text-sm hover:bg-surface-100 dark:border-surface-700 dark:hover:bg-surface-800" @click="$emit('close')">{{ $t('admin.inboundEditor.close') }}</button>
+          <button type="button" :disabled="busy" class="inline-flex h-9 items-center rounded-lg bg-accent-600 px-5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60" @click="submit">
             {{ busy ? $t('admin.inboundEditor.busy') : (mode === 'create' ? $t('admin.inboundEditor.submitCreate') : $t('admin.inboundEditor.submitSave')) }}
           </button>
         </div>
@@ -1167,6 +1173,6 @@ const expiryDisplay = computed({
 
 <style scoped>
 .input {
-  @apply w-full rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-brand transition focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-200 dark:border-surface-700 dark:bg-surface-900;
+  @apply h-9 w-full rounded-lg border border-surface-200 bg-surface-0 px-3 text-sm transition-brand transition focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-200 dark:border-surface-700 dark:bg-surface-900;
 }
 </style>

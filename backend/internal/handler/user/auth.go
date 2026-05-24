@@ -3,7 +3,6 @@ package user
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -67,18 +66,8 @@ func (h *AuthHandler) OIDCProviders(c *gin.Context) {
 		c.JSON(http.StatusOK, []oidcProvider{})
 		return
 	}
-	name := oidc.DisplayName
-	if name == "" {
-		// Fall back to issuer hostname so the button has *something* useful
-		// to show even if the operator didn't set OIDC_DISPLAY_NAME.
-		if u, err := url.Parse(oidc.Issuer); err == nil && u.Host != "" {
-			name = u.Host
-		} else {
-			name = "OIDC"
-		}
-	}
 	c.JSON(http.StatusOK, []oidcProvider{{
-		Name:     name,
+		Name:     usersvc.OIDCDisplayName(oidc),
 		Icon:     oidc.IconURL,
 		LoginURL: "/api/user/auth/oidc/start",
 	}})
@@ -304,10 +293,16 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		case errors.Is(err, usersvc.ErrOIDCEmailConflict):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, usersvc.ErrOIDCEmailMismatch):
+			c.JSON(http.StatusConflict, gin.H{"error": "OIDC email does not match current account"})
 		case errors.Is(err, usersvc.ErrOIDCEmailRequired):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC email claim is required"})
 		case errors.Is(err, usersvc.ErrDomainNotAllowed):
 			c.JSON(http.StatusForbidden, gin.H{"error": "email domain not allowed"})
+		case errors.Is(err, usersvc.ErrUserSuspended):
+			c.JSON(http.StatusForbidden, gin.H{"error": "account suspended"})
+		case errors.Is(err, usersvc.ErrEmailTaken):
+			c.JSON(http.StatusConflict, gin.H{"error": "email already in use"})
 		case errors.Is(err, usersvc.ErrNotImplemented):
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
 		default:

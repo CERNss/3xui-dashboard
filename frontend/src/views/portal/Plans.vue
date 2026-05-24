@@ -168,7 +168,7 @@ onMounted(load)
     <header class="mb-7 flex items-end justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('portal.plans.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('portal.plans.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('portal.plans.subtitle') }}</p>
       </div>
       <div v-if="profile" class="text-right">
         <div class="text-xs text-surface-500">{{ $t('portal.plans.currentBalance') }}</div>

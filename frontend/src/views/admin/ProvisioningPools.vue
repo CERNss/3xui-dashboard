@@ -267,7 +267,7 @@ onMounted(reload)
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.provisioningPools.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.provisioningPools.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.provisioningPools.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 text-sm font-medium text-white shadow-card transition-all hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500" @click="openCreatePool">
@@ -290,11 +290,11 @@ onMounted(reload)
           <div>
             <div class="flex items-center gap-2">
               <h2 class="text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ pool.name }}</h2>
-              <span class="rounded-full px-2 py-0.5 text-2xs font-medium ring-1 ring-inset" :class="pool.enabled ? 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800' : 'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:ring-surface-700'">
-                {{ pool.enabled ? $t('admin.provisioningPools.enabled') : 'disabled' }}
+              <span class="rounded-full px-2 py-0.5 text-2xs font-medium ring-1 ring-inset" :class="pool.enabled ? 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800' : 'bg-surface-100 text-surface-600 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700'">
+                {{ pool.enabled ? $t('admin.provisioningPools.enabled') : $t('admin.provisioningPools.disabled') }}
               </span>
             </div>
-            <p class="mt-1 text-xs text-surface-500">{{ pool.description || protocolsText(pool) }}</p>
+            <p class="mt-1 text-xs text-surface-500 dark:text-surface-400">{{ pool.description || protocolsText(pool) }}</p>
           </div>
           <div class="flex items-center gap-1.5">
             <button class="rounded-lg border border-surface-200 px-2.5 py-1 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800" @click="openAddTarget(pool)">{{ $t('admin.provisioningPools.addTarget') }}</button>
@@ -309,7 +309,7 @@ onMounted(reload)
 
         <div v-if="pool.targets?.length" class="overflow-x-auto">
           <table class="min-w-full text-sm">
-            <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+            <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
               <tr class="border-b border-surface-100 dark:border-surface-800">
                 <th class="px-5 py-3 font-medium">{{ $t('admin.provisioningPools.column.target') }}</th>
                 <th class="px-5 py-3 font-medium">{{ $t('admin.provisioningPools.column.capacity') }}</th>
@@ -322,7 +322,7 @@ onMounted(reload)
               <tr v-for="target in pool.targets" :key="target.id" class="hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
                 <td class="px-5 py-3.5">
                   <div class="font-medium text-ink-900 dark:text-surface-50">{{ target.node_name || ('#' + target.node_id) }}</div>
-                  <div class="mt-0.5 font-mono text-2xs text-surface-500">{{ target.inbound_tag }} · {{ target.protocol || '-' }}</div>
+                  <div class="mt-0.5 font-mono text-2xs text-surface-500 dark:text-surface-400">{{ target.inbound_tag }} · {{ target.protocol || '-' }}</div>
                 </td>
                 <td class="px-5 py-3.5 tabular-nums text-surface-600 dark:text-surface-300">{{ capacityText(target) }}</td>
                 <td class="px-5 py-3.5 tabular-nums text-surface-600 dark:text-surface-300">{{ target.priority }}</td>
@@ -338,7 +338,7 @@ onMounted(reload)
             </tbody>
           </table>
         </div>
-        <div v-else class="px-5 py-5 text-sm text-surface-500">{{ $t('admin.provisioningPools.emptyDescription') }}</div>
+        <div v-else class="px-5 py-5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.provisioningPools.emptyDescription') }}</div>
       </section>
     </div>
 
@@ -363,22 +363,22 @@ onMounted(reload)
           <div class="grid grid-cols-2 gap-3.5">
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.name') }}</label>
-              <input v-model="poolModal.form.name" required :placeholder="$t('admin.provisioningPools.namePlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="poolModal.form.name" required :placeholder="$t('admin.provisioningPools.namePlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.description') }}</label>
-              <input v-model="poolModal.form.description" :placeholder="$t('admin.provisioningPools.descriptionPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="poolModal.form.description" :placeholder="$t('admin.provisioningPools.descriptionPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.portRange') }}</label>
               <div class="grid grid-cols-2 gap-2">
-                <input v-model.number="poolModal.form.port_min" type="number" min="1" max="65535" placeholder="10000" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
-                <input v-model.number="poolModal.form.port_max" type="number" min="1" max="65535" placeholder="20000" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+                <input v-model.number="poolModal.form.port_min" type="number" min="1" max="65535" placeholder="10000" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
+                <input v-model.number="poolModal.form.port_max" type="number" min="1" max="65535" placeholder="20000" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
               </div>
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.allowedProtocols') }}</label>
-              <input v-model="poolModal.protocolText" :placeholder="$t('admin.provisioningPools.protocolPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="poolModal.protocolText" :placeholder="$t('admin.provisioningPools.protocolPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2 flex items-center gap-2">
               <input id="pool-enable" v-model="poolModal.form.enabled" type="checkbox" class="h-4 w-4 rounded-md border-surface-300 text-accent-600 focus:ring-accent-500/30" />
@@ -409,7 +409,7 @@ onMounted(reload)
         <form class="space-y-4 px-6 py-5" @submit.prevent="saveTarget">
           <div>
             <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.inbound') }}</label>
-            <select :value="currentInboundKey()" required class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" @change="applyInboundChoice(($event.target as HTMLSelectElement).value)">
+            <select :value="currentInboundKey()" required class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" @change="applyInboundChoice(($event.target as HTMLSelectElement).value)">
               <option v-for="row in inboundOptions" :key="inboundKey(row)" :value="inboundKey(row)">
                 {{ row.node_name }} · {{ row.inbound.remark || row.inbound.tag }} · :{{ row.inbound.port }} · {{ row.inbound.protocol }}
               </option>
@@ -418,11 +418,11 @@ onMounted(reload)
           <div class="grid grid-cols-2 gap-3.5">
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.maxClients') }}</label>
-              <input v-model.number="targetModal.form.max_clients" type="number" min="0" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model.number="targetModal.form.max_clients" type="number" min="0" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.provisioningPools.priority') }}</label>
-              <input v-model.number="targetModal.form.priority" type="number" min="0" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model.number="targetModal.form.priority" type="number" min="0" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm tabular-nums focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
           </div>
           <div class="flex items-center gap-2">

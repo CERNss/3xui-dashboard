@@ -20,7 +20,7 @@ defineEmits<{ (e: 'action'): void }>()
       </svg>
     </div>
     <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-200">{{ title }}</h3>
-    <p v-if="description" class="max-w-sm text-xs leading-relaxed text-surface-500">{{ description }}</p>
+    <p v-if="description" class="max-w-sm text-xs leading-relaxed text-surface-500 dark:text-surface-400">{{ description }}</p>
     <button
       v-if="actionLabel"
       class="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white transition-brand transition hover:bg-accent-700 active:scale-95"

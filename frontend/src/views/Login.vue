@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
@@ -105,20 +105,36 @@ async function startOIDC(_p: OIDCProvider) {
   }
 }
 
-onMounted(() => {
-  loadOIDC()
-  loadRegistrationPolicy()
-})
 onUnmounted(() => window.clearInterval(cooldownTimer))
 
 const nextPath = computed(() => {
   return typeof route.query.next === 'string' ? route.query.next : null
 })
 
+const routeRole = computed<Role | null>(() => {
+  return route.meta.authRole === 'portal' || route.meta.authRole === 'admin'
+    ? route.meta.authRole
+    : null
+})
+
 const hintedRole = computed<Role | null>(() => {
+  if (routeRole.value) return routeRole.value
   return route.query.hint === 'portal' || route.query.hint === 'admin'
     ? route.query.hint
     : null
+})
+
+const isAdminEntry = computed(() => hintedRole.value === 'admin')
+const canRegister = computed(() => hintedRole.value !== 'admin')
+
+const cardTitle = computed(() => {
+  if (isAdminEntry.value) return t('auth.adminLoginTitle')
+  return mode.value === 'login' ? t('auth.welcomeBack') : t('auth.createAccount')
+})
+
+const cardSubtitle = computed(() => {
+  if (isAdminEntry.value) return t('auth.adminLoginSubtitle')
+  return mode.value === 'login' ? t('auth.signInSubtitle') : t('auth.registerSubtitle')
 })
 
 const roleOrder = computed<Role[]>(() => {
@@ -221,24 +237,41 @@ async function onSubmit() {
 }
 
 function switchMode(next: Mode) {
+  if (next === 'register' && !canRegister.value) return
   if (mode.value === next) return
   mode.value = next
   error.value = null
   passwordConfirm.value = ''
   code.value = ''
 }
+
+watch(hintedRole, (role) => {
+  if (role === 'admin' && mode.value === 'register') {
+    switchMode('login')
+  }
+  if (role === 'admin') {
+    oidcProviders.value = []
+    emailVerificationRequired.value = true
+  } else {
+    loadOIDC()
+    loadRegistrationPolicy()
+  }
+}, { immediate: true })
 </script>
 
 <template>
   <AuthLayout
-    :card-title="mode === 'login' ? $t('auth.welcomeBack') : $t('auth.createAccount')"
-    :card-subtitle="mode === 'login' ? $t('auth.signInSubtitle') : $t('auth.registerSubtitle')"
+    :card-title="cardTitle"
+    :card-subtitle="cardSubtitle"
   >
     <!-- Mode tabs: 登录 / 注册. Admin vs portal is auto-detected at submit. -->
-    <div class="mb-5 flex items-center gap-0.5 rounded-xl border border-surface-200 bg-surface-100/60 p-1 text-sm dark:border-surface-700 dark:bg-surface-800/40">
+    <div
+      v-if="canRegister"
+      class="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-surface-200 bg-surface-100/70 p-1 text-sm dark:border-surface-700 dark:bg-surface-800/40"
+    >
       <button
         type="button"
-        class="flex flex-1 items-center justify-center rounded-lg px-3 py-2 font-medium transition-all duration-150 ease-brand"
+        class="flex min-h-10 items-center justify-center rounded-lg px-3 py-2 font-medium transition-all duration-150 ease-brand"
         :class="mode === 'login'
           ? 'bg-surface-0 text-ink-900 shadow-card dark:bg-surface-900 dark:text-surface-50'
           : 'text-surface-500 hover:text-ink-900 dark:hover:text-surface-50'"
@@ -248,7 +281,7 @@ function switchMode(next: Mode) {
       </button>
       <button
         type="button"
-        class="flex flex-1 items-center justify-center rounded-lg px-3 py-2 font-medium transition-all duration-150 ease-brand"
+        class="flex min-h-10 items-center justify-center rounded-lg px-3 py-2 font-medium transition-all duration-150 ease-brand"
         :class="mode === 'register'
           ? 'bg-surface-0 text-ink-900 shadow-card dark:bg-surface-900 dark:text-surface-50'
           : 'text-surface-500 hover:text-ink-900 dark:hover:text-surface-50'"
@@ -271,7 +304,7 @@ function switchMode(next: Mode) {
             autocomplete="email"
             required
             placeholder="you@example.com"
-            class="block w-full rounded-xl border border-surface-200 bg-surface-0 py-2.5 pl-10 pr-3.5 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
+            class="block h-11 w-full rounded-xl border border-surface-200 bg-surface-0 pl-10 pr-3.5 text-sm text-ink-900 transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-50"
           />
         </div>
       </div>
@@ -287,7 +320,7 @@ function switchMode(next: Mode) {
             :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
             required
             placeholder="••••••••"
-            class="block w-full rounded-xl border border-surface-200 bg-surface-0 py-2.5 pl-10 pr-3.5 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
+            class="block h-11 w-full rounded-xl border border-surface-200 bg-surface-0 pl-10 pr-3.5 text-sm text-ink-900 transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-50"
           />
         </div>
       </div>
@@ -303,7 +336,7 @@ function switchMode(next: Mode) {
             autocomplete="new-password"
             required
             :placeholder="$t('auth.confirmPasswordPlaceholder')"
-            class="block w-full rounded-xl border border-surface-200 bg-surface-0 py-2.5 pl-10 pr-3.5 text-sm transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
+            class="block h-11 w-full rounded-xl border border-surface-200 bg-surface-0 pl-10 pr-3.5 text-sm text-ink-900 transition-colors placeholder:text-surface-400 focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-50"
           />
         </div>
       </div>
@@ -327,13 +360,13 @@ function switchMode(next: Mode) {
               autocomplete="one-time-code"
               required
               :placeholder="$t('auth.codePlaceholder')"
-              class="block w-full rounded-xl border border-surface-200 bg-surface-0 py-2.5 pl-10 pr-3.5 text-center text-sm font-medium tabular-nums tracking-[0.4em] transition-colors placeholder:text-surface-400 placeholder:tracking-normal focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900"
+              class="block h-11 w-full rounded-xl border border-surface-200 bg-surface-0 pl-10 pr-3.5 text-center text-sm font-medium tabular-nums tracking-[0.4em] text-ink-900 transition-colors placeholder:text-surface-400 placeholder:tracking-normal focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-50"
             />
           </div>
           <button
             type="button"
             :disabled="codeSending || codeCooldown > 0"
-            class="inline-flex h-auto min-w-[120px] items-center justify-center rounded-xl border border-surface-200 px-3 text-sm font-medium text-surface-700 transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-surface-200 disabled:hover:bg-transparent disabled:hover:text-surface-700 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-accent-950/40 dark:hover:text-accent-300"
+            class="inline-flex h-11 min-w-[120px] items-center justify-center rounded-xl border border-surface-200 bg-surface-0 px-3 text-sm font-medium text-surface-700 transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-surface-200 disabled:hover:bg-surface-0 disabled:hover:text-surface-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300"
             @click="sendCode"
           >
             <span v-if="codeSending">{{ $t('auth.sending') }}</span>
@@ -346,7 +379,7 @@ function switchMode(next: Mode) {
       <button
         type="submit"
         :disabled="loading"
-        class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent-600 to-accent-700 px-4 text-sm font-semibold text-white shadow-card transition-all ease-brand hover:from-accent-500 hover:to-accent-600 hover:shadow-card-hover active:scale-[0.98] disabled:opacity-60"
+        class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent-600 px-4 text-sm font-semibold text-white shadow-card transition-all ease-brand hover:bg-accent-500 hover:shadow-card-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
         <svg v-if="!loading" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" />

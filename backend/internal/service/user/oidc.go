@@ -34,6 +34,7 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
+	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 )
 
@@ -61,6 +62,7 @@ var ErrOIDCEmailConflict = errors.New("oidc: email already linked to a different
 type oidcState struct {
 	verifier      string
 	redirectAfter string
+	linkUserID    int64
 	expiresAt     time.Time
 }
 
@@ -314,7 +316,7 @@ func (s *Service) resolveEndpoints(ctx context.Context, oidc config.OIDC) (oidcD
 
 // oidcStartImpl is the real implementation. Returns the IDP's
 // authorize URL the frontend should navigate the user to.
-func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectAfter string) (string, error) {
+func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectAfter string, linkUserID int64) (string, error) {
 	disco, err := s.resolveEndpoints(ctx, oidc)
 	if err != nil {
 		return "", err
@@ -334,6 +336,7 @@ func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectA
 	s.oidcSessions.put(state, &oidcState{
 		verifier:      verifier,
 		redirectAfter: redirectAfter,
+		linkUserID:    linkUserID,
 		expiresAt:     time.Now().Add(10 * time.Minute),
 	})
 
@@ -426,6 +429,9 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, oidc config.OIDC, code, 
 	email, _ := claims["email"].(string)
 	emailVerifiedClaim, _ := claims["email_verified"].(bool)
 
+	if st.linkUserID > 0 {
+		return s.linkOIDCToUser(ctx, st.linkUserID, sub, email, emailVerifiedClaim, st.redirectAfter)
+	}
 	return s.upsertOIDCUser(ctx, sub, email, emailVerifiedClaim, st.redirectAfter)
 }
 
@@ -556,6 +562,68 @@ func (s *Service) makeOIDCPendingForUser(_ context.Context, existing *model.User
 		},
 		RedirectAfter: redirectAfter,
 	}, nil
+}
+
+func (s *Service) linkOIDCToUser(ctx context.Context, userID int64, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil, ErrOIDCEmailRequired
+	}
+	if !s.emailDomainAllowed(ctx, email) {
+		return nil, ErrDomainNotAllowed
+	}
+
+	var got *model.User
+	err := s.users.InTx(ctx, func(tx *repository.UserRepo) error {
+		u, err := tx.GetForUpdate(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if u == nil {
+			return ErrUserNotFound
+		}
+		if u.Status == model.UserStatusSuspended {
+			return ErrUserSuspended
+		}
+		if u.OIDCSubject != nil && *u.OIDCSubject != "" && *u.OIDCSubject != sub {
+			return ErrOIDCEmailConflict
+		}
+
+		if linked, err := tx.GetByOIDCSubject(ctx, sub); err != nil {
+			return err
+		} else if linked != nil && linked.ID != userID {
+			return ErrOIDCEmailConflict
+		}
+
+		updates := map[string]any{"oidc_subject": sub}
+		if u.Email != nil && *u.Email != "" {
+			if !strings.EqualFold(*u.Email, email) {
+				return ErrOIDCEmailMismatch
+			}
+		} else {
+			existing, err := tx.GetByEmail(ctx, email)
+			if err != nil {
+				return err
+			}
+			if existing != nil && existing.ID != userID {
+				return ErrEmailTaken
+			}
+			updates["email"] = email
+			updates["email_verified"] = emailVerified
+		}
+		if emailVerified && !u.EmailVerified {
+			updates["email_verified"] = true
+		}
+		if err := tx.Update(ctx, userID, updates); err != nil {
+			return err
+		}
+		got, err = tx.Get(ctx, userID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &OIDCLoginResult{User: got, RedirectAfter: redirectAfter}, nil
 }
 
 func (s *Service) resolveOIDCPending(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
@@ -747,4 +815,14 @@ func snippet(b []byte) string {
 		return string(b)
 	}
 	return string(b[:max]) + "…"
+}
+
+func OIDCDisplayName(oidc config.OIDC) string {
+	if strings.TrimSpace(oidc.DisplayName) != "" {
+		return strings.TrimSpace(oidc.DisplayName)
+	}
+	if u, err := url.Parse(oidc.Issuer); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return "OIDC"
 }

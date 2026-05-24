@@ -16,6 +16,7 @@ const { state: confirmState, ask: askConfirm, settle: settleConfirm } = useConfi
 const nodes = ref<Node[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const togglingNodeId = ref<number | null>(null)
 
 const showEditor = ref(false)
 const saving = ref(false)
@@ -100,12 +101,15 @@ async function probe(id: number) {
 }
 
 async function toggleEnable(n: Node) {
+  togglingNodeId.value = n.id
   try {
     if (n.enabled) await nodesApi.disable(n.id)
     else await nodesApi.enable(n.id)
     await reload()
   } catch (e: any) {
     error.value = formatError(e, t('admin.nodes.toggleFailed'))
+  } finally {
+    togglingNodeId.value = null
   }
 }
 
@@ -166,6 +170,23 @@ function panelInboundURL(n: Node): string {
   return `${n.scheme}://${n.host}:${n.port}${normalizedBasePath(n.base_path)}/panel/inbounds`
 }
 
+function nodeConnectionURL(n: Node): string {
+  return `${n.scheme}://${n.host}:${n.port}${normalizedBasePath(n.base_path)}`
+}
+
+function compactHost(host: string): string {
+  // Iterate by code point so multi-byte chars (CJK, IDN, emoji) stay
+  // whole; string.slice() splits surrogate pairs.
+  const chars = Array.from(host.trim())
+  if (chars.length <= 24) return chars.join('')
+  return `${chars.slice(0, 13).join('')}…${chars.slice(-8).join('')}`
+}
+
+function nodeConnectionLabel(n: Node): string {
+  const pathLabel = normalizedBasePath(n.base_path) ? '/...' : ''
+  return `${n.scheme}://${compactHost(n.host)}:${n.port}${pathLabel}`
+}
+
 onMounted(reload)
 </script>
 
@@ -174,7 +195,6 @@ onMounted(reload)
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.nodes.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.nodes.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -194,91 +214,243 @@ onMounted(reload)
 
     <Skeleton v-if="loading" :rows="4" />
 
-    <div
-      v-else
-      class="overflow-x-auto rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
-    >
-      <table class="min-w-full text-sm">
-        <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
-          <tr class="border-b border-surface-100 dark:border-surface-800">
-            <th class="px-6 py-3 font-medium">ID</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.name') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.connection') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.status') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.cpuMem') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.xray') }}</th>
-            <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.lastSeen') }}</th>
-            <th class="px-6 py-3 text-right font-medium">{{ $t('admin.users.column.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
-          <tr v-for="n in nodes" :key="n.id" :class="n.enabled ? '' : 'opacity-60'" class="transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40">
-            <td class="px-6 py-3.5 font-mono text-xs text-surface-400 tabular-nums">#{{ n.id }}</td>
-            <td class="px-6 py-3.5 font-medium text-ink-900 dark:text-surface-50">{{ n.name }}</td>
-            <td class="px-6 py-3.5">
-              <div class="font-mono text-xs text-surface-500">{{ n.scheme }}://{{ n.host }}:{{ n.port }}{{ n.base_path }}</div>
-              <a
-                class="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent-700 transition-colors hover:text-accent-600 dark:text-accent-300"
-                :href="panelInboundURL(n)"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {{ $t('admin.nodes.openPanel') }}
-                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7" /><path d="M8 7h9v9" /></svg>
-              </a>
-            </td>
-            <td class="px-6 py-3.5">
-              <span
-                class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
-                :class="{
-                  'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800': n.status === 'online',
-                  'bg-red-50 text-red-600 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800': n.status === 'offline',
-                  'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700': n.status === 'unknown',
-                }"
-              >
-                <span class="h-1.5 w-1.5 rounded-full" :class="{
-                  'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]': n.status === 'online',
-                  'bg-red-500': n.status === 'offline',
-                  'bg-surface-400': n.status === 'unknown',
-                }" />
-                {{ nodeStatusText(n.status) }}
-              </span>
-            </td>
-            <td class="px-6 py-3.5 tabular-nums text-surface-600 dark:text-surface-300">{{ n.cpu_pct.toFixed(1) }}% · {{ n.mem_pct.toFixed(1) }}%</td>
-            <td class="px-6 py-3.5 font-mono text-xs text-surface-500">{{ n.xray_version || '—' }}</td>
-            <td class="px-6 py-3.5 text-xs text-surface-500">{{ n.last_seen_at ? new Date(n.last_seen_at).toLocaleString() : '—' }}</td>
-            <td class="px-6 py-3.5">
-              <div class="flex justify-end gap-0.5">
-                <button :title="$t('admin.nodes.probe')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-accent-50 hover:text-accent-700 dark:hover:bg-accent-950/40 dark:hover:text-accent-300" @click="probe(n.id)">
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+    <template v-else>
+      <div
+        v-if="nodes.length > 0"
+        class="grid gap-3 xl:hidden"
+      >
+        <article
+          v-for="n in nodes"
+          :key="n.id"
+          :class="n.enabled ? '' : 'opacity-60'"
+          class="rounded-2xl border border-surface-100 bg-surface-0 p-4 shadow-card dark:border-surface-800 dark:bg-surface-900"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="font-mono text-2xs text-surface-400">#{{ n.id }}</div>
+              <h2 class="mt-1 break-words text-base font-semibold leading-6 text-ink-900 dark:text-surface-50">{{ n.name }}</h2>
+            </div>
+            <span
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset"
+              :class="{
+                'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800': n.status === 'online',
+                'bg-red-50 text-red-600 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800': n.status === 'offline',
+                'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700': n.status === 'unknown',
+              }"
+            >
+              <span class="h-1.5 w-1.5 rounded-full" :class="{
+                'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]': n.status === 'online',
+                'bg-red-500': n.status === 'offline',
+                'bg-surface-400': n.status === 'unknown',
+              }" />
+              {{ nodeStatusText(n.status) }}
+            </span>
+          </div>
+
+          <div class="mt-3 rounded-xl bg-surface-50 px-3 py-2.5 dark:bg-surface-800/70">
+            <div
+              class="truncate font-mono text-xs leading-5 text-surface-600 dark:text-surface-300"
+              :title="nodeConnectionURL(n)"
+            >
+              {{ nodeConnectionLabel(n) }}
+            </div>
+            <a
+              class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-700 transition-colors hover:text-accent-600 dark:text-accent-300"
+              :href="panelInboundURL(n)"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {{ $t('admin.nodes.openPanel') }}
+              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7" /><path d="M8 7h9v9" /></svg>
+            </a>
+          </div>
+
+          <dl class="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+              <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.nodes.column.cpuMem') }}</dt>
+              <dd class="mt-1 tabular-nums text-surface-700 dark:text-surface-200">{{ n.cpu_pct.toFixed(1) }}% · {{ n.mem_pct.toFixed(1) }}%</dd>
+            </div>
+            <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+              <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.nodes.column.xray') }}</dt>
+              <dd class="mt-1 truncate font-mono text-xs text-surface-700 dark:text-surface-200">{{ n.xray_version || '—' }}</dd>
+            </div>
+            <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+              <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.nodes.column.lastSeen') }}</dt>
+              <dd class="mt-1 truncate text-xs text-surface-700 dark:text-surface-200">{{ n.last_seen_at ? new Date(n.last_seen_at).toLocaleString() : '—' }}</dd>
+            </div>
+            <div class="rounded-xl border border-surface-100 px-3 py-2 dark:border-surface-800">
+              <dt class="text-2xs font-medium uppercase tracking-wider text-surface-400">{{ $t('admin.nodes.column.schedule') }}</dt>
+              <dd class="mt-1">
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="n.enabled"
+                  :aria-label="n.enabled ? $t('admin.nodes.disable') : $t('admin.nodes.enable')"
+                  :title="n.enabled ? $t('admin.nodes.disable') : $t('admin.nodes.enable')"
+                  :disabled="togglingNodeId === n.id"
+                  class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent-500/40 disabled:cursor-wait disabled:opacity-60"
+                  :class="n.enabled ? 'bg-accent-500' : 'bg-surface-300 dark:bg-surface-700'"
+                  @click="toggleEnable(n)"
+                >
+                  <span
+                    class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                    :class="n.enabled ? 'translate-x-5' : 'translate-x-0'"
+                  />
                 </button>
-                <button :title="$t('admin.nodes.edit')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEdit(n)">
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 flex flex-wrap justify-end border-t border-surface-100 pt-3 dark:border-surface-800">
+            <div class="inline-flex items-center gap-1 rounded-full border border-surface-200 bg-surface-50 px-1.5 py-1 shadow-sm dark:border-surface-700/80 dark:bg-surface-950/70">
+              <button :title="$t('admin.nodes.probe')" class="flex h-8 w-8 items-center justify-center rounded-full text-surface-500 transition-colors hover:bg-surface-0 hover:text-accent-700 dark:hover:bg-surface-800 dark:hover:text-accent-300" @click="probe(n.id)">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 7-6-14-3 7H2" /></svg>
+              </button>
+              <button :title="$t('admin.nodes.edit')" class="flex h-8 w-8 items-center justify-center rounded-full text-surface-500 transition-colors hover:bg-surface-0 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEdit(n)">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              </button>
+              <button :title="$t('admin.nodes.delete')" class="flex h-8 w-8 items-center justify-center rounded-full text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="destroy(n)">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div
+        v-else
+        class="rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900"
+      >
+        <EmptyState
+          icon="M5 4h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 14h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM7 7h.01M7 17h.01"
+          :title="$t('admin.nodes.empty')"
+          :description="$t('admin.nodes.emptyDescription')"
+          :action-label="$t('admin.nodes.emptyAction')"
+          @action="openCreate"
+        />
+      </div>
+
+      <div
+        v-if="nodes.length > 0"
+        class="hidden overflow-x-auto overflow-y-hidden rounded-2xl border border-surface-100 bg-surface-0 dark:border-surface-800 dark:bg-surface-900 xl:block"
+      >
+        <table class="w-full min-w-[1120px] table-fixed text-sm">
+          <colgroup>
+            <col class="w-[56px]" />
+            <col class="w-[162px]" />
+            <col class="w-[250px]" />
+            <col class="w-[116px]" />
+            <col class="w-[122px]" />
+            <col class="w-[88px]" />
+            <col class="w-[166px]" />
+            <col class="w-[82px]" />
+            <col class="w-[130px]" />
+          </colgroup>
+          <thead class="bg-surface-50/70 text-left text-2xs font-semibold uppercase tracking-caps text-surface-500 dark:bg-surface-900/70 dark:text-surface-400">
+            <tr class="h-11 border-b border-surface-100 dark:border-surface-800">
+              <th class="px-3 align-middle font-medium">ID</th>
+              <th class="px-3 align-middle font-medium">{{ $t('admin.nodes.column.name') }}</th>
+              <th class="px-3 align-middle font-medium">{{ $t('admin.nodes.column.connection') }}</th>
+              <th class="px-3 align-middle font-medium">{{ $t('admin.nodes.column.status') }}</th>
+              <th class="px-3 align-middle font-medium">{{ $t('admin.nodes.column.cpuMem') }}</th>
+              <th class="px-3 align-middle font-medium">{{ $t('admin.nodes.column.xray') }}</th>
+              <th class="px-3 align-middle font-medium">{{ $t('admin.nodes.column.lastSeen') }}</th>
+              <th class="px-3 text-center align-middle font-medium">{{ $t('admin.nodes.column.schedule') }}</th>
+              <th class="px-3 text-right align-middle font-medium">{{ $t('admin.users.column.actions') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
+            <tr
+              v-for="n in nodes"
+              :key="n.id"
+              :class="n.enabled ? '' : 'opacity-60'"
+              class="h-[68px] transition-colors hover:bg-surface-50/60 dark:hover:bg-surface-800/40"
+            >
+              <td class="px-3 align-middle font-mono text-xs tabular-nums text-surface-400">#{{ n.id }}</td>
+              <td class="px-3 align-middle">
+                <div class="truncate font-medium text-ink-900 dark:text-surface-50" :title="n.name">{{ n.name }}</div>
+              </td>
+              <td class="px-3 align-middle">
+                <div class="flex min-w-0 flex-col justify-center">
+                  <div
+                    class="block w-full truncate font-mono text-xs leading-5 text-surface-500"
+                    :title="nodeConnectionURL(n)"
+                  >
+                    {{ nodeConnectionLabel(n) }}
+                  </div>
+                  <a
+                    class="mt-1 inline-flex w-fit items-center gap-1 text-xs font-medium text-accent-700 transition-colors hover:text-accent-600 dark:text-accent-300"
+                    :href="panelInboundURL(n)"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {{ $t('admin.nodes.openPanel') }}
+                    <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7" /><path d="M8 7h9v9" /></svg>
+                  </a>
+                </div>
+              </td>
+              <td class="px-3 align-middle">
+                <span
+                  class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset"
+                  :class="{
+                    'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-950/40 dark:text-accent-300 dark:ring-accent-800': n.status === 'online',
+                    'bg-red-50 text-red-600 ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800': n.status === 'offline',
+                    'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700': n.status === 'unknown',
+                  }"
+                >
+                  <span class="h-1.5 w-1.5 rounded-full" :class="{
+                    'bg-accent-500 shadow-[0_0_0_3px_rgba(20,184,166,0.18)]': n.status === 'online',
+                    'bg-red-500': n.status === 'offline',
+                    'bg-surface-400': n.status === 'unknown',
+                  }" />
+                  {{ nodeStatusText(n.status) }}
+                </span>
+              </td>
+              <td class="px-3 align-middle">
+                <span class="whitespace-nowrap tabular-nums text-surface-600 dark:text-surface-300">{{ n.cpu_pct.toFixed(1) }}% · {{ n.mem_pct.toFixed(1) }}%</span>
+              </td>
+              <td class="px-3 align-middle">
+                <div class="truncate font-mono text-xs text-surface-500" :title="n.xray_version || '—'">{{ n.xray_version || '—' }}</div>
+              </td>
+              <td class="px-3 align-middle">
+                <span class="block truncate text-xs text-surface-500" :title="n.last_seen_at ? new Date(n.last_seen_at).toLocaleString() : '—'">{{ n.last_seen_at ? new Date(n.last_seen_at).toLocaleString() : '—' }}</span>
+              </td>
+              <td class="px-3 text-center align-middle">
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="n.enabled"
+                  :aria-label="n.enabled ? $t('admin.nodes.disable') : $t('admin.nodes.enable')"
+                  :title="n.enabled ? $t('admin.nodes.disable') : $t('admin.nodes.enable')"
+                  :disabled="togglingNodeId === n.id"
+                  class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent-500/40 disabled:cursor-wait disabled:opacity-60"
+                  :class="n.enabled ? 'bg-accent-500' : 'bg-surface-300 dark:bg-surface-700'"
+                  @click="toggleEnable(n)"
+                >
+                  <span
+                    class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                    :class="n.enabled ? 'translate-x-5' : 'translate-x-0'"
+                  />
                 </button>
-                <button :title="n.enabled ? $t('admin.nodes.disable') : $t('admin.nodes.enable')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="toggleEnable(n)">
-                  <svg v-if="n.enabled" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 12h8" /></svg>
-                  <svg v-else class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                </button>
-                <button :title="$t('admin.nodes.delete')" class="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="destroy(n)">
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
-                </button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="nodes.length === 0">
-            <td colspan="8" class="p-0">
-              <EmptyState
-                icon="M5 4h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 14h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM7 7h.01M7 17h.01"
-                :title="$t('admin.nodes.empty')"
-                :description="$t('admin.nodes.emptyDescription')"
-                :action-label="$t('admin.nodes.emptyAction')"
-                @action="openCreate"
-              />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+              </td>
+              <td class="px-3 text-right align-middle">
+                <div class="ml-auto inline-flex items-center gap-1 rounded-full border border-surface-200 bg-surface-50 px-1.5 py-1 shadow-sm dark:border-surface-700/80 dark:bg-surface-950/70">
+                  <button :title="$t('admin.nodes.probe')" class="flex h-7 w-7 items-center justify-center rounded-full text-surface-500 transition-colors hover:bg-surface-0 hover:text-accent-700 dark:hover:bg-surface-800 dark:hover:text-accent-300" @click="probe(n.id)">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 7-6-14-3 7H2" /></svg>
+                  </button>
+                  <button :title="$t('admin.nodes.edit')" class="flex h-7 w-7 items-center justify-center rounded-full text-surface-500 transition-colors hover:bg-surface-0 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="openEdit(n)">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  </button>
+                  <button :title="$t('admin.nodes.delete')" class="flex h-7 w-7 items-center justify-center rounded-full text-surface-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" @click="destroy(n)">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
 
     <!-- Add/Edit modal -->
     <div
@@ -300,35 +472,48 @@ onMounted(reload)
           <div class="grid grid-cols-2 gap-3.5">
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.nodes.name') }}</label>
-              <input v-model="form.name" type="text" :placeholder="$t('admin.nodes.namePlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="form.name" type="text" :placeholder="$t('admin.nodes.namePlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.nodes.scheme') }}</label>
-              <select v-model="form.scheme" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900">
+              <select v-model="form.scheme" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900">
                 <option value="https">https</option>
                 <option value="http">http</option>
               </select>
             </div>
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.nodes.host') }}</label>
-              <input v-model="form.host" type="text" :placeholder="$t('admin.nodes.hostPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="form.host" type="text" :placeholder="$t('admin.nodes.hostPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.nodes.port') }}</label>
-              <input v-model.number="form.port" type="number" min="1" max="65535" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model.number="form.port" type="number" min="1" max="65535" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div>
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.nodes.basePath') }}</label>
-              <input v-model="form.base_path" type="text" :placeholder="$t('admin.nodes.basePathPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="form.base_path" type="text" :placeholder="$t('admin.nodes.basePathPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
             </div>
             <div class="col-span-2">
               <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.nodes.apiToken') }}</label>
-              <input v-model="form.api_token" type="text" :placeholder="isEditing ? $t('admin.nodes.apiTokenEditPlaceholder') : $t('admin.nodes.apiTokenPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs transition-colors focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15 dark:border-surface-700 dark:bg-surface-900" />
+              <input v-model="form.api_token" type="text" :placeholder="isEditing ? $t('admin.nodes.apiTokenEditPlaceholder') : $t('admin.nodes.apiTokenPlaceholder')" class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3 py-2 font-mono text-xs transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-700 dark:bg-surface-900" />
               <p v-if="isEditing" class="mt-1.5 text-xs text-surface-500">{{ $t('admin.nodes.apiTokenKeepHint') }}</p>
             </div>
-            <div class="col-span-2 flex items-center gap-2">
-              <input id="node-enable" v-model="form.enabled" type="checkbox" class="h-4 w-4 rounded-md border-surface-300 text-accent-600 focus:ring-accent-500/30" />
+            <div class="col-span-2 flex items-center justify-between rounded-xl border border-surface-100 px-3 py-2.5 dark:border-surface-800">
               <label for="node-enable" class="text-sm text-surface-700 dark:text-surface-300">{{ $t('admin.nodes.enableDefaultLabel') }}</label>
+              <button
+                id="node-enable"
+                type="button"
+                role="switch"
+                :aria-checked="form.enabled"
+                class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent-500/40"
+                :class="form.enabled ? 'bg-accent-500' : 'bg-surface-300 dark:bg-surface-700'"
+                @click="form.enabled = !form.enabled"
+              >
+                <span
+                  class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+                  :class="form.enabled ? 'translate-x-4' : 'translate-x-0'"
+                />
+              </button>
             </div>
           </div>
           <p v-if="formErr" class="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800">{{ formErr }}</p>

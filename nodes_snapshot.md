@@ -1,0 +1,25 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e9]
+    - navigation [ref=e12]:
+      - generic [ref=e13]
+      - generic [ref=e23]
+      - generic [ref=e33]
+      - generic [ref=e51]
+    - button "Switch to Chinese" [ref=e61] [cursor=pointer]:
+      - img [ref=e62]
+      - generic [ref=e66]: Language
+      - generic [ref=e67]: EN
+    - button "Light mode" [ref=e68] [cursor=pointer]:
+      - img [ref=e69]
+      - generic [ref=e72]: Light mode
+  - main [ref=e73]:
+    - button "Open account menu" [ref=e76] [cursor=pointer]:
+      - generic [ref=e77]: AD
+      - generic [ref=e78]
+      - img [ref=e81]
+    - generic [ref=e84]:
+      - generic [ref=e85]
+      - table [ref=e99]

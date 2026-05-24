@@ -77,7 +77,7 @@ onMounted(reload)
     <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.status.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500">{{ $t('admin.status.subtitle') }}</p>
+        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.status.subtitle') }}</p>
       </div>
       <button
         class="inline-flex h-9 items-center gap-1.5 rounded-xl border border-surface-200 bg-surface-0 px-3 text-sm text-surface-600 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50"
@@ -188,7 +188,7 @@ onMounted(reload)
           </router-link>
         </header>
         <table class="min-w-full text-sm">
-          <thead class="text-left text-2xs font-medium uppercase tracking-wider text-surface-400 dark:text-surface-500">
+          <thead class="text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">
             <tr class="border-b border-surface-100 dark:border-surface-800">
               <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.name') }}</th>
               <th class="px-6 py-3 font-medium">{{ $t('admin.nodes.column.status') }}</th>

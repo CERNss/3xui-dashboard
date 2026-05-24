@@ -61,7 +61,9 @@ func TestStatsRepo_Users_CountsByStatus(t *testing.T) {
 			t.Fatalf("create user: %v", err)
 		}
 	}
-	got, err := NewStatsRepo(db).Users(ctx)
+	monthStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	prevMonthStart := monthStart.AddDate(0, -1, 0)
+	got, err := NewStatsRepo(db).Users(ctx, monthStart, prevMonthStart)
 	if err != nil {
 		t.Fatalf("Users: %v", err)
 	}
@@ -85,7 +87,8 @@ func TestStatsRepo_Users_CountsByStatus(t *testing.T) {
 
 func TestStatsRepo_Users_EmptyDB(t *testing.T) {
 	db := setupStatsDB(t)
-	got, err := NewStatsRepo(db).Users(context.Background())
+	monthStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	got, err := NewStatsRepo(db).Users(context.Background(), monthStart, monthStart.AddDate(0, -1, 0))
 	if err != nil {
 		t.Fatalf("Users: %v", err)
 	}
@@ -219,5 +222,224 @@ func TestStatsRepo_RecentOrders_JoinsAndLimits(t *testing.T) {
 	}
 	if got[0].PlanName != "Pro" {
 		t.Errorf("PlanName = %q, want Pro", got[0].PlanName)
+	}
+}
+
+// seedNode is a minimal helper for the traffic-rank tests: just
+// enough columns to satisfy NOT NULL constraints.
+func seedNode(t *testing.T, db *gorm.DB, name string) int64 {
+	t.Helper()
+	n := model.Node{Name: name, Scheme: "https", Host: name + ".test", Port: 443, APIToken: "t-" + name, Enabled: true}
+	if err := db.Create(&n).Error; err != nil {
+		t.Fatalf("seed node %s: %v", name, err)
+	}
+	return n.ID
+}
+
+// seedSample inserts one cum-counter reading. Pass nil for inbound
+// or email when seeding the per-node rollup row.
+func seedSample(t *testing.T, db *gorm.DB, nodeID int64, inbound, email *string, up, down int64, at time.Time) {
+	t.Helper()
+	s := model.TrafficSample{
+		NodeID:       nodeID,
+		InboundTag:   inbound,
+		ClientEmail:  email,
+		UpCumBytes:   up,
+		DownCumBytes: down,
+		TakenAt:      at,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("seed sample: %v", err)
+	}
+}
+
+func TestStatsRepo_Traffic_AggregatesDeltasOverGroups(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	nodeID := seedNode(t, db, "edge-jp")
+	inbound := "vmess-in"
+	email := "alice@example.com"
+
+	dayStart := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	monthStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	now := dayStart.Add(2 * time.Hour)
+
+	// Two samples for one client: 100→500 up, 1000→3000 down → +400 / +2000
+	seedSample(t, db, nodeID, &inbound, &email, 100, 1000, dayStart.Add(10*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &email, 500, 3000, dayStart.Add(70*time.Minute))
+	// One earlier sample inside month (before today) that's a different group.
+	otherEmail := "bob@example.com"
+	seedSample(t, db, nodeID, &inbound, &otherEmail, 0, 0, monthStart.Add(time.Hour))
+	seedSample(t, db, nodeID, &inbound, &otherEmail, 100, 200, monthStart.Add(2*time.Hour))
+
+	got, err := NewStatsRepo(db).Traffic(ctx, monthStart, dayStart, now)
+	if err != nil {
+		t.Fatalf("Traffic: %v", err)
+	}
+	// today window includes only alice → 400 / 2000
+	if got.TodayUp != 400 || got.TodayDown != 2000 {
+		t.Errorf("today = %d/%d, want 400/2000", got.TodayUp, got.TodayDown)
+	}
+	// month window includes both → alice 400/2000 + bob 100/200 = 500/2200
+	if got.MonthUp != 500 || got.MonthDown != 2200 {
+		t.Errorf("month = %d/%d, want 500/2200", got.MonthUp, got.MonthDown)
+	}
+}
+
+func TestStatsRepo_Traffic_CounterResetCountsFullSample(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	nodeID := seedNode(t, db, "edge-uk")
+	inbound := "vless-in"
+	email := "carol@example.com"
+	dayStart := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	monthStart := dayStart.AddDate(0, 0, -23)
+	now := dayStart.Add(time.Hour)
+
+	// 1000 → reset to 50 → 250: delta is 50 (reset) + 200 (normal) = 250.
+	seedSample(t, db, nodeID, &inbound, &email, 1000, 1000, dayStart.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &email, 50, 50, dayStart.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &email, 250, 250, dayStart.Add(3*time.Minute))
+
+	got, err := NewStatsRepo(db).Traffic(ctx, monthStart, dayStart, now)
+	if err != nil {
+		t.Fatalf("Traffic: %v", err)
+	}
+	if got.TodayUp != 250 || got.TodayDown != 250 {
+		t.Errorf("today = %d/%d, want 250/250 (50 reset + 200 normal)", got.TodayUp, got.TodayDown)
+	}
+}
+
+func TestStatsRepo_TopNodes_RanksByTotalBytes(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	n1 := seedNode(t, db, "edge-jp")
+	n2 := seedNode(t, db, "edge-uk")
+	n3 := seedNode(t, db, "edge-sg")
+	inbound := "vmess-in"
+	email := "alice@example.com"
+
+	since := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	now := since.Add(time.Hour)
+
+	// Bytes per node: n1=5000, n2=100, n3=500 → expect n1, n3, n2
+	seedSample(t, db, n1, &inbound, &email, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, n1, &inbound, &email, 1000, 4000, since.Add(2*time.Minute))
+	seedSample(t, db, n2, &inbound, &email, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, n2, &inbound, &email, 40, 60, since.Add(2*time.Minute))
+	seedSample(t, db, n3, &inbound, &email, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, n3, &inbound, &email, 200, 300, since.Add(2*time.Minute))
+
+	got, err := NewStatsRepo(db).TopNodes(ctx, since, now, 6)
+	if err != nil {
+		t.Fatalf("TopNodes: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d rows, want 3: %+v", len(got), got)
+	}
+	if got[0].Key != "edge-jp" || got[0].Bytes != 5000 {
+		t.Errorf("rank0 = %+v, want edge-jp/5000", got[0])
+	}
+	if got[1].Key != "edge-sg" || got[1].Bytes != 500 {
+		t.Errorf("rank1 = %+v, want edge-sg/500", got[1])
+	}
+	if got[2].Key != "edge-uk" || got[2].Bytes != 100 {
+		t.Errorf("rank2 = %+v, want edge-uk/100", got[2])
+	}
+}
+
+func TestStatsRepo_TopUsers_SkipsNullEmail(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	nodeID := seedNode(t, db, "edge-jp")
+	inbound := "vmess-in"
+	alice := "alice@example.com"
+	bob := "bob@example.com"
+	since := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	now := since.Add(time.Hour)
+
+	// alice: 600 bytes, bob: 100 bytes, inbound-level rollup (no email): 9999 — must be skipped.
+	seedSample(t, db, nodeID, &inbound, &alice, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &alice, 200, 400, since.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &bob, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &bob, 50, 50, since.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, nil, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, nil, 5000, 4999, since.Add(2*time.Minute))
+
+	got, err := NewStatsRepo(db).TopUsers(ctx, since, now, 6)
+	if err != nil {
+		t.Fatalf("TopUsers: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2 (inbound rollup must be skipped): %+v", len(got), got)
+	}
+	if got[0].Key != alice || got[0].Bytes != 600 {
+		t.Errorf("rank0 = %+v, want alice/600", got[0])
+	}
+	if got[1].Key != bob || got[1].Bytes != 100 {
+		t.Errorf("rank1 = %+v, want bob/100", got[1])
+	}
+}
+
+func TestStatsRepo_Audit_BucketsBySeverity(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	since := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(status int, errMsg string, at time.Time) {
+		a := model.AdminAction{
+			AdminUsername: "admin", Method: "POST", Path: "/x",
+			TargetResource: "user", TargetID: "1",
+			IP: "127.0.0.1", StatusCode: status, ErrorMsg: errMsg, CreatedAt: at,
+		}
+		if err := db.Create(&a).Error; err != nil {
+			t.Fatalf("seed action: %v", err)
+		}
+	}
+	// 2 info (2xx, no error_msg), 2 warn (1 × 4xx + 1 × 2xx with error_msg),
+	// 1 err (5xx). One row before `since` should be filtered out.
+	mk(200, "", since.Add(time.Hour))
+	mk(204, "", since.Add(2*time.Hour))
+	mk(404, "not found", since.Add(3*time.Hour))
+	mk(200, "soft error rendered to caller", since.Add(4*time.Hour))
+	mk(503, "downstream timeout", since.Add(5*time.Hour))
+	mk(500, "ignored", since.Add(-time.Hour)) // before since — excluded
+
+	got, err := NewStatsRepo(db).Audit(ctx, since)
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if got.Info != 2 || got.Warn != 2 || got.Err != 1 {
+		t.Errorf("severity = %+v, want info=2 warn=2 err=1", got)
+	}
+}
+
+func TestStatsRepo_Users_MonthNewBreakdown(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	monthStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	prevMonthStart := monthStart.AddDate(0, -1, 0)
+
+	mk := func(email string, createdAt time.Time) {
+		u := model.User{Email: &email, SubID: "sid-" + email, Status: "active", CreatedAt: createdAt}
+		if err := db.Create(&u).Error; err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+	mk("old@x.com", prevMonthStart.AddDate(0, -1, 0)) // before prev month
+	mk("prev1@x.com", prevMonthStart.Add(24*time.Hour))
+	mk("prev2@x.com", monthStart.Add(-time.Hour))
+	mk("new1@x.com", monthStart.Add(time.Hour))
+	mk("new2@x.com", monthStart.Add(2*time.Hour))
+	mk("new3@x.com", monthStart.Add(3*time.Hour))
+
+	got, err := NewStatsRepo(db).Users(ctx, monthStart, prevMonthStart)
+	if err != nil {
+		t.Fatalf("Users: %v", err)
+	}
+	if got.MonthNew != 3 {
+		t.Errorf("MonthNew = %d, want 3", got.MonthNew)
+	}
+	if got.PrevMonthNew != 2 {
+		t.Errorf("PrevMonthNew = %d, want 2", got.PrevMonthNew)
 	}
 }

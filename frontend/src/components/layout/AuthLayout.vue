@@ -1,80 +1,44 @@
 <script setup lang="ts">
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
-import { useThemeStore } from '@/stores/theme'
 import { useBrandingStore } from '@/stores/branding'
 
 defineProps<{
-  /** Top-of-card title shown above the form. Optional — leave blank to skip. */
   cardTitle?: string
-  /** One-line subtitle under the card title. */
   cardSubtitle?: string
 }>()
 
-// Theme follows system preference pre-login (see stores/theme.ts readInitial).
-// The toggle lives in the post-login sidebar, not here.
-const theme = useThemeStore()
 const branding = useBrandingStore()
 </script>
 
 <template>
-  <!--
-    Layered auth chrome — inspired by Sub2API:
-      L1: ambient gradient + dotted grid (background)
-      L2: brand block (logo + name + slogan), centered
-      L3: form card (slot), restrained width, hairline border
-
-    The grid is drawn as an SVG data-URI so it stays crisp at any DPR and
-    doesn't load an extra asset.
-  -->
-  <div class="relative flex min-h-full flex-col items-center justify-center overflow-hidden bg-surface-50 px-6 py-10 dark:bg-[#0b1018]">
-    <div class="absolute right-4 top-4 z-20">
+  <div class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-surface-50 px-6 py-10 text-ink-900 dark:bg-surface-950 dark:text-surface-50">
+    <div class="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
       <LocaleSwitcher variant="toolbar" />
     </div>
 
-    <!-- L1a: ambient gradient blobs — Sub2API uses subtle tinted edges -->
-    <div class="pointer-events-none absolute -left-40 -top-40 h-[480px] w-[480px] rounded-full bg-accent-300/20 blur-3xl dark:bg-accent-700/15"></div>
-    <div class="pointer-events-none absolute -bottom-40 -right-40 h-[480px] w-[480px] rounded-full bg-primary-300/15 blur-3xl dark:bg-primary-700/10"></div>
-
-    <!-- L1b: dotted grid overlay -->
     <div
-      class="pointer-events-none absolute inset-0 opacity-[0.35] dark:opacity-[0.22]"
-      :style="{
-        backgroundImage:
-          'radial-gradient(circle, currentColor 1px, transparent 1px)',
-        backgroundSize: '24px 24px',
-        color: theme.theme === 'dark' ? 'rgba(168,162,158,0.18)' : 'rgba(120,113,108,0.13)',
-      }"
+      class="pointer-events-none absolute inset-0 opacity-[0.32] dark:opacity-[0.16]"
+      style="background-image: radial-gradient(circle, currentColor 1px, transparent 1px); background-size: 24px 24px; color: rgba(120,113,108,0.16);"
     ></div>
+    <div class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-surface-50 to-transparent dark:from-surface-950"></div>
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-surface-50 to-transparent dark:from-surface-950"></div>
 
-    <!-- L1c: top edge fade (so grid doesn't fight with content) -->
-    <div class="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-surface-50 to-transparent dark:from-[#0b1018]"></div>
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-surface-50 to-transparent dark:from-[#0b1018]"></div>
-
-    <!-- L2: brand block — 集换社 pattern: bold brand-tinted name + small muted slogan -->
     <div class="relative z-10 mb-7 flex flex-col items-center text-center">
-      <div class="relative">
-        <!-- Solid accent square (集换社-style chunky tile) with lightning glyph -->
-        <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-elevated ring-1 ring-accent-700/40">
-          <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-10 w-10 rounded-xl object-cover" />
-          <svg v-else class="h-9 w-9" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <path d="M13 2 3 14h7l-1 8 11-13h-7l0-7z" />
-          </svg>
-        </div>
-        <!-- ambient glow that bleeds the brand color into the page -->
-        <div class="absolute inset-0 -z-10 rounded-2xl bg-accent-500/40 blur-2xl"></div>
+      <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-card ring-1 ring-accent-700/30">
+        <img v-if="branding.iconUrl" :src="branding.iconUrl" alt="" class="h-9 w-9 rounded-xl object-cover" @error="branding.clearIcon()" />
+        <svg v-else class="h-8 w-8" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M13 2 3 14h7l-1 8 11-13h-7V2z" />
+        </svg>
       </div>
-      <h1 class="mt-5 bg-gradient-to-r from-accent-500 to-accent-700 bg-clip-text text-[2rem] font-bold leading-none tracking-tight text-transparent dark:from-accent-300 dark:to-accent-500">
-        3xui Central
+      <h1 class="mt-4 text-[2rem] font-bold leading-none tracking-tight text-ink-900 dark:text-surface-50">
+        {{ branding.title || $t('app.title') }}
       </h1>
-      <p class="mt-2.5 text-sm text-surface-500 dark:text-surface-400">
-        {{ $t('brand.slogan') }}
+      <p class="mt-2.5 max-w-sm text-sm leading-6 text-surface-500">
+        {{ branding.description || $t('brand.slogan') }}
       </p>
     </div>
 
-    <!-- L3: form card (slot) — heavier shadow, bigger inner heading -->
-    <div
-      class="relative z-10 w-full max-w-md animate-scale-in rounded-2xl border border-surface-100 bg-surface-0/90 p-8 shadow-elevated backdrop-blur-md dark:border-surface-800 dark:bg-surface-900/80"
-    >
+    <div class="relative z-10 w-full max-w-md animate-scale-in rounded-2xl border border-surface-100 bg-surface-0/95 p-8 shadow-elevated backdrop-blur dark:border-surface-800 dark:bg-surface-900/90">
       <div v-if="cardTitle || $slots.title" class="mb-6 text-center">
         <h2 class="text-2xl font-bold tracking-tight text-ink-900 dark:text-surface-50">
           <slot name="title">{{ cardTitle }}</slot>
@@ -84,9 +48,8 @@ const branding = useBrandingStore()
       <slot />
     </div>
 
-    <!-- Footer -->
     <p class="relative z-10 mt-6 text-2xs text-surface-400 dark:text-surface-600">
-      {{ $t('brand.footer') }}
+      {{ branding.footer || $t('brand.footer') }}
     </p>
   </div>
 </template>
