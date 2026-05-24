@@ -29,9 +29,7 @@ type NodeRuntime interface {
 	SetInboundEnable(ctx context.Context, tag string, enable bool) error
 
 	// ---- Clients ---------------------------------------------------------
-	// AddClient appends client to the named inbound. Strategy A
-	// (POST /addClient) is tried first; on failure the implementation
-	// falls back to Strategy B (re-push the entire inbound).
+	// AddClient appends client to the named inbound via POST /addClient.
 	AddClient(ctx context.Context, inboundTag string, client Client) error
 	// UpdateClient mutates the client identified by Email on the
 	// named inbound. Implementation resolves the client's UUID/

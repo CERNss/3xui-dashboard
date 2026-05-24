@@ -8,8 +8,8 @@ import (
 	inboundsvc "github.com/cern/3xui-dashboard/internal/service/inbound"
 )
 
-// InboundHandler is kept only so older internal tests can construct
-// it. The portal no longer exposes fleet inbounds: purchases resolve
+// InboundHandler exists so handler wiring can keep a stable shape.
+// The portal no longer exposes fleet inbounds: purchases resolve
 // through plan-bound provisioning pools on the server.
 type InboundHandler struct {
 	svc *inboundsvc.Service

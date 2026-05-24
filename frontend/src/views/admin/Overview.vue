@@ -13,10 +13,8 @@ const router = useRouter()
 type Tab = 'status' | 'stats'
 const tabs: Tab[] = ['status', 'stats']
 
-// Tab ↔ route path is 1:1. Driving the active tab from route.path
-// (rather than a query) keeps the sidebar's active-link highlight in
-// sync without extra wiring, and preserves /admin/status and
-// /admin/stats as bookmarkable entry points.
+// Tab <-> route path is 1:1. Driving the active tab from route.path
+// keeps the sidebar's active-link highlight in sync without extra wiring.
 const tabPath: Record<Tab, string> = {
   status: '/admin/status',
   stats: '/admin/stats',

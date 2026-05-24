@@ -120,7 +120,7 @@ area below.
 
 - **WHEN** the user clicks the topbar logout button
 - **THEN** the portal store SHALL be cleared
-- **AND** the router SHALL push `{name: 'login', query: {hint: 'portal'}}` (NOT the obsolete `portal.login` name)
+- **AND** the router SHALL push `{name: 'login', query: {next: '/portal'}}`
 
 ### Requirement: Layout Loaded Per Route Meta
 
@@ -137,8 +137,8 @@ as the parent component); `/portal/*` by `PortalLayout`.
 
 #### Scenario: Portal route mounts under PortalLayout
 
-- **WHEN** the user navigates to `/portal/dashboard`
-- **THEN** the rendered tree SHALL be `PortalLayout > router-view (=> portal/Dashboard.vue)`
+- **WHEN** the user navigates to `/portal/subscription`
+- **THEN** the rendered tree SHALL be `PortalLayout > router-view (=> portal/Subscription.vue)`
 
 ## Out of scope
 

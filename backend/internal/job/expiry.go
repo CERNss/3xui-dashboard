@@ -183,12 +183,10 @@ func (j *ExpiryJob) processExpired(ctx context.Context, o *model.ClientOwnership
 // via the WGProvisioner's advisory-locked RMW path.
 //
 // Fast path: the row's `protocol` column is populated by
-// ProvisionClient on every forward provision, so the WG vs non-WG
-// decision happens without a runtime lookup. Legacy rows from
-// before migration 0008 have empty protocol — for those we fall
-// back to a one-time GetInbound. Once the legacy row is re-touched
-// (Upsert via re-provision / renewal), the column populates and
-// future passes are O(0) on the runtime side.
+// ProvisionClient, so the WG vs non-WG decision happens without a
+// runtime lookup. Rows with an empty protocol fall back to a one-time
+// GetInbound; the next Upsert via re-provision or renewal populates
+// the column and future passes stay O(0) on the runtime side.
 //
 // Skips silently if the runtime manager is nil (test fixtures) or
 // the node is disabled — in either case pushing makes no sense.
@@ -206,7 +204,7 @@ func (j *ExpiryJob) disableOnNode(ctx context.Context, o *model.ClientOwnership)
 
 	protocol := o.Protocol
 	if protocol == "" {
-		// Legacy row — one-time runtime lookup to decide.
+		// One-time runtime lookup to decide.
 		in, err := r.GetInbound(ctx, o.InboundTag)
 		if err != nil {
 			if errors.Is(err, runtime.ErrTagNotFound) {

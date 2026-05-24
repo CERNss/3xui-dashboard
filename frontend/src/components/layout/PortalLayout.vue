@@ -71,7 +71,7 @@ async function loadProfile() {
 
 function logout() {
   auth.clear()
-  router.push({ name: 'portal.login' })
+  router.push({ name: 'login', query: { next: '/portal' } })
 }
 
 onMounted(loadProfile)

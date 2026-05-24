@@ -149,5 +149,5 @@ from `settings.peers[]` (matched by public key) + clears the
 #### Scenario: Expiry removes WG peer
 
 - **WHEN** `ExpiryJob.disableOnNode` processes an ownership with `protocol="wireguard"`
-- **THEN** it SHALL call `WGRemover.RemovePeer(ctx, nodeID, inboundTag, clientEmail)` rather than the legacy `UpdateClient(Enable=false)` path (which is no-op for WG since the panel has no per-peer enable bit)
+- **THEN** it SHALL call `WGRemover.RemovePeer(ctx, nodeID, inboundTag, clientEmail)` because the panel has no per-peer enable bit for WireGuard
 - **AND** when no `WGRemover` is attached (`WG_MASTER_KEY` unset) the job SHALL log a warning and leave the DB flip as the only enforcement layer

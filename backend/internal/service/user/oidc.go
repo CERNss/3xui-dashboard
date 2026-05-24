@@ -54,7 +54,7 @@ var ErrOIDCBadIDToken = errors.New("oidc: id_token verification failed")
 // email that's already bound to a different OIDC subject. Because
 // email is the canonical user identity, the dashboard requires an
 // explicit user decision instead of silently creating a duplicate.
-// Handler maps to 409 for legacy callers.
+// Handler maps it to 409.
 var ErrOIDCEmailConflict = errors.New("oidc: email already linked to a different account")
 
 // oidcState is one in-flight login: state parameter + PKCE verifier

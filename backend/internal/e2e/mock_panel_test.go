@@ -32,7 +32,7 @@ func newMockPanel() *mockPanel {
 	return mp
 }
 
-func (m *mockPanel) Close() { m.server.Close() }
+func (m *mockPanel) Close()      { m.server.Close() }
 func (m *mockPanel) URL() string { return m.server.URL }
 
 // SeedInbound registers an inbound the dashboard can read+mutate.
@@ -121,7 +121,7 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleAddClient mirrors the fork's POST /panel/api/inbounds/addClient.
-// Body shape (legacy, verified production fork 2026-05-21):
+// Body shape verified on the production fork 2026-05-21:
 //
 //	{"id": <inbound_id>, "settings": "<stringified-json {\"clients\":[{...}]}>"}
 func (m *mockPanel) handleAddClient(w http.ResponseWriter, req *http.Request) {
@@ -225,9 +225,8 @@ func (m *mockPanel) handleDelClientByEmail(w http.ResponseWriter, req *http.Requ
 
 // handleUpdateInbound mirrors POST /panel/api/inbounds/update/:id
 // with form-encoded body. The dashboard uses this as the WG peer
-// RMW push and as the re-push fallback when surgical client edits
-// fail (e.g. delete-last-client quirk). Form fields mirror
-// remote.go::wireInbound: protocol, settings, streamSettings, etc.
+// RMW push. Form fields mirror remote.go::wireInbound: protocol,
+// settings, streamSettings, etc.
 func (m *mockPanel) handleUpdateInbound(w http.ResponseWriter, req *http.Request) {
 	parts := strings.Split(req.URL.Path, "/")
 	// "" "panel" "api" "inbounds" "update" "<id>"

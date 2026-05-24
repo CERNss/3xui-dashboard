@@ -11,8 +11,8 @@ const USER_PASS = 'playwright-test-password'
 
 test.describe('Admin', () => {
   test('login routes to the dashboard and renders the nodes table', async ({ page }) => {
-    await page.goto('/admin/login')
-    await expect(page.getByRole('heading', { name: /admin/i })).toBeVisible()
+    await page.goto('/login?next=/admin')
+    await expect(page.getByRole('heading', { name: /sign|登录/i })).toBeVisible()
 
     await page.getByLabel(/username/i).fill(ADMIN_USER)
     await page.getByLabel(/password/i).fill(ADMIN_PASS)
@@ -27,19 +27,19 @@ test.describe('Admin', () => {
     await expect(page.getByText(/^host$/i)).toBeVisible()
   })
 
-  test('bad password surfaces error and stays on /admin/login', async ({ page }) => {
-    await page.goto('/admin/login')
+  test('bad password surfaces error and stays on unified login', async ({ page }) => {
+    await page.goto('/login?next=/admin')
     await page.getByLabel(/username/i).fill(ADMIN_USER)
     await page.getByLabel(/password/i).fill('definitely-wrong')
     await page.getByRole('button', { name: /continue|submit|login/i }).click()
     // Stay on the login page; an error message must show up.
-    await expect(page).toHaveURL(/\/admin\/login/)
+    await expect(page).toHaveURL(/\/login/)
   })
 })
 
 test.describe('Portal', () => {
   test('register → auto-login → dashboard', async ({ page }) => {
-    await page.goto('/portal/register')
+    await page.goto('/login?mode=register')
     await page.getByLabel(/email/i).fill(USER_EMAIL)
     await page.getByLabel(/password/i).fill(USER_PASS)
     await page.getByRole('button', { name: /continue|submit|register/i }).click()
@@ -51,7 +51,7 @@ test.describe('Portal', () => {
 
   test('subscription URL is publicly fetchable (no auth)', async ({ page, request }) => {
     // Re-login the user created above to grab their sub_id.
-    await page.goto('/portal/login')
+    await page.goto('/login?next=/portal')
     await page.getByLabel(/email/i).fill(USER_EMAIL)
     await page.getByLabel(/password/i).fill(USER_PASS)
     await page.getByRole('button', { name: /continue|submit|login/i }).click()

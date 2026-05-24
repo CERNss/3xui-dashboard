@@ -5,9 +5,9 @@
 --   - Status pages probe via GET with no body
 --   - Custom auth header injection (e.g. internal services)
 --
--- Backward-compatible defaults: empty body_template + method=POST
--- reproduces the pre-migration "JSON envelope, hardcoded headers"
--- behavior. Existing rows get those defaults automatically.
+-- Defaults: empty body_template + method=POST produces the standard
+-- JSON envelope with app-managed headers. Existing rows get those
+-- defaults automatically.
 ALTER TABLE webhooks
     ADD COLUMN method          TEXT  NOT NULL DEFAULT 'POST',
     ADD COLUMN headers         JSONB NOT NULL DEFAULT '{}'::jsonb,

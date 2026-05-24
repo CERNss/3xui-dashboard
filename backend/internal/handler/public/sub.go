@@ -58,8 +58,9 @@ func NewSubHandler(a *sub.Assembler, settings *repository.SettingRepo, remarkFmt
 // RegisterRoutes mounts /sub/* on the supplied engine (no auth).
 //
 // Two access patterns supported:
-//   /sub/:subId          — format selected by ?format= or User-Agent
-//   /sub/<format>/:subId — explicit format in the path (legacy + clarity)
+//
+//	/sub/:subId          — format selected by ?format= or User-Agent
+//	/sub/<format>/:subId — explicit format in the path
 //
 // `limiter` is an optional per-IP rate-limit middleware. nil falls
 // back to no limit (test fixtures); production wires the same
@@ -206,10 +207,11 @@ func wgConfBodies(data *sub.SubscriptionData) []string {
 // param or the User-Agent. `?format=` always wins; UA is the fallback.
 //
 // Recognized UA needles (case-insensitive):
-//   clash, mihomo, stash        → clash
-//   sing-box, singbox           → singbox
-//   shadowsocks                 → sip008
-//   anything else               → base64 (preserves legacy default)
+//
+//	clash, mihomo, stash        → clash
+//	sing-box, singbox           → singbox
+//	shadowsocks                 → sip008
+//	anything else               → base64
 func detectFormat(qs, ua string) Format {
 	if qs != "" {
 		switch strings.ToLower(qs) {

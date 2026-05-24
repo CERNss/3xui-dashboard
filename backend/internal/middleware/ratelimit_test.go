@@ -11,14 +11,14 @@ import (
 
 func newLimitEngine(burst, refill int, window time.Duration) *gin.Engine {
 	e := gin.New()
-	e.Use(LoginRateLimiter(burst, refill, window))
+	e.Use(IPRateLimiter(burst, refill, window))
 	e.POST("/login", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 	return e
 }
 
-func TestLoginRateLimiter_AllowsBurstThenBlocks(t *testing.T) {
+func TestIPRateLimiter_AllowsBurstThenBlocks(t *testing.T) {
 	e := newLimitEngine(3, 3, time.Minute)
 
 	for i := 0; i < 3; i++ {
@@ -43,7 +43,7 @@ func TestLoginRateLimiter_AllowsBurstThenBlocks(t *testing.T) {
 	}
 }
 
-func TestLoginRateLimiter_IsPerIP(t *testing.T) {
+func TestIPRateLimiter_IsPerIP(t *testing.T) {
 	e := newLimitEngine(2, 2, time.Minute)
 
 	// IP1 hits the limit
@@ -70,7 +70,7 @@ func TestLoginRateLimiter_IsPerIP(t *testing.T) {
 	}
 }
 
-func TestLoginRateLimiter_RefillsOverTime(t *testing.T) {
+func TestIPRateLimiter_RefillsOverTime(t *testing.T) {
 	// 2 tokens / 100ms — easy to exercise in a unit test.
 	e := newLimitEngine(2, 2, 100*time.Millisecond)
 
@@ -99,8 +99,8 @@ func TestItoa(t *testing.T) {
 		in   int
 		want string
 	}{
-		{0, "1"},   // clamped
-		{-5, "1"},  // clamped
+		{0, "1"},  // clamped
+		{-5, "1"}, // clamped
 		{1, "1"},
 		{9, "9"},
 		{10, "10"},

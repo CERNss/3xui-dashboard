@@ -11,22 +11,11 @@ import { usePortalAuthStore } from '@/stores/portalAuth'
 // ---- Admin route tree ------------------------------------------------------
 const adminRoutes: RouteRecordRaw[] = [
   {
-    path: '/admin/login',
-    name: 'admin.login',
-    component: () => import('@/views/Login.vue'),
-    meta: { titleKey: 'auth.login', authRole: 'admin' },
-  },
-  {
     path: '/admin',
     component: () => import('@/components/layout/AdminLayout.vue'),
     meta: { requiresAdmin: true },
     children: [
       { path: '', redirect: { name: 'admin.status' } },
-      { path: 'dashboard', redirect: { name: 'admin.status' } }, // legacy bookmark
-      // /admin/status and /admin/stats both render the unified Overview
-      // page; Overview reads route.path to pick its default tab. Keeping
-      // both paths preserves bookmarks and lets the sidebar light up the
-      // correct entry without query-param hacks.
       {
         path: 'status',
         name: 'admin.status',
@@ -76,12 +65,6 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, titleKey: 'nav.stats' },
       },
       {
-        path: 'webhooks',
-        name: 'admin.webhooks',
-        redirect: { name: 'admin.settings', query: { tab: 'notifications' } },
-        meta: { requiresAdmin: true, titleKey: 'nav.webhooks' },
-      },
-      {
         path: 'audit-log',
         name: 'admin.audit',
         component: () => import('@/views/admin/AuditLog.vue'),
@@ -100,33 +83,11 @@ const adminRoutes: RouteRecordRaw[] = [
 // ---- Portal route tree -----------------------------------------------------
 const portalRoutes: RouteRecordRaw[] = [
   {
-    path: '/portal/login',
-    name: 'portal.login',
-    component: () => import('@/views/Login.vue'),
-    meta: { titleKey: 'auth.login', authRole: 'portal' },
-  },
-  {
-    path: '/portal/register',
-    redirect: (to) => ({
-      name: 'portal.login',
-      query: { ...to.query, mode: 'register' },
-    }),
-  },
-  {
     path: '/portal',
     component: () => import('@/components/layout/PortalLayout.vue'),
     meta: { requiresUser: true },
     children: [
-      // Default landing — subscription is the primary action,
-      // matching the Sub2API-style portal shape (post-sale, not
-      // shopping-first).
       { path: '', redirect: { name: 'portal.subscription' } },
-      // Legacy /portal/dashboard preserved as a redirect so old
-      // bookmarks don't 404 after the slim-down.
-      {
-        path: 'dashboard',
-        redirect: { name: 'portal.usage' },
-      },
       {
         path: 'subscription',
         name: 'portal.subscription',
@@ -164,7 +125,6 @@ const portalRoutes: RouteRecordRaw[] = [
 ]
 
 const routes: RouteRecordRaw[] = [
-  // Unified login for neutral entry. Role-specific aliases keep admin/user URLs clean.
   {
     path: '/login',
     name: 'login',
@@ -196,40 +156,22 @@ export const router = createRouter({
   routes,
 })
 
-type AuthHint = 'admin' | 'portal'
+type AuthArea = 'admin' | 'portal'
 
 const defaultAuthEntryPaths = {
-  admin: new Set(['/admin', '/admin/', '/admin/status', '/admin/dashboard']),
+  admin: new Set(['/admin', '/admin/', '/admin/status']),
   portal: new Set(['/portal', '/portal/', '/portal/subscription']),
 }
 
-const loginRouteByHint: Record<AuthHint, 'admin.login' | 'portal.login'> = {
-  admin: 'admin.login',
-  portal: 'portal.login',
-}
-
-function isAuthHint(value: unknown): value is AuthHint {
-  return value === 'admin' || value === 'portal'
-}
-
-function loginLocationFor(to: { path: string; fullPath: string }, hint: AuthHint) {
-  if (defaultAuthEntryPaths[hint].has(to.path)) {
-    return { name: loginRouteByHint[hint] }
+function loginLocationFor(to: { path: string; fullPath: string }, area: AuthArea) {
+  if (defaultAuthEntryPaths[area].has(to.path)) {
+    return { name: 'login', query: { next: to.path } }
   }
 
-  return { name: loginRouteByHint[hint], query: { next: to.fullPath } }
+  return { name: 'login', query: { next: to.fullPath } }
 }
 
 const authGuard: NavigationGuardWithThis<undefined> = (to) => {
-  if (to.name === 'login' && isAuthHint(to.query.hint)) {
-    const next = typeof to.query.next === 'string' ? to.query.next : null
-    const query = next && !defaultAuthEntryPaths[to.query.hint].has(next)
-      ? { next }
-      : undefined
-
-    return { name: loginRouteByHint[to.query.hint], query }
-  }
-
   if (to.meta.requiresAdmin) {
     const adminAuth = useAdminAuthStore()
     if (!adminAuth.isAuthenticated) {

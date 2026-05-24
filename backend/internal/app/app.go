@@ -81,9 +81,9 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// handlers so duration includes the handler body.
 	engine.Use(metrics.Middleware())
 
-	// /metrics scrape endpoint. Mounted at the root for compatibility
-	// with default Prometheus discovery. No auth — the operator
-	// should firewall it off if their scraper isn't trusted.
+	// /metrics scrape endpoint. Mounted at the conventional Prometheus
+	// scrape path. No auth — the operator should firewall it off if
+	// their scraper isn't trusted.
 	engine.GET("/metrics", metrics.Handler())
 
 	// Probes — fast, dep-free / db-ping.
@@ -277,7 +277,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Notify service — multi-channel fanout. Channels not configured
 	// (empty env vars) report Enabled()=false and the dispatch loop
 	// silently skips them. Router parsed from NOTIFY_ROUTES; empty
-	// → legacy email-only behavior for client lifecycle events.
+	// means no ops fanout.
 	notifyRouter, routerErr := notify.ParseRoutes(cfg.Notify.Routes)
 	if routerErr != nil {
 		// Misconfigured routes are a hard boot error — operator should

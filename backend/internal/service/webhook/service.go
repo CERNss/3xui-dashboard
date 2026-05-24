@@ -52,9 +52,9 @@ type Service struct {
 
 // Options tunes the dispatcher.
 type Options struct {
-	MaxAttempts int           // default 5
-	Timeout     time.Duration // default 10s
-	EnvelopeVersion string    // default "1"
+	MaxAttempts     int           // default 5
+	Timeout         time.Duration // default 10s
+	EnvelopeVersion string        // default "1"
 }
 
 // New constructs the service. It subscribes to the bus immediately;
@@ -444,9 +444,9 @@ func normalizeWebhook(w *model.Webhook) error {
 
 // renderWebhookPayload produces the byte payload sent on the wire.
 // When BodyTemplate is empty, the standard JSON Envelope is used
-// (backward-compat default). Otherwise the template renders with
-// `.Version`, `.Event`, `.Timestamp`, and `.Data` (a generic map
-// for dotted access like {{.Data.user_id}}) as the dot.
+// as the default. Otherwise the template renders with `.Version`,
+// `.Event`, `.Timestamp`, and `.Data` (a generic map for dotted
+// access like {{.Data.user_id}}) as the dot.
 //
 // Template errors fall back to the envelope JSON + a logged warning
 // — admins can break their own webhooks with bad templates, but

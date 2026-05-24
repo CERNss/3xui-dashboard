@@ -18,7 +18,7 @@ Each node is a stock 3x-ui panel. The dashboard talks to it over HTTP(S).
 | Base URL | `{scheme}://{address}:{port}{basePath}` — `scheme` ∈ `http`/`https`, `basePath` normalized to be `/`-bounded (empty ⇒ `/`) |
 | API root | `{basePath}panel/api` |
 | Auth | `Authorization: Bearer {apiToken}` — node-side `ApiToken` row, matched by `apiTokenService.Match()` |
-| Auth fallback | A logged-in session cookie also works, but the dashboard uses **only the Bearer token** |
+| Auth | The dashboard uses **only the Bearer token** |
 | Unauthorized | `401` if `X-Requested-With: XMLHttpRequest`, otherwise `404` (3x-ui hides the panel) |
 | CSRF | `/panel/api` group applies `CSRFMiddleware()`; token-authed requests pass through |
 | Content types accepted | `application/json` and `application/x-www-form-urlencoded` (most handlers use `c.ShouldBind`, which accepts both) |
@@ -204,20 +204,17 @@ settings, streamSettings, tag, sniffing, trafficReset
 works. Before sending, strip redundant TLS cert **file paths** when inline cert
 content is present (`sanitizeStreamSettingsForRemote`).
 
-### 4.2 Client mutation — two strategies
+### 4.2 Client mutation
 
-**Strategy A — surgical endpoints** (what our specs target):
+The dashboard uses the direct client endpoints for single-client
+mutations:
+
 - `POST /addClient` — body = Inbound JSON `{ "id": <inboundId>, "settings": "{\"clients\":[Client]}" }`
 - `POST /updateClient/:clientId` — `clientId` = client UUID/password; body same shape
 - `POST /:id/delClient/:clientId` — path-only
 
-**Strategy B — full re-push** (what upstream `remote.go` actually does):
-`AddUser`/`RemoveUser` just call `UpdateInbound` and re-push the entire inbound
-with the modified `settings.clients[]`. Simpler, no `clientId` resolution, but
-heavy for inbounds with thousands of clients.
-
-> Decision for the dashboard: prefer **Strategy A** for single-client ops
-> (provisioning, plan purchase); fall back to Strategy B only for bulk edits.
+If one of these calls fails, the dashboard surfaces the node error
+instead of rewriting and re-posting the whole inbound.
 
 ### 4.3 Traffic snapshot (per `remote.go::FetchTrafficSnapshot`)
 
@@ -265,7 +262,7 @@ and what we **drop**.
 - Local Xray process management — `xray/process.go`, `web/service/xray.go`,
   `panel*.go`, `installXray`, `updateGeofile`, geo-asset tooling.
 - Telegram bot — `web/service/tgbot.go`.
-- The legacy multi-page HTML UI — `web/dist/*`, `frontend/*.html`.
+- The upstream multi-page HTML UI — `web/dist/*`, `frontend/*.html`.
 - 3x-ui's own auth (`web/service/user.go`, sessions, LDAP, TOTP) — replaced by
   our admin-auth + user-accounts.
 - 3x-ui's own "node" feature controller (`web/controller/node.go`) — *we are*
@@ -313,9 +310,8 @@ inbound-email-other) controls how each link is named.
 
 - **3x-ui version range**: this reference reflects the `cern-3x-ui` checkout
   (v3). Pin a supported min/max and re-scan on bump.
-- Confirm `addClient`/`updateClient` body shape against a live node — upstream
-  `remote.go` never calls them (it re-pushes inbounds), so the surgical-endpoint
-  contract is inferred from the controller signatures, not exercised upstream.
+- Keep `addClient`/`updateClient` body shape verified against the target node
+  contract when bumping 3x-ui.
 - `totalGB` field is **bytes**, not GB — verify against a node before relying.
 - `expiryTime` negative-value semantics (relative-from-first-use) — confirm if
   we expose duration-based plans.

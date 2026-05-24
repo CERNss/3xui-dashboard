@@ -88,9 +88,8 @@ $EDITOR deploy/.env   # set JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
 ```
 
-The dashboard is now on `http://localhost:8080`. Log in at
-`/admin/login` and POST `/api/admin/nodes` with each node's
-host/port/api_token.
+The dashboard is now on `http://localhost:8080`. Log in at `/login`
+and POST `/api/admin/nodes` with each node's host/port/api_token.
 
 ## Quickstart (local dev)
 
@@ -134,11 +133,10 @@ make dev                # frontend on :5173, backend on :8080
 
 ## Supported 3x-ui version range
 
-Tested against the upstream tree at `cern-3x-ui` (v3). Older v2.x
-should work for read-only flows (probe, list); client mutation via
-the surgical `/addClient` endpoint may not be available on older
-versions and the runtime falls back to the full inbound re-push
-transparently.
+Tested against the upstream tree at `cern-3x-ui` (v3). The dashboard
+expects the node API described in `docs/operator/3xui-node-contract.md`;
+unsupported forks or older API shapes fail visibly instead of being
+handled through alternate mutation paths.
 
 If you bump 3x-ui across a major release, re-validate by:
 

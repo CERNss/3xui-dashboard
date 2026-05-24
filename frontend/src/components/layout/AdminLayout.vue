@@ -45,7 +45,7 @@ function toggleSidebarCollapsed() {
 
 function logout() {
   auth.clear()
-  router.push({ name: 'admin.login' })
+  router.push({ name: 'login', query: { next: '/admin' } })
 }
 
 interface NavItem {

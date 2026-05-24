@@ -73,10 +73,11 @@ Administrators SHALL be able to update an existing inbound on a node.
   the cache, refreshing from `/panel/api/inbounds/list` on a miss) and posts to
   `/panel/api/inbounds/update/{id}`
 
-#### Scenario: Update falls back to create
+#### Scenario: Missing tag surfaces
 
 - **WHEN** the inbound tag cannot be resolved on the node (it no longer exists)
-- **THEN** the system SHALL create the inbound instead so state converges
+- **THEN** the system SHALL return a tag-not-found error
+- **AND** SHALL NOT create a replacement inbound automatically
 
 #### Scenario: Stream settings sanitized
 

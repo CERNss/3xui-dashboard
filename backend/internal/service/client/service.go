@@ -194,16 +194,7 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 			)
 		}
 		if err := r.UpdateClient(ctx, inboundTag, wireClient); err != nil {
-			// Update can fail on rare-but-possible identifier
-			// rotations — fall back to add to keep provisioning
-			// idempotent at the row level.
-			if errors.Is(err, runtime.ErrClientNotFound) {
-				if err := r.AddClient(ctx, inboundTag, wireClient); err != nil {
-					return nil, fmt.Errorf("provision: re-add after missing: %w", err)
-				}
-			} else {
-				return nil, fmt.Errorf("provision: update panel client: %w", err)
-			}
+			return nil, fmt.Errorf("provision: update panel client: %w", err)
 		}
 	}
 
@@ -386,7 +377,7 @@ func (s *Service) ListOnInbound(ctx context.Context, nodeID int64, inboundTag st
 // LinkToUser attaches an unmapped 3x-ui client to a user by writing
 // an ownership row. Used by admins after they manually create a
 // client on a node panel. Best-effort populates the protocol from
-// the inbound; falls back to empty (ExpiryJob will runtime-lookup).
+// the inbound; leaves it empty if the node lookup fails.
 func (s *Service) LinkToUser(ctx context.Context, nodeID int64, inboundTag, clientEmail string, userID int64, planID *int64) (*model.ClientOwnership, error) {
 	protocol := ""
 	if r, err := s.rt.Get(ctx, nodeID); err == nil {
@@ -451,7 +442,7 @@ func buildWireClient(protocol, email, subID string, expiry time.Time, trafficByt
 		c.Password = randomHex(16)
 	case "shadowsocks":
 		c.Password = randomHex(16)
-	case "hysteria", "hysteria2":
+	case "hysteria":
 		c.Auth = randomAuthString(16)
 	default:
 		c.ID = uuid.NewString()

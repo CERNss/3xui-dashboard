@@ -74,7 +74,6 @@ async function loadOIDC() {
   try {
     oidcProviders.value = await portalAuthApi.oidcProviders()
   } catch {
-    // Silent — endpoint may 404 on older backends; the OIDC section just hides.
     oidcProviders.value = []
   }
 }
@@ -111,34 +110,24 @@ const nextPath = computed(() => {
   return typeof route.query.next === 'string' ? route.query.next : null
 })
 
-const routeRole = computed<Role | null>(() => {
-  return route.meta.authRole === 'portal' || route.meta.authRole === 'admin'
-    ? route.meta.authRole
-    : null
+const targetRole = computed<Role | null>(() => {
+  if (nextPath.value?.startsWith('/portal')) return 'portal'
+  if (nextPath.value?.startsWith('/admin')) return 'admin'
+  return null
 })
 
-const hintedRole = computed<Role | null>(() => {
-  if (routeRole.value) return routeRole.value
-  return route.query.hint === 'portal' || route.query.hint === 'admin'
-    ? route.query.hint
-    : null
-})
-
-const isAdminEntry = computed(() => hintedRole.value === 'admin')
-const canRegister = computed(() => hintedRole.value !== 'admin')
+const canRegister = computed(() => targetRole.value !== 'admin')
 
 const cardTitle = computed(() => {
-  if (isAdminEntry.value) return t('auth.adminLoginTitle')
   return mode.value === 'login' ? t('auth.welcomeBack') : t('auth.createAccount')
 })
 
 const cardSubtitle = computed(() => {
-  if (isAdminEntry.value) return t('auth.adminLoginSubtitle')
   return mode.value === 'login' ? t('auth.signInSubtitle') : t('auth.registerSubtitle')
 })
 
 const roleOrder = computed<Role[]>(() => {
-  return hintedRole.value === 'portal' ? ['portal', 'admin'] : ['admin', 'portal']
+  return targetRole.value === 'portal' ? ['portal', 'admin'] : ['admin', 'portal']
 })
 
 // Try a single role for sign-in. Returns true on success (stores session),
@@ -163,7 +152,7 @@ async function tryRole(role: Role, account: string, password: string): Promise<b
 }
 
 async function doLogin() {
-  // Admin and portal share the same email format. Prefer the route hint
+  // Admin and portal share the same email format. Prefer the target area
   // when present, then continue to the other role on auth-class failures.
   let succeededAs: Role | null = null
   try {
@@ -245,7 +234,7 @@ function switchMode(next: Mode) {
   code.value = ''
 }
 
-watch(hintedRole, (role) => {
+watch(targetRole, (role) => {
   if (role === 'admin' && mode.value === 'register') {
     switchMode('login')
   }
@@ -324,7 +313,7 @@ watch(hintedRole, (role) => {
           />
         </div>
       </div>
-      <div v-if="mode === 'register' && emailVerificationRequired">
+      <div v-if="mode === 'register'">
         <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('auth.confirmPassword') }}</label>
         <div class="relative">
           <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -344,7 +333,7 @@ watch(hintedRole, (role) => {
            User clicks "发送验证码" → backend mails a 6-digit code → user types
            it in here. Send button is rate-limited 60s client-side to mirror
            server-side ErrRateLimited. -->
-      <div v-if="mode === 'register'">
+      <div v-if="mode === 'register' && emailVerificationRequired">
         <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('auth.verificationCode') }}</label>
         <div class="flex items-stretch gap-2">
           <div class="relative flex-1">

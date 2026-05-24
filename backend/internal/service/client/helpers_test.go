@@ -121,11 +121,9 @@ func TestBuildWireClient_HysteriaGetsAuth(t *testing.T) {
 	if c.ID != "" || c.Password != "" {
 		t.Errorf("hysteria client should not carry ID/Password (got id=%q password=%q)", c.ID, c.Password)
 	}
-	// Also test the legacy 'hysteria2' alias — the fork emits
-	// `hysteria` but UAs and configs sometimes spell it `hysteria2`.
 	c2 := buildWireClient("hysteria2", "erin", "sub-5", time.Time{}, 0, 0)
-	if c2.Auth == "" {
-		t.Error("hysteria2 alias should also populate Auth")
+	if c2.Auth != "" || c2.ID == "" {
+		t.Error("unsupported hysteria2 input should use the generic UUID shape")
 	}
 }
 

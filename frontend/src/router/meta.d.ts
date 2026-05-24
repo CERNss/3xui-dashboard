@@ -8,8 +8,6 @@ declare module 'vue-router' {
     requiresUser?: boolean
     // Hide the route from server-side title (default: false).
     hideInTitle?: boolean
-    // Login screen role selected by clean route aliases such as /admin/login.
-    authRole?: 'admin' | 'portal'
     // Page title (i18n key resolved by useRouteTitle composable in later groups).
     titleKey?: string
   }

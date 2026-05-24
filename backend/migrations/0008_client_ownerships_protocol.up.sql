@@ -1,8 +1,7 @@
 -- Add `protocol` to client_ownerships so the ExpiryJob batch-knows
--- WG vs non-WG without doing a GetInbound() per row. Nullable for
--- legacy rows; ClientService.ProvisionClient populates forward, and
--- the ExpiryJob falls back to runtime lookup when the column is
--- NULL so existing deployments keep working without a backfill.
+-- WG vs non-WG without doing a GetInbound() per row. Nullable so
+-- the ExpiryJob can fall back to runtime lookup when older rows have
+-- not been touched by ClientService.ProvisionClient.
 ALTER TABLE client_ownerships
     ADD COLUMN protocol TEXT;
 

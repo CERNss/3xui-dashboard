@@ -6,7 +6,6 @@ package inbound
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -132,37 +131,8 @@ func ensureWGSecretKey(in *runtime.Inbound) error {
 	return nil
 }
 
-// Update mutates an existing inbound. If the tag doesn't exist on
-// the node yet, the call falls through to Add — handlers that want
-// strict update semantics should use UpdateStrict.
+// Update mutates an existing inbound.
 func (s *Service) Update(ctx context.Context, nodeID int64, tag string, in *runtime.Inbound) (*runtime.Inbound, error) {
-	r, err := s.rt.Get(ctx, nodeID)
-	if err != nil {
-		return nil, err
-	}
-	updated, err := r.UpdateInbound(ctx, tag, in)
-	if err == nil {
-		return updated, nil
-	}
-	if errors.Is(err, runtime.ErrTagNotFound) {
-		s.log.Info("update→create fallback",
-			slog.Int64("node_id", nodeID),
-			slog.String("tag", tag),
-		)
-		// Falling through to AddInbound — same WG keypair fill
-		// invariant applies as in Add().
-		if in != nil && in.IsWireguard() {
-			if err := ensureWGSecretKey(in); err != nil {
-				return nil, err
-			}
-		}
-		return r.AddInbound(ctx, in)
-	}
-	return nil, err
-}
-
-// UpdateStrict refuses to fall back to Add on missing tag.
-func (s *Service) UpdateStrict(ctx context.Context, nodeID int64, tag string, in *runtime.Inbound) (*runtime.Inbound, error) {
 	r, err := s.rt.Get(ctx, nodeID)
 	if err != nil {
 		return nil, err

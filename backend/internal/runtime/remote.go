@@ -343,11 +343,9 @@ func (r *Remote) wireInbound(in *Inbound) url.Values {
 // Clients
 // ---------------------------------------------------------------------------
 
-// AddClient appends client to the named inbound. Tries the surgical
-// endpoint first (POST /inbounds/addClient) and falls back to a full
-// inbound re-push if the panel rejects it.
+// AddClient appends client to the named inbound.
 //
-// Wire shape (legacy, verified on production fork 2026-05-21):
+// Wire shape verified on production fork 2026-05-21:
 //
 //	POST /panel/api/inbounds/addClient
 //	{"id": <inbound_id>, "settings": "<stringified-json {\"clients\":[{...}]}>"}
@@ -367,25 +365,13 @@ func (r *Remote) AddClient(ctx context.Context, inboundTag string, client Client
 		return fmt.Errorf("marshal client settings: %w", err)
 	}
 	body := map[string]any{"id": id, "settings": string(settings)}
-	if _, err := r.doJSON(ctx, "/inbounds/addClient", body); err == nil {
-		return nil
-	} else if !isPanelClientError(err) {
-		return err
-	} else {
-		r.log.Warn("addClient rejected; falling back to inbound re-push",
-			slog.String("inbound", inboundTag),
-			slog.String("error", err.Error()),
-		)
-	}
-	return r.rePushInboundWithMutation(ctx, inboundTag, func(s *InboundSettings) error {
-		s.Clients = append(s.Clients, client)
-		return nil
-	})
+	_, err = r.doJSON(ctx, "/inbounds/addClient", body)
+	return err
 }
 
 // UpdateClient finds the client by email on the named inbound,
 // resolves its UUID/password/auth, and calls
-// POST /inbounds/updateClient/:clientId. Falls back to re-push.
+// POST /inbounds/updateClient/:clientId.
 func (r *Remote) UpdateClient(ctx context.Context, inboundTag string, client Client) error {
 	in, err := r.GetInbound(ctx, inboundTag)
 	if err != nil {
@@ -420,25 +406,8 @@ func (r *Remote) UpdateClient(ctx context.Context, inboundTag string, client Cli
 		return fmt.Errorf("marshal client: %w", err)
 	}
 	body := map[string]any{"id": in.ID, "settings": string(mergedSettings)}
-	if _, err := r.doJSON(ctx, "/inbounds/updateClient/"+url.PathEscape(clientID), body); err == nil {
-		return nil
-	} else if !isPanelClientError(err) {
-		return err
-	} else {
-		r.log.Warn("updateClient rejected; falling back to inbound re-push",
-			slog.String("inbound", inboundTag),
-			slog.String("error", err.Error()),
-		)
-	}
-	return r.rePushInboundWithMutation(ctx, inboundTag, func(s *InboundSettings) error {
-		for i := range s.Clients {
-			if s.Clients[i].Email == client.Email {
-				s.Clients[i] = client
-				return nil
-			}
-		}
-		return fmt.Errorf("%w (re-push): email=%q", ErrClientNotFound, client.Email)
-	})
+	_, err = r.doJSON(ctx, "/inbounds/updateClient/"+url.PathEscape(clientID), body)
+	return err
 }
 
 // DeleteClientByEmail removes the named client. Idempotent: returns
@@ -452,56 +421,8 @@ func (r *Remote) DeleteClientByEmail(ctx context.Context, inboundTag, email stri
 		return err
 	}
 	path := fmt.Sprintf("/inbounds/%d/delClientByEmail/%s", id, url.PathEscape(email))
-	if _, err := r.doPostEmpty(ctx, path); err == nil {
-		return nil
-	} else if !isPanelClientError(err) {
-		return err
-	} else {
-		r.log.Warn("delClientByEmail rejected; falling back to inbound re-push",
-			slog.String("inbound", inboundTag),
-			slog.String("email", email),
-			slog.String("error", err.Error()),
-		)
-	}
-	return r.rePushInboundWithMutation(ctx, inboundTag, func(s *InboundSettings) error {
-		filtered := s.Clients[:0]
-		for _, c := range s.Clients {
-			if c.Email == email {
-				continue
-			}
-			filtered = append(filtered, c)
-		}
-		s.Clients = filtered
-		return nil
-	})
-}
-
-// rePushInboundWithMutation reads the named inbound, applies mutate
-// to its parsed settings.clients[], serializes, and pushes the whole
-// inbound back via /update/:id. Strategy B fallback.
-func (r *Remote) rePushInboundWithMutation(ctx context.Context, tag string, mutate func(*InboundSettings) error) error {
-	in, err := r.GetInbound(ctx, tag)
-	if err != nil {
-		return err
-	}
-	var settings InboundSettings
-	if in.Settings != "" {
-		if err := json.Unmarshal([]byte(in.Settings), &settings); err != nil {
-			return fmt.Errorf("decode inbound settings: %w", err)
-		}
-	}
-	if err := mutate(&settings); err != nil {
-		return err
-	}
-	rewritten, err := json.Marshal(settings)
-	if err != nil {
-		return fmt.Errorf("marshal inbound settings: %w", err)
-	}
-	in.Settings = string(rewritten)
-	if _, err := r.UpdateInbound(ctx, tag, in); err != nil {
-		return err
-	}
-	return nil
+	_, err = r.doPostEmpty(ctx, path)
+	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -579,8 +500,7 @@ func (r *Remote) ResetInboundTraffic(ctx context.Context, inboundTag string) err
 }
 
 // ResetAllClientTraffics zeroes every client on an inbound via
-// POST /inbounds/resetAllClientTraffics/:id (verified on the
-// production fork — same response shape as the legacy reset).
+// POST /inbounds/resetAllClientTraffics/:id.
 func (r *Remote) ResetAllClientTraffics(ctx context.Context, inboundTag string) error {
 	id, err := r.resolveTagToID(ctx, inboundTag)
 	if err != nil {
@@ -619,15 +539,6 @@ func (r *Remote) resolveTagToID(ctx context.Context, tag string) (int64, error) 
 // ---------------------------------------------------------------------------
 // Misc
 // ---------------------------------------------------------------------------
-
-// isPanelClientError reports whether err is an EnvelopeError (i.e.
-// the panel accepted the HTTP call but rejected the payload). 4xx
-// HTTP, transport errors, and timeouts are NOT panel client errors —
-// we don't fall back on those.
-func isPanelClientError(err error) bool {
-	var e *EnvelopeError
-	return errors.As(err, &e)
-}
 
 // snippet returns a short string suitable for log/error messages.
 func snippet(b []byte) string {

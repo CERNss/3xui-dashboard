@@ -72,9 +72,8 @@ func (s *Service) SetSettings(settings *repository.SettingRepo) {
 	s.settings = settings
 }
 
-// SetProvisioningPools attaches the pool repository. Kept as a setter
-// so older tests that instantiate billing.Service directly can keep
-// using New without a long constructor churn.
+// SetProvisioningPools attaches the pool repository after New so
+// billing construction stays compact.
 func (s *Service) SetProvisioningPools(pools *repository.ProvisioningPoolRepo) {
 	s.pools = pools
 }

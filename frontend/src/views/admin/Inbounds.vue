@@ -223,8 +223,6 @@ async function onInboundSaved(created: Inbound) {
   await reload()
 }
 
-// (no legacy submit — InboundEditorModal handles persistence itself)
-
 function confirmDeleteInbound(f: FleetInbound) {
   confirmDialog.value = {
     open: true,

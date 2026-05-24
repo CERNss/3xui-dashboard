@@ -1,4 +1,4 @@
-# 3x-ui fork compatibility
+# 3x-ui node contract
 
 This dashboard targets **MHSanaei/3x-ui** specifically — the
 extended fork at https://github.com/MHSanaei/3x-ui that ships
@@ -33,7 +33,7 @@ dashboard will NOT silently appear to succeed.
 - ❌ Forks deleted the `/clients/*` group or pre-fork builds —
   unsupported
 
-## How to confirm your node is compatible
+## How to confirm your node matches the contract
 
 ```sh
 curl -sI \
@@ -50,9 +50,9 @@ manage clients on it.
 
 ## Out of scope for v1
 
-- **Multi-fork compatibility** — feature flags / dual-path
-  fallback. If demand emerges, track as a separate change.
+- **Multi-fork support** — feature flags or dual-path runtime
+  behavior. If demand emerges, track as a separate change.
 - **Capability detection** — the `/panel/api/inbounds/options`
   endpoint exists but rejects API-token (Bearer) callers; the
   dashboard cannot use it to probe a node's protocol support at
-  runtime. Compatibility is declared statically.
+  runtime. The required node shape is declared statically.

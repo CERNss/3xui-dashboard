@@ -165,21 +165,22 @@ node's numeric remote inbound id, refreshing on miss via
 - **WHEN** `AddInbound(node_id, …)` succeeds and the response includes the assigned tag + id
 - **THEN** the runtime SHALL insert that mapping into the cache so the next operation skips the list call
 
-### Requirement: Client Update Strategy With Fallback
+### Requirement: Direct Client Update Strategy
 
-The system SHALL attempt the most efficient client update strategy
-first, then fall back to a full re-push when the node rejects it.
+The system SHALL mutate individual clients through the node's direct
+client endpoints. It SHALL NOT fall back to re-pushing the whole
+inbound when the node rejects a client mutation.
 
-#### Scenario: Strategy A (direct update) succeeds
+#### Scenario: Direct update succeeds
 
 - **WHEN** the runtime updates a single client via `/panel/api/inbounds/updateClient/{uuid}`
 - **THEN** if the node responds `success: true`, no further action SHALL be taken
 
-#### Scenario: Strategy B (re-push) on EnvelopeError
+#### Scenario: Direct update fails
 
-- **WHEN** Strategy A returns `EnvelopeError` (the node refused or didn't find the client)
-- **THEN** the runtime SHALL fetch the full inbound, replace the client in the `settings.clients` array, and re-push via `UpdateInbound`
-- **AND** the result of that re-push SHALL be returned to the caller
+- **WHEN** `/panel/api/inbounds/updateClient/{uuid}` returns an error
+- **THEN** the runtime SHALL return that error to the caller
+- **AND** SHALL NOT call `/panel/api/inbounds/update/:id` as a fallback
 
 ### Requirement: Stream-Settings Sanitization
 
@@ -223,10 +224,10 @@ The system SHALL target MHSanaei/3x-ui (any recent commit on
 `main` or `bash` branch) as the canonical 3x-ui implementation,
 since that fork includes the WireGuard + Hysteria protocol
 modules absent from canonical 3x-ui. The dashboard SHALL NOT
-attempt per-node capability detection — compatibility is
-declared statically per `docs/operator/3xui-fork-compat.md`.
+attempt per-node capability detection — the required node shape is
+declared statically per `docs/operator/3xui-node-contract.md`.
 
-#### Scenario: Operator runs an incompatible fork
+#### Scenario: Operator runs an unsupported fork
 
 - **WHEN** an operator points the dashboard at a 3x-ui fork that lacks WG/Hysteria support
 - **AND** the dashboard attempts the corresponding `POST /panel/api/inbounds/add`
@@ -239,7 +240,7 @@ declared statically per `docs/operator/3xui-fork-compat.md`.
 - **THEN** the dashboard SHALL NOT use this endpoint
 - **AND** the runtime client SHALL NOT have a method that calls `/inbounds/options`
 
-### Requirement: Legacy Inbounds-Grouped Client Routes
+### Requirement: Inbounds-Grouped Client Routes
 
 The runtime client SHALL use the production-fork-verified
 `/panel/api/inbounds/*` endpoint group for every per-client
@@ -266,11 +267,12 @@ forks (404 on every member). See
 - **THEN** the runtime SHALL POST to `/panel/api/inbounds/addClient` with body `{id: <inbound_id>, settings: "<stringified-JSON {\"clients\":[{...}]}>"}`
 - **AND** the runtime SHALL NOT use the speculative `{client, inboundIds}` envelope I tried in `#11` — that shape applies to a `/clients/*` route group that doesn't exist on production forks
 
-#### Scenario: Delete-last-client quirk surfaces via re-push fallback
+#### Scenario: Delete-last-client quirk surfaces as an error
 
 - **GIVEN** the fork refuses `delClientByEmail` when the call would leave the inbound with zero clients (returns `success:false` + msg `"no client remained in Inbound"`)
 - **WHEN** the surgical delete fails with an `EnvelopeError`
-- **THEN** the runtime SHALL fall back to `rePushInboundWithMutation` which posts `POST /panel/api/inbounds/update/:id` with `settings.clients=[]` (verified accepted by the production fork)
+- **THEN** the runtime SHALL return that error to the caller
+- **AND** SHALL NOT call `/panel/api/inbounds/update/:id` as a fallback
 
 #### Scenario: Network 404 surfaces visibly
 

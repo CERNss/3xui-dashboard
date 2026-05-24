@@ -4,7 +4,7 @@ WireGuard support in this dashboard requires:
 
 1. Every WG-capable node runs **MHSanaei/3x-ui** fork (the canonical
    3x-ui upstream lacks the WG module — see
-   [3xui-fork-compat.md](./3xui-fork-compat.md)).
+   [3xui-node-contract.md](./3xui-node-contract.md)).
 2. The dashboard has `WG_MASTER_KEY` configured in env.
 
 If either is missing the dashboard logs the gap at boot and refuses

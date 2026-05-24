@@ -257,8 +257,7 @@ func randomHex(n int) string {
 }
 
 // settingDescriptor enumerates the well-known keys the UI knows how to
-// render + validate. Unknown keys are accepted for forward compat but
-// shown as raw strings.
+// render + validate. Unknown keys are shown as raw strings.
 //
 // LabelZh / DescriptionZh hold the zh-CN translations. The frontend
 // picks between en (Label/Description) and zh (LabelZh/DescriptionZh)
@@ -564,8 +563,8 @@ type settingItem struct {
 }
 
 // List returns every known descriptor with its current value, plus any
-// unknown rows in the table (forward compat). The UI uses this for
-// the Settings form initial render.
+// unknown rows in the table. The UI uses this for the Settings form
+// initial render.
 func (h *SettingHandler) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	persisted, err := h.repo.GetAll(ctx)

@@ -35,10 +35,11 @@ service SHALL NOT be hardcoded to any single delivery mechanism.
 - **THEN** each channel send SHALL use a separate `notification_log` dedup key (e.g. `expiring_soon_telegram` vs `expiring_soon_email`)
 - **AND** a redelivery to one channel SHALL NOT block the other
 
-#### Scenario: Default routing when NOTIFY_ROUTES is empty
+#### Scenario: No ops routing when NOTIFY_ROUTES is empty
 
 - **WHEN** the operator has not configured `NOTIFY_ROUTES`
-- **THEN** the notify service SHALL fall back to the legacy rule set: client lifecycle events (`expired` / `expiring_soon` / `over_limit`) routed to email; no other channels routed
+- **THEN** the notify service SHALL have no ops channel routes
+- **AND** user-facing client lifecycle messages SHALL remain owned by `service/messages`
 
 ### Requirement: Router Configuration
 

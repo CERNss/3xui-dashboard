@@ -235,15 +235,15 @@ func TestDeleteClientByEmail_MissingTagIsNoop(t *testing.T) {
 	}
 }
 
-// TestAddClient_LegacyInboundsAddClient asserts AddClient hits the
+// TestAddClient_UsesInboundsAddClient asserts AddClient hits the
 // real fork route /panel/api/inbounds/addClient with body shape
 // {id, settings: stringified-json}. This was wrongly migrated to
 // /panel/api/clients/add in commit d2598ec (#11) based on outdated
 // MHSanaei/3x-ui source reading; the production fork (verified
 // against node-1 on 2026-05-21) has the /clients/* group absent
-// and the legacy /inbounds/* routes intact. Don't migrate again
+// and the /inbounds/* routes active. Don't migrate again
 // without running the T1 probe on the actual target fork first.
-func TestAddClient_LegacyInboundsAddClient(t *testing.T) {
+func TestAddClient_UsesInboundsAddClient(t *testing.T) {
 	var seenPath string
 	var seenBody []byte
 	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

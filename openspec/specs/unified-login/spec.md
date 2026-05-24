@@ -13,7 +13,7 @@ This module defines:
 - The unified `/login` SPA route (frontend).
 - The auto-detection logic that picks which auth endpoint to call.
 - The login/register tab switch on the same page.
-- Legacy URL redirects so old bookmarks keep working.
+- Old role-specific entry URLs are not registered.
 
 Token issuance and credential checking are out of scope — those live
 in `admin-auth`, `user-accounts`, and (for registration) `email-verification`.
@@ -25,14 +25,13 @@ Defined in `frontend/src/router/index.ts`:
 ```
 /                          → redirect /admin
 /login                     → views/Login.vue
-/admin/login               → redirect /login?hint=admin (preserves ?next)
-/portal/login              → redirect /login?hint=portal
 /admin/*                   → AdminLayout, meta.requiresAdmin
 /portal/*                  → PortalLayout, meta.requiresUser
 ```
 
 The 401 axios interceptor (`api/client/factory.ts`) redirects to
-`/login` directly (no hint), since unified login auto-detects.
+`/login` with `?next=...`; unified login uses the target area only
+to choose attempt order and post-login navigation.
 
 ## Requirements
 
@@ -112,20 +111,25 @@ but ONLY when it points into the area the authenticated role can access.
 - **THEN** the SPA SHALL navigate to `/portal` (not `/admin/status`)
 - **AND** SHALL NOT raise an error — silently sidesteps the mismatched next
 
-### Requirement: Legacy login URLs preserved as redirects
+### Requirement: Old role-specific entry URLs are absent
 
-The system SHALL preserve the old `/admin/login` and `/portal/login`
-URLs as router-level redirects so existing bookmarks keep working.
+The system SHALL NOT register role-specific login, registration, or
+dashboard alias routes. The unified login page is the only auth entry.
 
-#### Scenario: Old admin bookmark
+#### Scenario: Old admin login URL
 
-- **WHEN** a request lands on `/admin/login?next=/admin/nodes`
-- **THEN** the router SHALL redirect to `/login?next=/admin/nodes&hint=admin`
+- **WHEN** a request lands on `/admin/login`
+- **THEN** the router SHALL render the 404 route
 
-#### Scenario: Old portal bookmark
+#### Scenario: Old portal login URL
 
 - **WHEN** a request lands on `/portal/login`
-- **THEN** the router SHALL redirect to `/login?hint=portal`
+- **THEN** the router SHALL render the 404 route
+
+#### Scenario: Old dashboard/register aliases
+
+- **WHEN** a request lands on `/admin/dashboard`, `/portal/dashboard`, or `/portal/register`
+- **THEN** the router SHALL render the 404 route
 
 ### Requirement: Independent admin and portal sessions
 
@@ -148,10 +152,6 @@ a single browser may be simultaneously authenticated as both.
   - `true` on success (store updated as side effect)
   - `false` on 400/401/403/404 → fall through to the next role
   - throws on 5xx / network errors → caller surfaces via `formatError`
-- The `?hint=` query param exists for the legacy redirects but is no
-  longer used to pick attempt order. Frontend reads it for future
-  optimization (preferring the hinted role first); the current code path
-  ignores it for simplicity. The behavior is identical either way.
 
 ## Out of scope
 

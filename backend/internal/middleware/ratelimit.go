@@ -112,13 +112,6 @@ func IPRateLimiter(burst int, refill int, window time.Duration) gin.HandlerFunc 
 	}
 }
 
-// LoginRateLimiter is the legacy alias for IPRateLimiter; kept so
-// existing callers don't churn. New call sites should use the
-// generic name.
-func LoginRateLimiter(burst int, refill int, window time.Duration) gin.HandlerFunc {
-	return IPRateLimiter(burst, refill, window)
-}
-
 // itoa is a tiny strconv.Itoa replacement so we don't pull strconv
 // in for a one-liner. Returns "1" for non-positive input.
 func itoa(n int) string {

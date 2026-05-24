@@ -67,8 +67,7 @@ func stripCertPaths(raw json.RawMessage) (json.RawMessage, bool) {
 	for i := range certs {
 		c := certs[i]
 		// If the inline content is present and non-empty, drop the
-		// path field. We check both "certificate"/"key" and the
-		// legacy "certificateFile"/"keyFile" form.
+		// path field. We check both inline and file-path forms.
 		if hasInlineContent(c, "certificate") {
 			if _, ok := c["certificateFile"]; ok {
 				delete(c, "certificateFile")

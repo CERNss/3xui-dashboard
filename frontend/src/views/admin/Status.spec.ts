@@ -61,4 +61,43 @@ describe('admin/Status.vue smoke', () => {
     const w = await mountStatus()
     expect(w.text()).toContain('tokyo-1')
   })
+
+  it('distinguishes failed probes from disabled nodes in the table', async () => {
+    apiStubs.nodesList.mockResolvedValue([
+      {
+        id: 1,
+        name: 'offline-with-history',
+        host: 'old.example.com',
+        port: 443,
+        enabled: true,
+        status: 'offline',
+        cpu_pct: 33.7,
+        mem_pct: 54.2,
+        xray_version: '25.1.0',
+        last_seen_at: '2026-05-24T09:38:02Z',
+        created_at: '',
+        updated_at: '',
+      },
+      {
+        id: 2,
+        name: 'disabled-without-data',
+        host: 'disabled.example.com',
+        port: 443,
+        enabled: false,
+        status: 'offline',
+        cpu_pct: 0,
+        mem_pct: 0,
+        xray_version: '',
+        last_seen_at: null,
+        created_at: '',
+        updated_at: '',
+      },
+    ])
+    const w = await mountStatus()
+    expect(w.text()).toContain('探测失败，上次在线')
+    expect(w.text()).toContain('离线前最后一次指标')
+    expect(w.text()).toContain('33.7% · 54.2%')
+    expect(w.text()).toContain('已停用')
+    expect(w.text()).toContain('停用节点不采集')
+  })
 })
