@@ -558,6 +558,9 @@ export default {
       useDefaultEmpty: 'Follow system',
       values: { true: 'true', false: 'false' },
     },
+    overview: {
+      subtitle: 'View fleet status and operations stats on one page',
+    },
     stats: {
       avgPerUser: 'avg {amount} / user',
       balancePoolAccountSubtext: '{n} accounts · avg {avg}',

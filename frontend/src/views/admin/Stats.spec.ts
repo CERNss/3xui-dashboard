@@ -60,11 +60,11 @@ async function mountStats() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/admin/stats', component: { template: '<div/>' } },
-      { path: '/admin/audit', component: { template: '<div/>' } },
+      { path: '/admin/status', component: { template: '<div/>' } },
+      { path: '/admin/audit-log', component: { template: '<div/>' } },
     ],
   })
-  await router.push('/admin/stats')
+  await router.push('/admin/status')
   await router.isReady()
   const w = mount(Stats, {
     global: { plugins: [router] },

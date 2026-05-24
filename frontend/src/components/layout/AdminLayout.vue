@@ -69,11 +69,6 @@ const sections = computed<NavSection[]>(() => [
         label: t('nav.status'),
         icon: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 7v5l3 2',
       },
-      {
-        to: '/admin/stats',
-        label: t('nav.stats'),
-        icon: 'M3 17l6-6 4 4 8-8M14 7h7v7',
-      },
     ],
   },
   {
@@ -159,7 +154,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 </script>
 
 <template>
-  <div class="flex h-full bg-surface-50 dark:bg-surface-950">
+  <div class="app-dark-bg flex h-full bg-surface-50 dark:bg-surface-950">
     <!-- Mobile backdrop — covers content when drawer is open. -->
     <div
       v-if="drawerOpen"
@@ -169,7 +164,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 
     <aside
       :class="[
-        'flex w-64 flex-col border-r border-surface-100/80 bg-surface-0 px-4 pb-5 pt-6 dark:border-surface-800 dark:bg-surface-900',
+        'app-dark-sidebar flex w-64 flex-col border-r border-surface-100/80 bg-surface-0 px-4 pb-5 pt-6 dark:border-surface-700/80',
         'md:relative md:translate-x-0 md:shadow-none',
         'fixed inset-y-0 left-0 z-40 shadow-elevated transition-[width,transform,padding] duration-200 ease-brand',
         sidebarCollapsed ? 'md:w-[76px] md:px-3' : 'md:w-64',
@@ -280,8 +275,8 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 
     </aside>
 
-    <main class="flex flex-1 flex-col overflow-y-auto">
-      <header class="hidden h-16 shrink-0 items-center justify-end border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-800 dark:bg-surface-900 md:flex lg:px-8">
+    <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <header class="app-dark-header hidden h-16 shrink-0 items-center justify-end border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-700/80 md:flex lg:px-8">
         <div class="flex items-center gap-2">
           <LocaleSwitcher variant="toolbar" />
           <AccountMenu
@@ -299,7 +294,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 
       <!-- Mobile top bar: hamburger + brand. md:hidden because the
            sidebar is always-visible at md+. -->
-      <header class="flex h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-800 dark:bg-surface-900 md:hidden">
+      <header class="app-dark-header flex h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-700/80 md:hidden">
         <button
           type="button"
           :aria-label="drawerOpen ? $t('a11y.closeNav') : $t('a11y.openNav')"
@@ -324,8 +319,10 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
         />
       </header>
 
-      <section class="mx-auto w-full max-w-page px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-9">
-        <router-view />
+      <section class="min-h-0 flex-1 overflow-y-auto">
+        <div class="mx-auto w-full max-w-page px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-9">
+          <router-view />
+        </div>
       </section>
     </main>
   </div>

@@ -236,7 +236,7 @@ defineExpose({ reload })
             </h2>
             <p class="mt-1 text-xs text-surface-500">{{ $t('admin.stats.systemLogSubtitle') }}</p>
           </div>
-          <router-link to="/admin/audit" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-surface-200 px-3 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800">
+          <router-link to="/admin/audit-log" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-surface-200 px-3 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-700 dark:text-surface-300 dark:hover:bg-surface-800">
             {{ $t('admin.stats.systemLogViewAll') }}
             <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
           </router-link>

@@ -558,6 +558,9 @@ export default {
       useDefaultEmpty: '跟随系统',
       values: { true: 'true', false: 'false' },
     },
+    overview: {
+      subtitle: '同一页查看集群状态和运营统计',
+    },
     stats: {
       avgPerUser: '平均 {amount} / 用户',
       balancePoolAccountSubtext: '{n} 个账户 · 平均 {avg}',

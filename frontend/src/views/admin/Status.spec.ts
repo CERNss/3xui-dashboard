@@ -18,7 +18,10 @@ import Status from './Status.vue'
 async function mountStatus() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/admin/status', component: { template: '<div/>' } }],
+    routes: [
+      { path: '/admin/status', component: { template: '<div/>' } },
+      { path: '/admin/nodes', component: { template: '<div/>' } },
+    ],
   })
   await router.push('/admin/status')
   await router.isReady()

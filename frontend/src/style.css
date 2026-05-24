@@ -19,6 +19,10 @@
   }
 
   :root.dark {
+    --app-sidebar-bg: 8 16 30;
+    --app-topbar-bg: 27 43 66;
+    --app-page-top: 38 56 82;
+    --app-page-bg: 30 46 70;
     --surface-0: 255 255 255;
     --surface-50: 255 255 255;
     --surface-100: 248 250 252;
@@ -27,10 +31,10 @@
     --surface-400: 183 196 212;
     --surface-500: 139 155 176;
     --surface-600: 100 116 139;
-    --surface-700: 72 86 111;
-    --surface-800: 39 50 69;
-    --surface-900: 17 24 39;
-    --surface-950: 6 11 20;
+    --surface-700: 76 92 119;
+    --surface-800: 39 54 78;
+    --surface-900: 18 29 46;
+    --surface-950: 30 46 70;
   }
 
   html,
@@ -45,7 +49,9 @@
   }
 
   :root.dark body {
-    @apply bg-surface-950 text-surface-100;
+    @apply text-surface-100;
+    background:
+      linear-gradient(180deg, rgb(var(--app-page-top)) 0, rgb(var(--app-page-bg)) 118px, rgb(var(--app-page-bg)) 100%);
   }
 
   /* Consistent focus ring — keyboard only, never removed. */
@@ -69,6 +75,49 @@
 }
 
 @layer utilities {
+  :root.dark .app-dark-bg {
+    background:
+      linear-gradient(180deg, rgb(var(--app-page-top)) 0, rgb(var(--app-page-bg)) 118px, rgb(var(--app-page-bg)) 100%);
+  }
+
+  :root.dark .app-dark-sidebar {
+    background: rgb(var(--app-sidebar-bg));
+  }
+
+  :root.dark .app-dark-header {
+    background: rgb(var(--app-topbar-bg));
+  }
+
+  .overview-slide-forward-enter-active,
+  .overview-slide-forward-leave-active,
+  .overview-slide-back-enter-active,
+  .overview-slide-back-leave-active {
+    transition:
+      opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity, transform;
+  }
+
+  .overview-slide-forward-enter-from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  .overview-slide-forward-leave-to {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  .overview-slide-back-enter-from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  .overview-slide-back-leave-to {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
   /* Brand-eased transitions for hand-rolled UI elements. */
   .transition-brand {
     transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);

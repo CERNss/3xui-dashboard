@@ -56,9 +56,8 @@ async function mountOverview(initialPath = '/admin/status'): Promise<{ w: Return
     history: createMemoryHistory(),
     routes: [
       { path: '/admin/status', component: Overview },
-      { path: '/admin/stats', component: Overview },
       { path: '/admin/nodes', component: { template: '<div/>' } },
-      { path: '/admin/audit', component: { template: '<div/>' } },
+      { path: '/admin/audit-log', component: { template: '<div/>' } },
     ],
   })
   await router.push(initialPath)
@@ -83,48 +82,44 @@ afterEach(() => {
 })
 
 describe('admin/Overview.vue', () => {
-  it('renders the status header on /admin/status and only mounts the Status panel', async () => {
+  it('renders the combined overview page on /admin/status', async () => {
     const { w } = await mountOverview('/admin/status')
-    // Header derives from active tab — title comes from i18n
-    // (admin.status.title = "系统状态"). Tab labels also come from
-    // nav.status / nav.stats (same string), so we look for both
-    // tab labels but only the status subtitle.
-    expect(w.text()).toContain('系统状态')
-    expect(w.text()).toContain('集群总览')
+    expect(w.text()).toContain('总览')
+    expect(w.text()).toContain('同一页查看集群状态和运营统计')
     // Stats panel must NOT have fetched (lazy mount).
     expect(apiStubs.statsGet).not.toHaveBeenCalled()
     expect(apiStubs.nodesList).toHaveBeenCalledTimes(1)
   })
 
-  it('switches active tab when the route changes to /admin/stats', async () => {
+  it('switches active tab inside the overview page', async () => {
     const { w, router } = await mountOverview('/admin/status')
-    await router.push('/admin/stats')
+    await w.findAll('button[role="tab"]')[1].trigger('click')
     await flushPromises()
     // Stats panel mounts on activation and fires its aggregate fetch.
     expect(apiStubs.statsGet).toHaveBeenCalledTimes(1)
-    // Stats subtitle is now in the DOM (Status's subtitle no longer in header).
-    expect(w.text()).toContain('运营概览')
+    expect(router.currentRoute.value.path).toBe('/admin/status')
+    expect(router.currentRoute.value.query).toEqual({})
   })
 
   it('clicking the refresh button only refetches the active panel', async () => {
-    const { w, router } = await mountOverview('/admin/status')
+    const { w } = await mountOverview('/admin/status')
     apiStubs.nodesList.mockClear()
     apiStubs.inboundsFleet.mockClear()
     apiStubs.statsGet.mockClear()
-    await w.find('button[type="button"]').trigger('click')
+    await w.get('button:not([role="tab"])').trigger('click')
     await flushPromises()
     expect(apiStubs.nodesList).toHaveBeenCalledTimes(1)
     expect(apiStubs.inboundsFleet).toHaveBeenCalledTimes(1)
     expect(apiStubs.statsGet).not.toHaveBeenCalled()
 
     // Switch to Stats tab, refresh should hit Stats APIs only.
-    await router.push('/admin/stats')
+    await w.findAll('button[role="tab"]')[1].trigger('click')
     await flushPromises()
     apiStubs.nodesList.mockClear()
     apiStubs.inboundsFleet.mockClear()
     apiStubs.statsGet.mockClear()
     apiStubs.plansList.mockClear()
-    await w.find('button[type="button"]').trigger('click')
+    await w.get('button:not([role="tab"])').trigger('click')
     await flushPromises()
     expect(apiStubs.statsGet).toHaveBeenCalledTimes(1)
     expect(apiStubs.plansList).toHaveBeenCalledTimes(1)

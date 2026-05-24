@@ -11,7 +11,7 @@ const branding = useBrandingStore()
 </script>
 
 <template>
-  <div class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-surface-50 px-6 py-10 text-ink-900 dark:bg-surface-950 dark:text-surface-50">
+  <div class="app-dark-bg relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-surface-50 px-6 py-10 text-ink-900 dark:bg-surface-950 dark:text-surface-50">
     <div class="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
       <LocaleSwitcher variant="toolbar" />
     </div>

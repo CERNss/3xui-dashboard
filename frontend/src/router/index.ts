@@ -59,12 +59,6 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true, titleKey: 'nav.orders' },
       },
       {
-        path: 'stats',
-        name: 'admin.stats',
-        component: () => import('@/views/admin/Overview.vue'),
-        meta: { requiresAdmin: true, titleKey: 'nav.stats' },
-      },
-      {
         path: 'audit-log',
         name: 'admin.audit',
         component: () => import('@/views/admin/AuditLog.vue'),
