@@ -91,20 +91,14 @@ const auditTotal = computed(() => {
 })
 
 onMounted(reload)
+
+// Exposed so the parent Overview page can drive a shared
+// refresh button without re-implementing the fetch logic here.
+defineExpose({ reload })
 </script>
 
 <template>
   <div>
-    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ t('admin.stats.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ t('admin.stats.subtitle') }}</p>
-      </div>
-      <button class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-surface-200 bg-surface-0 text-surface-600 transition-all ease-brand hover:border-surface-300 hover:bg-surface-50 hover:text-ink-900 active:scale-[0.98] dark:border-surface-600 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-50" :title="$t('admin.stats.reload')" @click="reload">
-        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M3 21v-5h5" /></svg>
-      </button>
-    </header>
-
     <p v-if="error" class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300">{{ error }}</p>
 
     <Skeleton v-if="loading" variant="kpi" :rows="4" />

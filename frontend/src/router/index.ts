@@ -23,10 +23,14 @@ const adminRoutes: RouteRecordRaw[] = [
     children: [
       { path: '', redirect: { name: 'admin.status' } },
       { path: 'dashboard', redirect: { name: 'admin.status' } }, // legacy bookmark
+      // /admin/status and /admin/stats both render the unified Overview
+      // page; Overview reads route.path to pick its default tab. Keeping
+      // both paths preserves bookmarks and lets the sidebar light up the
+      // correct entry without query-param hacks.
       {
         path: 'status',
         name: 'admin.status',
-        component: () => import('@/views/admin/Status.vue'),
+        component: () => import('@/views/admin/Overview.vue'),
         meta: { requiresAdmin: true, titleKey: 'nav.status' },
       },
       {
@@ -68,7 +72,7 @@ const adminRoutes: RouteRecordRaw[] = [
       {
         path: 'stats',
         name: 'admin.stats',
-        component: () => import('@/views/admin/Stats.vue'),
+        component: () => import('@/views/admin/Overview.vue'),
         meta: { requiresAdmin: true, titleKey: 'nav.stats' },
       },
       {
