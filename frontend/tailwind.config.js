@@ -48,27 +48,21 @@ export default {
           900: '#0c0e12',
           950: '#06080a'
         },
-        // Surface — light side stays warm stone, dark side shifts to a cool
-        // warm-navy (sub2api / Marzban-style) so cards visibly float above
-        // the page in dark mode. 800–950 retuned 2026-05-21:
-        //   800 #232a36 — secondary fill (refresh / toolbar buttons)
-        //   900 #1a2030 — card surface (lighter than before #1c1917)
-        //   950 #0e1320 — page background (deeper warm navy, was #0c0a09)
-        // Borders use 700 (#363f4f) so `dark:border-surface-700` reads as a
-        // visible hairline against both 900 cards and 800 fills.
+        // Surface is backed by CSS variables so dark mode can use a stronger
+        // high-contrast ink scale without washing the light UI into blue-gray.
         surface: {
-          0: '#ffffff',
-          50: '#fafaf9',
-          100: '#f5f5f4',
-          200: '#e7e5e4',
-          300: '#d6d3d1',
-          400: '#a8a29e',
-          500: '#78716c',
-          600: '#57534e',
-          700: '#363f4f',
-          800: '#232a36',
-          900: '#1a2030',
-          950: '#0e1320'
+          0: 'rgb(var(--surface-0) / <alpha-value>)',
+          50: 'rgb(var(--surface-50) / <alpha-value>)',
+          100: 'rgb(var(--surface-100) / <alpha-value>)',
+          200: 'rgb(var(--surface-200) / <alpha-value>)',
+          300: 'rgb(var(--surface-300) / <alpha-value>)',
+          400: 'rgb(var(--surface-400) / <alpha-value>)',
+          500: 'rgb(var(--surface-500) / <alpha-value>)',
+          600: 'rgb(var(--surface-600) / <alpha-value>)',
+          700: 'rgb(var(--surface-700) / <alpha-value>)',
+          800: 'rgb(var(--surface-800) / <alpha-value>)',
+          900: 'rgb(var(--surface-900) / <alpha-value>)',
+          950: 'rgb(var(--surface-950) / <alpha-value>)'
         }
       },
       fontFamily: {
