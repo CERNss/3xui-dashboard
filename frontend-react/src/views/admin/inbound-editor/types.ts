@@ -1,0 +1,99 @@
+import type { Inbound } from '@/api/admin/inbounds'
+
+export type ProtocolName = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard' | 'hysteria'
+export type TransmissionName = 'tcp' | 'ws' | 'grpc' | 'httpupgrade' | 'h2' | 'xhttp' | 'kcp' | 'quic'
+export type SecurityName = 'none' | 'tls' | 'reality'
+
+export interface InboundEditorValues {
+  node_id: number | null
+  enable: boolean
+  remark: string
+  protocol: ProtocolName
+  listen: string
+  port: number
+  total_gb: number
+  trafficReset: 'never' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+  expiryTime?: string
+
+  clients: Array<Record<string, unknown>>
+  decryption: string
+  disableInsecureEncryption: boolean
+  ssMethod: string
+  ssNetwork: 'tcp' | 'udp' | 'tcp,udp'
+  ssPassword: string
+  wireguardMtu: number
+  wireguardSecretKey: string
+  wireguardNoKernelTun: boolean
+  hysteriaSni: string
+  hysteriaAuth: string
+  hysteriaObfs: string
+  hysteriaUpMbps: number
+  hysteriaDownMbps: number
+
+  network: TransmissionName
+  security: SecurityName
+  proxyProtocol: boolean
+  httpHeader: boolean
+  httpHeaderHost: string
+  httpHeaderPath: string
+  wsPath: string
+  wsHost: string
+  grpcServiceName: string
+  grpcMultiMode: boolean
+  httpupgradePath: string
+  httpupgradeHost: string
+  h2Path: string
+  h2Host: string
+  xhttpPath: string
+  xhttpHost: string
+  xhttpMode: 'auto' | 'packet-up' | 'stream-up' | 'stream-one'
+  kcpMtu: number
+  kcpTti: number
+  kcpUpCap: number
+  kcpDownCap: number
+  kcpCongestion: boolean
+  kcpHeader: 'none' | 'srtp' | 'utp' | 'wechat-video' | 'dtls' | 'wireguard'
+  kcpSeed: string
+  quicSecurity: 'none' | 'aes-128-gcm' | 'chacha20-poly1305'
+  quicKey: string
+  quicHeader: 'none' | 'srtp' | 'utp' | 'wechat-video' | 'dtls' | 'wireguard'
+
+  tlsServerName: string
+  tlsAlpn: string[]
+  tlsFingerprint: '' | 'chrome' | 'firefox' | 'safari' | 'ios' | 'android' | 'edge' | 'random' | 'randomized'
+  tlsAllowInsecure: boolean
+  tlsCertificateFile: string
+  tlsKeyFile: string
+  realityDest: string
+  realityServerNames: string
+  realityPublicKey: string
+  realityPrivateKey: string
+  realityShortIds: string
+  realityFingerprint: 'chrome' | 'firefox' | 'safari' | 'ios' | 'android' | 'edge' | 'random' | 'randomized'
+
+  sniffEnabled: boolean
+  sniffHttp: boolean
+  sniffTls: boolean
+  sniffQuic: boolean
+  sniffFakedns: boolean
+  sniffMetadataOnly: boolean
+  sniffRouteOnly: boolean
+
+  advSettingsOverride: boolean
+  advSettings: string
+  advStreamOverride: boolean
+  advStream: string
+  advSniffingOverride: boolean
+  advSniffing: string
+}
+
+export interface InboundEditorProps {
+  open: boolean
+  mode: 'create' | 'edit'
+  nodeID: number | null
+  tag: string
+  source?: Inbound | null
+  nodes: Array<{ id: number; name: string; enabled: boolean }>
+  onClose: () => void
+  onSaved?: (inbound: Inbound) => void
+}

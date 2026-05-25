@@ -2,12 +2,15 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout, AuthLayout, PortalLayout } from './components/layout'
 import AdminAuditLog from './views/admin/AuditLog'
+import AdminInbounds from './views/admin/Inbounds'
 import AdminNodes from './views/admin/Nodes'
 import AdminOpsMonitor from './views/admin/OpsMonitor'
 import AdminOrders from './views/admin/Orders'
 import AdminOverview from './views/admin/Overview'
 import AdminPlans from './views/admin/Plans'
 import AdminProvisioningPools from './views/admin/ProvisioningPools'
+import AdminSettings from './views/admin/Settings'
+import AdminUsers from './views/admin/Users'
 import AdminWebhooks from './views/admin/Webhooks'
 import Login from './views/Login'
 import NotFound from './views/NotFound'
@@ -56,14 +59,14 @@ export function AppRouter() {
           <Route path="stats" element={<AdminOverview defaultTab="stats" />} />
           <Route path="ops-monitor" element={<AdminOpsMonitor />} />
           <Route path="nodes" element={<AdminNodes />} />
-          <Route path="inbounds" element={<PlaceholderView title="Inbounds" />} />
-          <Route path="users" element={<PlaceholderView title="Users" />} />
+          <Route path="inbounds" element={<AdminInbounds />} />
+          <Route path="users" element={<AdminUsers />} />
           <Route path="plans" element={<AdminPlans />} />
           <Route path="provisioning-pools" element={<AdminProvisioningPools />} />
           <Route path="orders" element={<AdminOrders />} />
           <Route path="audit-log" element={<AdminAuditLog />} />
           <Route path="webhooks" element={<AdminWebhooks />} />
-          <Route path="settings" element={<PlaceholderView title="Settings" />} />
+          <Route path="settings" element={<AdminSettings />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

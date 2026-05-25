@@ -91,10 +91,10 @@
 
 ## 11. P4 — Admin views (heavy tier)
 
-- [ ] 11.1 Port `admin/Users.vue` (1300) → `Users.tsx` with `Table` + `rowSelection` for batch ops + filter chips + status toggles; preserve `autoRefreshTimer` (admin-side auto-refresh) via TanStack Query `refetchInterval`; preserve flash/toast timeout (translate `setTimeout` to a controlled `useEffect` cleanup)
-- [ ] 11.2 Port `admin/Inbounds.vue` (1282) → `Inbounds.tsx` (list view, links to editor); preserve the QR generation path (`qrcode.toDataURL` → AntD QR via the same `qrcode` lib or via AntD's `<QRCode>` component)
-- [ ] 11.3 Port `admin/InboundEditorModal.vue` (1178) → `InboundEditor.tsx` as a `Drawer`; split the 6 protocols (vless / vmess / trojan / shadowsocks / hysteria / wireguard) into separate files under `src/views/admin/inbound-editor/protocols/`, one component per protocol with its full field set
-- [ ] 11.4 Port `admin/Settings.vue` (1565) → `Settings.tsx` with `Tabs` for the **8** sections (general / subscription / alerts / dataCollection / securityAuth / userDefaults / messages / notifications); each tab is a separate file under `src/views/admin/settings/`. `DataCollectionSettings` was already split in the Vue tree — port it. `NotificationsSettings` is a thin wrapper around `<Webhooks embedded />` so the form code lives in one place. Include the favicon file upload (`<input type="file" accept="image/...">` + FormData POST)
+- [x] 11.1 Port `admin/Users.vue` (1300) → `Users.tsx` with `Table` + `rowSelection` for batch ops + filter chips + status toggles; preserve `autoRefreshTimer` (admin-side auto-refresh) via TanStack Query `refetchInterval`; preserve flash/toast timeout (translate `setTimeout` to a controlled `useEffect` cleanup)
+- [x] 11.2 Port `admin/Inbounds.vue` (1282) → `Inbounds.tsx` (list view, links to editor); preserve the QR generation path (`qrcode.toDataURL` → AntD QR via the same `qrcode` lib or via AntD's `<QRCode>` component)
+- [x] 11.3 Port `admin/InboundEditorModal.vue` (1178) → `InboundEditor.tsx` as a `Drawer`; split the 6 protocols (vless / vmess / trojan / shadowsocks / hysteria / wireguard) into separate files under `src/views/admin/inbound-editor/protocols/`, one component per protocol with its full field set
+- [x] 11.4 Port `admin/Settings.vue` (1565) → `Settings.tsx` with `Tabs` for the **8** sections (general / subscription / alerts / dataCollection / securityAuth / userDefaults / messages / notifications); each tab is a separate file under `src/views/admin/settings/`. `DataCollectionSettings` was already split in the Vue tree — port it. `NotificationsSettings` is a thin wrapper around `<Webhooks embedded />` so the form code lives in one place. Include the favicon file upload (`<input type="file" accept="image/...">` + FormData POST)
 
 ## 12. P5 — Portal views
 
