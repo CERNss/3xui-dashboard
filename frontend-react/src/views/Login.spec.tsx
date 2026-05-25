@@ -111,13 +111,13 @@ describe('Login', () => {
   })
 
   it('uses oidcStart when provider metadata has no login URL', async () => {
-    providersMock.mockResolvedValue([{ name: 'Dynamic SSO', login_url: '' }])
+    providersMock.mockResolvedValue([{ key: 'dynamic', name: 'Dynamic SSO', login_url: '' }])
     oidcStartMock.mockResolvedValue({ authorize_url: 'https://idp.example/start' })
     renderLogin('/login?next=%2Fadmin%2Fusers')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Dynamic SSO' }))
 
-    await waitFor(() => expect(oidcStartMock).toHaveBeenCalledWith('/admin/users'))
+    await waitFor(() => expect(oidcStartMock).toHaveBeenCalledWith('/admin/users', 'dynamic'))
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/start')
   })
 

@@ -29,6 +29,10 @@ function providerLabel(provider: OIDCProvider) {
   return provider.name || 'OIDC'
 }
 
+function providerKey(provider: OIDCProvider) {
+  return provider.key || provider.name
+}
+
 export function Login() {
   const { t } = useTranslation()
   const location = useLocation()
@@ -80,11 +84,11 @@ export function Login() {
   async function startOidc(provider: OIDCProvider) {
     setError(null)
     try {
-      if (provider.login_url) {
+      if (provider.login_url && /^https?:\/\//i.test(provider.login_url)) {
         window.location.assign(provider.login_url)
         return
       }
-      const res = await oidcStart.mutateAsync(nextPath)
+      const res = await oidcStart.mutateAsync({ redirectAfter: nextPath, providerKey: provider.key })
       window.location.assign(res.authorize_url)
     } catch (e) {
       setError(formatError(e, t('auth.oidcStarting', { defaultValue: 'Could not start OIDC login' })))
@@ -142,7 +146,7 @@ export function Login() {
                 {providers.map((provider) => (
                   <Button
                     block
-                    key={provider.name}
+                    key={providerKey(provider)}
                     loading={oidcStart.isPending}
                     onClick={() => void startOidc(provider)}
                   >

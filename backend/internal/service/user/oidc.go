@@ -1,9 +1,7 @@
 // OIDC login flow — authorization code with PKCE, ID token
-// verification via the IDP's JWKS, and user resolution keyed by
-// email. `sub` is stored as a login credential on the canonical
-// email account; it is not the primary identity. Stdlib +
-// golang-jwt/jwt/v5 only; no oidc SDK to keep the dependency
-// surface small and auditable.
+// verification via the IDP's JWKS, and user resolution via
+// provider-scoped identities. Stdlib + golang-jwt/jwt/v5 only; no
+// oidc SDK to keep the dependency surface small and auditable.
 //
 // Wiring: handlers/user/auth.go calls Service.OIDCStart to get the
 // authorize URL, then Service.OIDCCallback once the IDP comes back
@@ -35,8 +33,9 @@ import (
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
-	"github.com/cern/3xui-dashboard/internal/service/event"
 )
+
+const defaultOIDCProviderKey = "default"
 
 // ErrOIDCStateInvalid fires when callback's state doesn't match any
 // stored start. Most common cause: user took >10min to log in (the
@@ -60,6 +59,7 @@ var ErrOIDCEmailConflict = errors.New("oidc: email already linked to a different
 // oidcState is one in-flight login: state parameter + PKCE verifier
 // + post-login redirect target.
 type oidcState struct {
+	providerKey   string
 	verifier      string
 	redirectAfter string
 	linkUserID    int64
@@ -71,30 +71,38 @@ type oidcState struct {
 // email already exists and the frontend must ask the user whether to
 // bind to that existing account or reset/recreate that email identity.
 type OIDCLoginResult struct {
-	User          *model.User
-	Pending       *OIDCPendingDecision
-	RedirectAfter string
+	User          *model.User          `json:"-"`
+	Pending       *OIDCPendingDecision `json:"pending,omitempty"`
+	RedirectAfter string               `json:"redirect_after,omitempty"`
 }
 
 // OIDCPendingDecision is safe to serialize to the browser. It does
 // not expose the OIDC subject; the short-lived token points at the
 // server-side pending record.
 type OIDCPendingDecision struct {
-	Token           string
-	Email           string
-	EmailVerified   bool
-	ExistingUserID  int64
-	ExistingHasOIDC bool
-	ExpiresAt       time.Time
+	Token               string    `json:"token"`
+	ProviderKey         string    `json:"provider_key"`
+	ProviderDisplayName string    `json:"provider_display_name"`
+	ProviderIconURL     string    `json:"provider_icon_url,omitempty"`
+	Email               string    `json:"email"`
+	EmailVerified       bool      `json:"email_verified"`
+	ExistingUserID      int64     `json:"existing_user_id,omitempty"`
+	ExistingUser        bool      `json:"existing_user"`
+	ExistingHasOIDC     bool      `json:"existing_has_oidc"`
+	ExpiresAt           time.Time `json:"expires_at"`
 }
 
 type oidcPending struct {
-	sub            string
-	email          string
-	emailVerified  bool
-	redirectAfter  string
-	existingUserID int64
-	expiresAt      time.Time
+	providerKey         string
+	providerDisplayName string
+	providerIconURL     string
+	sub                 string
+	email               string
+	emailVerified       bool
+	redirectAfter       string
+	existingUserID      int64
+	existingHasOIDC     bool
+	expiresAt           time.Time
 }
 
 type oidcPendingSessions struct {
@@ -126,6 +134,27 @@ func (s *oidcPendingSessions) take(token string) *oidcPending {
 		return nil
 	}
 	return p
+}
+
+func (s *oidcPendingSessions) get(token string) *oidcPending {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweepLocked()
+	p, ok := s.m[token]
+	if !ok || p.expiresAt.Before(time.Now()) {
+		if ok {
+			delete(s.m, token)
+		}
+		return nil
+	}
+	cp := *p
+	return &cp
+}
+
+func (s *oidcPendingSessions) delete(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.m, token)
 }
 
 func (s *oidcPendingSessions) sweepLocked() {
@@ -229,6 +258,203 @@ func (s *Service) effectiveOIDC(ctx context.Context) (config.OIDC, error) {
 	return oidc, nil
 }
 
+func oidcFromProvider(p model.OIDCProvider) config.OIDC {
+	return config.OIDC{
+		Issuer:       p.Issuer,
+		ClientID:     p.ClientID,
+		ClientSecret: p.ClientSecret,
+		RedirectURL:  p.RedirectURL,
+		Scopes:       []string(p.Scopes),
+		AuthURL:      p.AuthURL,
+		TokenURL:     p.TokenURL,
+		JWKSURL:      p.JWKSURL,
+		UserURL:      p.UserInfoURL,
+		DisplayName:  p.DisplayName,
+		IconURL:      p.IconURL,
+	}
+}
+
+func providerFromOIDC(providerKey string, oidc config.OIDC) model.OIDCProvider {
+	return model.OIDCProvider{
+		ProviderKey:  providerKey,
+		DisplayName:  OIDCDisplayName(oidc),
+		IconURL:      strings.TrimSpace(oidc.IconURL),
+		Issuer:       strings.TrimSpace(oidc.Issuer),
+		ClientID:     strings.TrimSpace(oidc.ClientID),
+		ClientSecret: strings.TrimSpace(oidc.ClientSecret),
+		RedirectURL:  strings.TrimSpace(oidc.RedirectURL),
+		Scopes:       model.StringSlice(oidc.Scopes),
+		AuthURL:      strings.TrimSpace(oidc.AuthURL),
+		TokenURL:     strings.TrimSpace(oidc.TokenURL),
+		JWKSURL:      strings.TrimSpace(oidc.JWKSURL),
+		UserInfoURL:  strings.TrimSpace(oidc.UserURL),
+		Enabled:      oidc.Enabled(),
+	}
+}
+
+func (s *Service) defaultOIDCProvider(ctx context.Context) (*model.OIDCProvider, error) {
+	if s.users != nil {
+		if p, err := s.users.GetOIDCProvider(ctx, defaultOIDCProviderKey); err != nil {
+			return nil, err
+		} else if p != nil {
+			return p, nil
+		}
+	}
+	oidc, err := s.effectiveOIDC(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !oidc.Enabled() {
+		return nil, nil
+	}
+	p := providerFromOIDC(defaultOIDCProviderKey, oidc)
+	return &p, nil
+}
+
+func (s *Service) getOIDCProvider(ctx context.Context, providerKey string) (*model.OIDCProvider, error) {
+	providerKey = strings.TrimSpace(providerKey)
+	if providerKey == "" {
+		return nil, ErrOIDCProviderRequired
+	}
+	if s.users != nil {
+		if p, err := s.users.GetOIDCProvider(ctx, providerKey); err != nil {
+			return nil, err
+		} else if p != nil {
+			if !p.Enabled {
+				return nil, ErrOIDCProviderNotFound
+			}
+			return p, nil
+		}
+	}
+	if providerKey == defaultOIDCProviderKey {
+		if p, err := s.defaultOIDCProvider(ctx); err != nil {
+			return nil, err
+		} else if p != nil && p.Enabled {
+			return p, nil
+		}
+	}
+	return nil, ErrOIDCProviderNotFound
+}
+
+func (s *Service) ensureOIDCProvider(ctx context.Context, p model.OIDCProvider) error {
+	if s.users == nil {
+		return nil
+	}
+	return s.users.UpsertOIDCProvider(ctx, &p)
+}
+
+// ListOIDCProviders returns enabled providers with optional linked
+// state for a user profile. It includes the env/runtime single-provider
+// fallback as "default" until admins move config into oidc_providers.
+func (s *Service) ListOIDCProviders(ctx context.Context, userID int64) ([]OIDCProviderView, error) {
+	seen := map[string]struct{}{}
+	var providers []model.OIDCProvider
+	if s.users != nil {
+		rows, err := s.users.ListOIDCProviders(ctx, repository.OIDCProviderFilter{EnabledOnly: true})
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, rows...)
+		for _, p := range rows {
+			seen[p.ProviderKey] = struct{}{}
+		}
+	}
+	if _, ok := seen[defaultOIDCProviderKey]; !ok {
+		p, err := s.defaultOIDCProvider(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if p != nil && p.Enabled {
+			providers = append(providers, *p)
+		}
+	}
+
+	linkedByProvider := map[string]model.UserOIDCIdentity{}
+	if userID > 0 && s.users != nil {
+		linked, err := s.users.ListOIDCIdentities(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, identity := range linked {
+			linkedByProvider[identity.ProviderKey] = identity
+		}
+	}
+	out := make([]OIDCProviderView, 0, len(providers))
+	for _, p := range providers {
+		view := OIDCProviderView{
+			ProviderKey: p.ProviderKey,
+			DisplayName: p.DisplayName,
+			IconURL:     strings.TrimSpace(p.IconURL),
+			StartURL:    "/api/user/auth/oidc/start",
+		}
+		if identity, ok := linkedByProvider[p.ProviderKey]; ok {
+			view.Linked = true
+			view.ProviderEmail = identity.ProviderEmail
+		}
+		out = append(out, view)
+	}
+	return out, nil
+}
+
+// ListLinkedOIDCIdentities returns all provider identities linked to a
+// local user account.
+func (s *Service) ListLinkedOIDCIdentities(ctx context.Context, userID int64) ([]model.UserOIDCIdentity, error) {
+	return s.users.ListOIDCIdentities(ctx, userID)
+}
+
+// FindOIDCIdentityByProviderSubject returns the account identity for
+// an OIDC callback's provider subject pair.
+func (s *Service) FindOIDCIdentityByProviderSubject(ctx context.Context, providerKey, subject string) (*model.UserOIDCIdentity, error) {
+	return s.users.FindOIDCIdentity(ctx, providerKey, subject)
+}
+
+// LinkOIDCIdentityToUser links a verified provider identity to an
+// existing user for callback/account-completion flows.
+func (s *Service) LinkOIDCIdentityToUser(ctx context.Context, userID int64, providerKey, subject, providerEmail string, providerEmailVerified bool) (*model.UserOIDCIdentity, error) {
+	providerKey = strings.TrimSpace(providerKey)
+	subject = strings.TrimSpace(subject)
+	providerEmail = strings.TrimSpace(strings.ToLower(providerEmail))
+	if providerKey == "" {
+		return nil, ErrOIDCProviderRequired
+	}
+	if subject == "" {
+		return nil, fmt.Errorf("oidc: subject is required")
+	}
+	if providerEmail == "" {
+		return nil, ErrOIDCEmailRequired
+	}
+	if !providerEmailVerified {
+		return nil, ErrOIDCEmailUnverified
+	}
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, ErrUserNotFound
+	}
+	if u.Status == model.UserStatusSuspended {
+		return nil, ErrUserSuspended
+	}
+	if _, err := s.getOIDCProvider(ctx, providerKey); err != nil {
+		return nil, err
+	}
+	identity := &model.UserOIDCIdentity{
+		UserID:                userID,
+		ProviderKey:           providerKey,
+		Subject:               subject,
+		ProviderEmail:         providerEmail,
+		ProviderEmailVerified: providerEmailVerified,
+	}
+	if err := s.users.LinkOIDCIdentityToUser(ctx, identity); err != nil {
+		if errors.Is(err, repository.ErrOIDCIdentityConflict) {
+			return nil, ErrOIDCEmailConflict
+		}
+		return nil, err
+	}
+	return s.users.FindOIDCIdentity(ctx, providerKey, subject)
+}
+
 func splitOIDCScopes(raw string) []string {
 	raw = strings.ReplaceAll(raw, " ", ",")
 	parts := strings.Split(raw, ",")
@@ -317,6 +543,10 @@ func (s *Service) resolveEndpoints(ctx context.Context, oidc config.OIDC) (oidcD
 // oidcStartImpl is the real implementation. Returns the IDP's
 // authorize URL the frontend should navigate the user to.
 func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectAfter string, linkUserID int64) (string, error) {
+	return s.oidcStartImplForProvider(ctx, defaultOIDCProviderKey, oidc, redirectAfter, linkUserID)
+}
+
+func (s *Service) oidcStartImplForProvider(ctx context.Context, providerKey string, oidc config.OIDC, redirectAfter string, linkUserID int64) (string, error) {
 	disco, err := s.resolveEndpoints(ctx, oidc)
 	if err != nil {
 		return "", err
@@ -334,6 +564,7 @@ func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectA
 	challenge := base64.RawURLEncoding.EncodeToString(challengeBytes[:])
 
 	s.oidcSessions.put(state, &oidcState{
+		providerKey:   strings.TrimSpace(providerKey),
 		verifier:      verifier,
 		redirectAfter: redirectAfter,
 		linkUserID:    linkUserID,
@@ -360,6 +591,43 @@ func (s *Service) oidcStartImpl(ctx context.Context, oidc config.OIDC, redirectA
 	return disco.AuthorizationEndpoint + sep + q.Encode(), nil
 }
 
+// OIDCStartForProvider starts a login flow for a configured provider key.
+// The existing OIDCStart method remains as the default-provider wrapper
+// used by current handlers.
+func (s *Service) OIDCStartForProvider(ctx context.Context, providerKey, redirectAfter string) (string, error) {
+	p, err := s.getOIDCProvider(ctx, providerKey)
+	if err != nil {
+		return "", err
+	}
+	if err := s.ensureOIDCProvider(ctx, *p); err != nil {
+		return "", err
+	}
+	return s.oidcStartImplForProvider(ctx, p.ProviderKey, oidcFromProvider(*p), redirectAfter, 0)
+}
+
+// OIDCLinkStartForProvider starts an OIDC authorization flow for an
+// already-signed-in user and the selected provider.
+func (s *Service) OIDCLinkStartForProvider(ctx context.Context, userID int64, providerKey, redirectAfter string) (string, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if u == nil {
+		return "", ErrUserNotFound
+	}
+	if u.Status == model.UserStatusSuspended {
+		return "", ErrUserSuspended
+	}
+	p, err := s.getOIDCProvider(ctx, providerKey)
+	if err != nil {
+		return "", err
+	}
+	if err := s.ensureOIDCProvider(ctx, *p); err != nil {
+		return "", err
+	}
+	return s.oidcStartImplForProvider(ctx, p.ProviderKey, oidcFromProvider(*p), redirectAfter, userID)
+}
+
 // tokenResponse is the relevant subset of /token's response.
 type oidcTokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -377,6 +645,19 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, oidc config.OIDC, code, 
 	st := s.oidcSessions.take(state)
 	if st == nil {
 		return nil, ErrOIDCStateInvalid
+	}
+	providerKey := st.providerKey
+	if providerKey == "" {
+		providerKey = defaultOIDCProviderKey
+	}
+	if p, err := s.getOIDCProvider(ctx, providerKey); err == nil {
+		oidc = oidcFromProvider(*p)
+	} else if providerKey != defaultOIDCProviderKey {
+		return nil, err
+	}
+	provider := providerFromOIDC(providerKey, oidc)
+	if err := s.ensureOIDCProvider(ctx, provider); err != nil {
+		return nil, err
 	}
 	disco, err := s.resolveEndpoints(ctx, oidc)
 	if err != nil {
@@ -430,71 +711,62 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, oidc config.OIDC, code, 
 	emailVerifiedClaim, _ := claims["email_verified"].(bool)
 
 	if st.linkUserID > 0 {
-		return s.linkOIDCToUser(ctx, st.linkUserID, sub, email, emailVerifiedClaim, st.redirectAfter)
+		return s.linkOIDCToUser(ctx, st.linkUserID, providerKey, sub, email, emailVerifiedClaim, st.redirectAfter)
 	}
-	return s.upsertOIDCUser(ctx, sub, email, emailVerifiedClaim, st.redirectAfter)
+	return s.upsertOIDCUser(ctx, providerKey, sub, email, emailVerifiedClaim, st.redirectAfter)
 }
 
-// upsertOIDCUser resolves verified IDP claims to a User row.
-// Identity is email-first: returning OIDC users are accepted only if
-// their subject still points at the same email row; new OIDC subjects
-// with an existing email become pending user decisions.
-func (s *Service) upsertOIDCUser(ctx context.Context, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
+// upsertOIDCUser resolves verified IDP claims to a User row or a
+// pending completion decision. Returning linked identities log in
+// immediately; unlinked subjects never create passwordless users.
+func (s *Service) upsertOIDCUser(ctx context.Context, args ...any) (*OIDCLoginResult, error) {
+	providerKey, sub, email, emailVerified, redirectAfter, err := parseOIDCUserArgs(args...)
+	if err != nil {
+		return nil, err
+	}
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
 		return nil, ErrOIDCEmailRequired
 	}
+	if !emailVerified {
+		return nil, ErrOIDCEmailUnverified
+	}
 	if !s.emailDomainAllowed(ctx, email) {
 		return nil, ErrDomainNotAllowed
 	}
-
-	// Existing subject is allowed only while it still belongs to the
-	// same canonical email. If the IDP changed the email claim, ask the
-	// user to decide rather than silently moving identity.
-	user, err := s.users.GetByOIDCSubject(ctx, sub)
+	provider, err := s.getOIDCProvider(ctx, providerKey)
 	if err != nil {
 		return nil, err
 	}
-	if user != nil {
-		if user.Email != nil && strings.EqualFold(*user.Email, email) {
-			updates := map[string]any{}
-			if emailVerified && !user.EmailVerified {
-				updates["email_verified"] = true
-			}
-			if err := s.users.Update(ctx, user.ID, updates); err != nil {
-				return nil, err
-			}
-			u, err := s.users.Get(ctx, user.ID)
-			if err != nil {
-				return nil, err
-			}
-			return &OIDCLoginResult{User: u, RedirectAfter: redirectAfter}, nil
-		}
-		if user.Email == nil {
-			if err := s.users.Update(ctx, user.ID, map[string]any{
-				"email":          email,
-				"email_verified": emailVerified,
-			}); err != nil {
-				return nil, err
-			}
-			u, err := s.users.Get(ctx, user.ID)
-			if err != nil {
-				return nil, err
-			}
-			return &OIDCLoginResult{User: u, RedirectAfter: redirectAfter}, nil
-		}
-		existing, err := s.users.GetByEmail(ctx, email)
+	if err := s.ensureOIDCProvider(ctx, *provider); err != nil {
+		return nil, err
+	}
+
+	identity, err := s.users.FindOIDCIdentity(ctx, providerKey, sub)
+	if err != nil {
+		return nil, err
+	}
+	if identity != nil {
+		u, err := s.users.Get(ctx, identity.UserID)
 		if err != nil {
 			return nil, err
 		}
-		if existing != nil {
-			return s.makeOIDCPendingForUser(ctx, existing, sub, email, emailVerified, redirectAfter)
+		if u == nil {
+			return nil, ErrUserNotFound
 		}
-		updates := map[string]any{"email": email, "email_verified": emailVerified}
-		if err := s.users.Update(ctx, user.ID, updates); err != nil {
+		if u.Status == model.UserStatusSuspended {
+			return nil, ErrUserSuspended
+		}
+		if err := s.users.LinkOIDCIdentityToUser(ctx, &model.UserOIDCIdentity{
+			UserID:                identity.UserID,
+			ProviderKey:           providerKey,
+			Subject:               sub,
+			ProviderEmail:         email,
+			ProviderEmailVerified: emailVerified,
+		}); err != nil {
 			return nil, err
 		}
-		u, err := s.users.Get(ctx, user.ID)
+		u, err = s.users.Get(ctx, identity.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -505,37 +777,81 @@ func (s *Service) upsertOIDCUser(ctx context.Context, sub, email string, emailVe
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		return s.makeOIDCPendingForUser(ctx, existing, sub, email, emailVerified, redirectAfter)
-	}
-
-	subID, err := generateSubID()
-	if err != nil {
-		return nil, err
-	}
-	created := &model.User{
-		Email:         &email,
-		EmailVerified: emailVerified,
-		OIDCSubject:   &sub,
-		SubID:         subID,
-		Status:        model.UserStatusActive,
-	}
-	if err := s.users.Create(ctx, created); err != nil {
-		return nil, err
-	}
-	if err := s.applyNewUserInitialBalance(ctx, created, "new OIDC user initial balance"); err != nil {
-		return nil, err
-	}
-	s.bus.PublishType(event.UserRegistered, RegisteredPayload{
-		UserID: created.ID,
-		Email:  email,
-	})
-	return &OIDCLoginResult{User: created, RedirectAfter: redirectAfter}, nil
+	return s.makeOIDCPendingForUser(ctx, provider, existing, sub, email, emailVerified, redirectAfter)
 }
 
-func (s *Service) makeOIDCPendingForUser(_ context.Context, existing *model.User, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
-	if existing.OIDCSubject != nil && *existing.OIDCSubject == sub {
-		return &OIDCLoginResult{User: existing, RedirectAfter: redirectAfter}, nil
+func parseOIDCUserArgs(args ...any) (providerKey, sub, email string, emailVerified bool, redirectAfter string, err error) {
+	providerKey = defaultOIDCProviderKey
+	switch len(args) {
+	case 4:
+		var ok bool
+		sub, ok = args[0].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: sub must be string")
+			return
+		}
+		email, ok = args[1].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: email must be string")
+			return
+		}
+		emailVerified, ok = args[2].(bool)
+		if !ok {
+			err = fmt.Errorf("oidc: email_verified must be bool")
+			return
+		}
+		redirectAfter, ok = args[3].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: redirect_after must be string")
+			return
+		}
+	case 5:
+		var ok bool
+		providerKey, ok = args[0].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: provider_key must be string")
+			return
+		}
+		sub, ok = args[1].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: sub must be string")
+			return
+		}
+		email, ok = args[2].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: email must be string")
+			return
+		}
+		emailVerified, ok = args[3].(bool)
+		if !ok {
+			err = fmt.Errorf("oidc: email_verified must be bool")
+			return
+		}
+		redirectAfter, ok = args[4].(string)
+		if !ok {
+			err = fmt.Errorf("oidc: redirect_after must be string")
+			return
+		}
+	default:
+		err = fmt.Errorf("oidc: expected 4 or 5 args, got %d", len(args))
+	}
+	providerKey = strings.TrimSpace(providerKey)
+	if providerKey == "" {
+		providerKey = defaultOIDCProviderKey
+	}
+	return
+}
+
+func (s *Service) makeOIDCPendingForUser(ctx context.Context, provider *model.OIDCProvider, existing *model.User, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
+	existingUserID := int64(0)
+	existingHasOIDC := false
+	if existing != nil {
+		existingUserID = existing.ID
+		linked, err := s.users.ListOIDCIdentities(ctx, existing.ID)
+		if err != nil {
+			return nil, err
+		}
+		existingHasOIDC = len(linked) > 0
 	}
 	token, err := randomURLString(32)
 	if err != nil {
@@ -543,83 +859,79 @@ func (s *Service) makeOIDCPendingForUser(_ context.Context, existing *model.User
 	}
 	expiresAt := time.Now().Add(10 * time.Minute)
 	s.oidcPending.put(token, &oidcPending{
-		sub:            sub,
-		email:          email,
-		emailVerified:  emailVerified,
-		redirectAfter:  redirectAfter,
-		existingUserID: existing.ID,
-		expiresAt:      expiresAt,
+		providerKey:         provider.ProviderKey,
+		providerDisplayName: provider.DisplayName,
+		providerIconURL:     provider.IconURL,
+		sub:                 sub,
+		email:               email,
+		emailVerified:       emailVerified,
+		redirectAfter:       redirectAfter,
+		existingUserID:      existingUserID,
+		existingHasOIDC:     existingHasOIDC,
+		expiresAt:           expiresAt,
 	})
-	hasOIDC := existing.OIDCSubject != nil && *existing.OIDCSubject != ""
 	return &OIDCLoginResult{
 		Pending: &OIDCPendingDecision{
-			Token:           token,
-			Email:           email,
-			EmailVerified:   emailVerified,
-			ExistingUserID:  existing.ID,
-			ExistingHasOIDC: hasOIDC,
-			ExpiresAt:       expiresAt,
+			Token:               token,
+			ProviderKey:         provider.ProviderKey,
+			ProviderDisplayName: provider.DisplayName,
+			ProviderIconURL:     provider.IconURL,
+			Email:               email,
+			EmailVerified:       emailVerified,
+			ExistingUserID:      existingUserID,
+			ExistingUser:        existingUserID > 0,
+			ExistingHasOIDC:     existingHasOIDC,
+			ExpiresAt:           expiresAt,
 		},
 		RedirectAfter: redirectAfter,
 	}, nil
 }
 
-func (s *Service) linkOIDCToUser(ctx context.Context, userID int64, sub, email string, emailVerified bool, redirectAfter string) (*OIDCLoginResult, error) {
+func (s *Service) linkOIDCToUser(ctx context.Context, userID int64, args ...any) (*OIDCLoginResult, error) {
+	providerKey, sub, email, emailVerified, redirectAfter, err := parseOIDCUserArgs(args...)
+	if err != nil {
+		return nil, err
+	}
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
 		return nil, ErrOIDCEmailRequired
+	}
+	if !emailVerified {
+		return nil, ErrOIDCEmailUnverified
 	}
 	if !s.emailDomainAllowed(ctx, email) {
 		return nil, ErrDomainNotAllowed
 	}
 
-	var got *model.User
-	err := s.users.InTx(ctx, func(tx *repository.UserRepo) error {
-		u, err := tx.GetForUpdate(ctx, userID)
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, ErrUserNotFound
+	}
+	if u.Status == model.UserStatusSuspended {
+		return nil, ErrUserSuspended
+	}
+	if u.Email == nil || *u.Email == "" {
+		existing, err := s.users.GetByEmail(ctx, email)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if u == nil {
-			return ErrUserNotFound
+		if existing != nil && existing.ID != userID {
+			return nil, ErrEmailTaken
 		}
-		if u.Status == model.UserStatusSuspended {
-			return ErrUserSuspended
+		if err := s.users.Update(ctx, userID, map[string]any{
+			"email":          email,
+			"email_verified": emailVerified,
+		}); err != nil {
+			return nil, err
 		}
-		if u.OIDCSubject != nil && *u.OIDCSubject != "" && *u.OIDCSubject != sub {
-			return ErrOIDCEmailConflict
-		}
-
-		if linked, err := tx.GetByOIDCSubject(ctx, sub); err != nil {
-			return err
-		} else if linked != nil && linked.ID != userID {
-			return ErrOIDCEmailConflict
-		}
-
-		updates := map[string]any{"oidc_subject": sub}
-		if u.Email != nil && *u.Email != "" {
-			if !strings.EqualFold(*u.Email, email) {
-				return ErrOIDCEmailMismatch
-			}
-		} else {
-			existing, err := tx.GetByEmail(ctx, email)
-			if err != nil {
-				return err
-			}
-			if existing != nil && existing.ID != userID {
-				return ErrEmailTaken
-			}
-			updates["email"] = email
-			updates["email_verified"] = emailVerified
-		}
-		if emailVerified && !u.EmailVerified {
-			updates["email_verified"] = true
-		}
-		if err := tx.Update(ctx, userID, updates); err != nil {
-			return err
-		}
-		got, err = tx.Get(ctx, userID)
-		return err
-	})
+	}
+	if _, err := s.LinkOIDCIdentityToUser(ctx, userID, providerKey, sub, email, emailVerified); err != nil {
+		return nil, err
+	}
+	got, err := s.users.Get(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -631,42 +943,37 @@ func (s *Service) resolveOIDCPending(ctx context.Context, pendingToken, action s
 	if p == nil {
 		return nil, "", ErrOIDCPendingInvalid
 	}
-	existing, err := s.users.Get(ctx, p.existingUserID)
-	if err != nil {
-		return nil, "", err
-	}
-	if existing == nil || existing.Email == nil || !strings.EqualFold(*existing.Email, p.email) {
-		return nil, "", ErrOIDCPendingInvalid
-	}
-	switch action {
-	case "bind":
-		if existing.OIDCSubject != nil && *existing.OIDCSubject != "" && *existing.OIDCSubject != p.sub {
-			return nil, "", ErrOIDCEmailConflict
-		}
-		updates := map[string]any{"oidc_subject": p.sub}
-		if p.emailVerified && !existing.EmailVerified {
-			updates["email_verified"] = true
-		}
-		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
-			return nil, "", err
-		}
-	case "recreate":
-		newSubID, err := generateSubID()
+	var existing *model.User
+	var err error
+	if p.existingUserID > 0 {
+		existing, err = s.users.Get(ctx, p.existingUserID)
 		if err != nil {
 			return nil, "", err
 		}
-		updates := map[string]any{
-			"oidc_subject":  p.sub,
-			"password_hash": nil,
-			"sub_id":        newSubID,
-			"status":        model.UserStatusActive,
+		if existing == nil || existing.Email == nil || !strings.EqualFold(*existing.Email, p.email) {
+			return nil, "", ErrOIDCPendingInvalid
 		}
-		if p.emailVerified {
+	}
+	switch action {
+	case "bind":
+		if existing == nil {
+			return nil, "", ErrOIDCPendingInvalid
+		}
+		if existing.PasswordHash == "" || existing.PasswordHash == model.DisabledPasswordHash {
+			return nil, "", ErrInvalidCredentials
+		}
+		updates := map[string]any{}
+		if p.emailVerified && !existing.EmailVerified && strings.EqualFold(*existing.Email, p.email) {
 			updates["email_verified"] = true
 		}
 		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
 			return nil, "", err
 		}
+		if _, err := s.LinkOIDCIdentityToUser(ctx, existing.ID, p.providerKey, p.sub, p.email, p.emailVerified); err != nil {
+			return nil, "", err
+		}
+	case "recreate":
+		return nil, "", ErrOIDCActionInvalid
 	default:
 		return nil, "", ErrOIDCActionInvalid
 	}

@@ -39,6 +39,7 @@ vi.mock('./views/admin/Users', () => ({ default: () => <h1>Users</h1> }))
 vi.mock('./views/admin/Webhooks', () => ({ default: () => <h1>Webhooks</h1> }))
 vi.mock('./views/portal/Orders', () => ({ default: () => <h1>Portal Orders</h1> }))
 vi.mock('./views/portal/Plans', () => ({ default: () => <h1>Portal Plans</h1> }))
+vi.mock('./views/portal/Profile', () => ({ default: () => <h1>Profile</h1> }))
 vi.mock('./views/portal/Subscription', () => ({ default: () => <h1>Subscription</h1> }))
 vi.mock('./views/portal/Usage', () => ({ default: () => <h1>Usage</h1> }))
 

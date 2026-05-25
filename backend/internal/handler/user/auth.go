@@ -38,18 +38,24 @@ func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/login", h.Login)
 	rg.POST("/auth/register", h.Register)
 	rg.POST("/auth/send-code", h.SendCode)
+	rg.POST("/auth/email-verification/start", h.EmailVerificationStart)
+	rg.POST("/auth/email-verification/confirm", h.EmailVerificationConfirm)
 	rg.GET("/auth/registration-policy", h.RegistrationPolicy)
 	rg.GET("/auth/oidc/providers", h.OIDCProviders)
 	rg.POST("/auth/oidc/start", h.OIDCStart)
 	rg.POST("/auth/oidc/callback", h.OIDCCallback)
 	rg.POST("/auth/oidc/resolve", h.OIDCResolve)
+	rg.POST("/auth/oidc/bind-existing", h.OIDCBindExisting)
+	rg.POST("/auth/oidc/create-account", h.OIDCCreateAccount)
 }
 
 // oidcProvider mirrors the frontend's OIDCProvider shape. Keep in sync
 // with src/api/portal/auth.ts.
 type oidcProvider struct {
+	Key      string `json:"key,omitempty"`
 	Name     string `json:"name"`
 	Icon     string `json:"icon,omitempty"`
+	StartURL string `json:"start_url,omitempty"`
 	LoginURL string `json:"login_url"`
 }
 
@@ -57,20 +63,22 @@ type oidcProvider struct {
 // an empty array (not 404) when OIDC isn't configured — frontend treats
 // the empty list as "no providers, hide the button row".
 func (h *AuthHandler) OIDCProviders(c *gin.Context) {
-	oidc, err := h.users.OIDCConfig(c.Request.Context())
+	providers, err := h.users.ListOIDCProviders(c.Request.Context(), 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !oidc.Enabled() {
-		c.JSON(http.StatusOK, []oidcProvider{})
-		return
+	out := make([]oidcProvider, 0, len(providers))
+	for _, provider := range providers {
+		out = append(out, oidcProvider{
+			Key:      provider.ProviderKey,
+			Name:     provider.DisplayName,
+			Icon:     provider.IconURL,
+			StartURL: provider.StartURL,
+			LoginURL: "",
+		})
 	}
-	c.JSON(http.StatusOK, []oidcProvider{{
-		Name:     usersvc.OIDCDisplayName(oidc),
-		Icon:     oidc.IconURL,
-		LoginURL: "/api/user/auth/oidc/start",
-	}})
+	c.JSON(http.StatusOK, out)
 }
 
 type loginRequest struct {
@@ -88,15 +96,19 @@ type tokenResponse struct {
 }
 
 type oidcPendingResponse struct {
-	Status          string `json:"status"`
-	PendingToken    string `json:"pending_token"`
-	Email           string `json:"email"`
-	EmailVerified   bool   `json:"email_verified"`
-	ExistingUserID  int64  `json:"existing_user_id"`
-	ExistingHasOIDC bool   `json:"existing_has_oidc"`
-	ExpiresAt       int64  `json:"expires_at"`
-	RedirectAfter   string `json:"redirect_after,omitempty"`
-	Next            string `json:"next,omitempty"`
+	Status                string           `json:"status"`
+	PendingToken          string           `json:"pending_token"`
+	Provider              oidcProviderMeta `json:"provider"`
+	ProviderEmail         string           `json:"provider_email"`
+	ProviderEmailVerified bool             `json:"provider_email_verified"`
+	ExistingUser          bool             `json:"existing_user"`
+	Email                 string           `json:"email"`
+	EmailVerified         bool             `json:"email_verified"`
+	ExistingUserID        int64            `json:"existing_user_id,omitempty"`
+	ExistingHasOIDC       bool             `json:"existing_has_oidc,omitempty"`
+	ExpiresAt             int64            `json:"expires_at"`
+	RedirectAfter         string           `json:"redirect_after,omitempty"`
+	Next                  string           `json:"next,omitempty"`
 }
 
 // Login validates email+password and returns a user JWT.
@@ -145,6 +157,17 @@ type sendCodeRequest struct {
 	Email string `json:"email" binding:"required"`
 }
 
+type emailVerificationRequest struct {
+	Email   string `json:"email" binding:"required"`
+	Purpose string `json:"purpose" binding:"required"`
+}
+
+type emailVerificationConfirmRequest struct {
+	Email   string `json:"email" binding:"required"`
+	Code    string `json:"code" binding:"required"`
+	Purpose string `json:"purpose" binding:"required"`
+}
+
 // RegistrationPolicy exposes public registration affordances so the
 // login page can hide the verification-code UI when the operator has
 // disabled that requirement.
@@ -178,6 +201,54 @@ func (h *AuthHandler) SendCode(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *AuthHandler) EmailVerificationStart(c *gin.Context) {
+	var req emailVerificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	purpose, ok := parseVerificationPurpose(req.Purpose)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid verification purpose"})
+		return
+	}
+	res, err := h.verify.Start(c.Request.Context(), req.Email, purpose)
+	if err != nil {
+		h.writeVerificationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":               "ok",
+		"expires_at":           res.ExpiresAt,
+		"resend_at":            res.ResendAt,
+		"cooldown_seconds":     res.CooldownSeconds,
+		"resend_after_seconds": res.CooldownSeconds,
+	})
+}
+
+func (h *AuthHandler) EmailVerificationConfirm(c *gin.Context) {
+	var req emailVerificationConfirmRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	purpose, ok := parseVerificationPurpose(req.Purpose)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid verification purpose"})
+		return
+	}
+	res, err := h.verify.Confirm(c.Request.Context(), req.Email, req.Code, purpose)
+	if err != nil {
+		h.writeVerificationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":             "ok",
+		"verification_token": res.Token,
+		"expires_at":         res.ExpiresAt,
+	})
 }
 
 // Register creates a new portal account. Behaviour matches
@@ -258,11 +329,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	var req struct {
 		RedirectAfter string `json:"redirect_after"`
+		ProviderKey   string `json:"provider_key"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	authURL, err := h.users.OIDCStart(c.Request.Context(), req.RedirectAfter)
+	authURL, err := h.users.OIDCStartForProvider(c.Request.Context(), req.ProviderKey, req.RedirectAfter)
+	if req.ProviderKey == "" {
+		authURL, err = h.users.OIDCStart(c.Request.Context(), req.RedirectAfter)
+	}
 	if err != nil {
-		if errors.Is(err, usersvc.ErrNotImplemented) {
+		if errors.Is(err, usersvc.ErrNotImplemented) || errors.Is(err, usersvc.ErrOIDCProviderNotFound) {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
 			return
 		}
@@ -321,6 +396,14 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 			ExpiresAt:       result.Pending.ExpiresAt.Unix(),
 			RedirectAfter:   result.RedirectAfter,
 			Next:            result.RedirectAfter,
+			Provider: oidcProviderMeta{
+				Key:  result.Pending.ProviderKey,
+				Name: result.Pending.ProviderDisplayName,
+				Icon: result.Pending.ProviderIconURL,
+			},
+			ProviderEmail:         result.Pending.Email,
+			ProviderEmailVerified: result.Pending.EmailVerified,
+			ExistingUser:          result.Pending.ExistingUser,
 		})
 		return
 	}
@@ -359,6 +442,55 @@ func (h *AuthHandler) OIDCResolve(c *gin.Context) {
 	h.writeToken(c, http.StatusOK, u, redirectAfter)
 }
 
+func (h *AuthHandler) OIDCBindExisting(c *gin.Context) {
+	var req struct {
+		PendingToken string `json:"pending_token" binding:"required"`
+		Password     string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pending_token+password required"})
+		return
+	}
+	u, redirectAfter, err := h.users.OIDCBindExisting(c.Request.Context(), usersvc.OIDCBindExistingInput{
+		PendingToken: req.PendingToken,
+		Password:     req.Password,
+	})
+	if err != nil {
+		h.writeOIDCCompletionError(c, err)
+		return
+	}
+	h.writeToken(c, http.StatusOK, u, redirectAfter)
+}
+
+func (h *AuthHandler) OIDCCreateAccount(c *gin.Context) {
+	var req struct {
+		PendingToken      string `json:"pending_token" binding:"required"`
+		DisplayName       string `json:"display_name" binding:"required"`
+		Email             string `json:"email" binding:"required"`
+		Password          string `json:"password" binding:"required"`
+		VerificationToken string `json:"verification_token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if err := h.verify.ConsumeToken(c.Request.Context(), req.Email, verification.PurposeOIDCCreateAccount, req.VerificationToken); err != nil {
+		h.writeVerificationError(c, err)
+		return
+	}
+	u, redirectAfter, err := h.users.OIDCCreateAccount(c.Request.Context(), usersvc.OIDCCreateAccountInput{
+		PendingToken: req.PendingToken,
+		DisplayName:  req.DisplayName,
+		Email:        req.Email,
+		Password:     req.Password,
+	})
+	if err != nil {
+		h.writeOIDCCompletionError(c, err)
+		return
+	}
+	h.writeToken(c, http.StatusCreated, u, redirectAfter)
+}
+
 func (h *AuthHandler) writeToken(c *gin.Context, status int, u *model.User, redirectAfter string) {
 	token, exp, err := h.auth.IssueUserToken(u.ID, time.Now())
 	if err != nil {
@@ -377,4 +509,59 @@ func (h *AuthHandler) writeToken(c *gin.Context, status int, u *model.User, redi
 		RedirectAfter: redirectAfter,
 		Next:          redirectAfter,
 	})
+}
+
+type oidcProviderMeta struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+	Icon string `json:"icon,omitempty"`
+}
+
+func parseVerificationPurpose(raw string) (verification.Purpose, bool) {
+	switch verification.Purpose(raw) {
+	case verification.PurposeRegister, verification.PurposeChangeEmail, verification.PurposeOIDCCreateAccount:
+		return verification.Purpose(raw), true
+	default:
+		return "", false
+	}
+}
+
+func (h *AuthHandler) writeVerificationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, verification.ErrRateLimited):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "请稍等再发，验证码 60 秒内只能发一次"})
+	case errors.Is(err, verification.ErrCodeMismatch),
+		errors.Is(err, verification.ErrCodeNotFound),
+		errors.Is(err, verification.ErrTokenInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码不正确"})
+	case errors.Is(err, verification.ErrCodeExpired):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
+	case errors.Is(err, verification.ErrTooManyAttempts):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "验证次数过多，请重新发送验证码"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+}
+
+func (h *AuthHandler) writeOIDCCompletionError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, usersvc.ErrOIDCPendingInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC decision expired. Please sign in again."})
+	case errors.Is(err, usersvc.ErrInvalidCredentials):
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+	case errors.Is(err, usersvc.ErrInvalidEmail), errors.Is(err, usersvc.ErrPasswordTooShort):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, usersvc.ErrDomainNotAllowed):
+		c.JSON(http.StatusForbidden, gin.H{"error": "email domain not allowed"})
+	case errors.Is(err, usersvc.ErrEmailTaken):
+		c.JSON(http.StatusConflict, gin.H{"error": "email already in use"})
+	case errors.Is(err, usersvc.ErrOIDCEmailConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, usersvc.ErrUserSuspended):
+		c.JSON(http.StatusForbidden, gin.H{"error": "account suspended"})
+	case errors.Is(err, usersvc.ErrNotImplemented), errors.Is(err, usersvc.ErrOIDCProviderNotFound):
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }

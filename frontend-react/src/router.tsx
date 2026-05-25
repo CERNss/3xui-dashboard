@@ -17,20 +17,9 @@ import NotFound from './views/NotFound'
 import OIDCCallback from './views/OIDCCallback'
 import PortalOrders from './views/portal/Orders'
 import PortalPlans from './views/portal/Plans'
+import PortalProfile from './views/portal/Profile'
 import Subscription from './views/portal/Subscription'
 import Usage from './views/portal/Usage'
-
-interface PlaceholderViewProps {
-  title: string
-}
-
-function PlaceholderView({ title }: PlaceholderViewProps) {
-  return (
-    <section aria-label={title} style={{ padding: 24 }}>
-      <h1>{title}</h1>
-    </section>
-  )
-}
 
 export function AppRouter() {
   return (
@@ -77,7 +66,7 @@ export function AppRouter() {
           <Route path="usage" element={<Usage />} />
           <Route path="plans" element={<PortalPlans />} />
           <Route path="orders" element={<PortalOrders />} />
-          <Route path="profile" element={<PlaceholderView title="Profile" />} />
+          <Route path="profile" element={<PortalProfile />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

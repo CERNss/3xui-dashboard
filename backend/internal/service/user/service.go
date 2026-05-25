@@ -1,7 +1,6 @@
 // Package user is the service layer for portal accounts: register,
-// log in, change password, bind email, admin moderation. OIDC + SMTP
-// hooks land as stubs in v1 — config flows through but the actual
-// flows return ErrNotImplemented.
+// log in, change password, bind email, admin moderation, and OIDC
+// identity binding.
 package user
 
 import (
@@ -28,19 +27,22 @@ import (
 
 // Errors callers branch on.
 var (
-	ErrEmailTaken         = errors.New("user: email already taken")
-	ErrInvalidCredentials = errors.New("user: invalid credentials")
-	ErrUserSuspended      = errors.New("user: account suspended")
-	ErrUserNotFound       = errors.New("user: not found")
-	ErrInvalidEmail       = errors.New("user: invalid email")
-	ErrPasswordTooShort   = errors.New("user: password too short (min 8)")
-	ErrRegistrationOff    = errors.New("user: public registration disabled")
-	ErrDomainNotAllowed   = errors.New("user: email domain not allowed")
-	ErrNotImplemented     = errors.New("user: not implemented in this build")
-	ErrOIDCEmailRequired  = errors.New("oidc: email claim is required")
-	ErrOIDCEmailMismatch  = errors.New("oidc: email does not match current account")
-	ErrOIDCPendingInvalid = errors.New("oidc: pending decision invalid or expired")
-	ErrOIDCActionInvalid  = errors.New("oidc: invalid account decision")
+	ErrEmailTaken           = errors.New("user: email already taken")
+	ErrInvalidCredentials   = errors.New("user: invalid credentials")
+	ErrUserSuspended        = errors.New("user: account suspended")
+	ErrUserNotFound         = errors.New("user: not found")
+	ErrInvalidEmail         = errors.New("user: invalid email")
+	ErrPasswordTooShort     = errors.New("user: password too short (min 8)")
+	ErrRegistrationOff      = errors.New("user: public registration disabled")
+	ErrDomainNotAllowed     = errors.New("user: email domain not allowed")
+	ErrNotImplemented       = errors.New("user: not implemented in this build")
+	ErrOIDCEmailRequired    = errors.New("oidc: email claim is required")
+	ErrOIDCEmailMismatch    = errors.New("oidc: email does not match current account")
+	ErrOIDCEmailUnverified  = errors.New("oidc: verified email claim is required")
+	ErrOIDCPendingInvalid   = errors.New("oidc: pending decision invalid or expired")
+	ErrOIDCActionInvalid    = errors.New("oidc: invalid account decision")
+	ErrOIDCProviderRequired = errors.New("oidc: provider key is required")
+	ErrOIDCProviderNotFound = errors.New("oidc: provider not found")
 )
 
 // Service owns registration + auth.
@@ -135,7 +137,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*model.User, 
 	}
 	u := &model.User{
 		Email:         &in.Email,
-		PasswordHash:  &hashStr,
+		PasswordHash:  hashStr,
 		EmailVerified: in.Verified,
 		Status:        model.UserStatusActive,
 		SubID:         subID,
@@ -159,8 +161,9 @@ type LoginInput struct {
 // LoginMethods describes the sign-in credentials visible on the
 // user's profile page.
 type LoginMethods struct {
-	Email LoginMethodEmail `json:"email"`
-	OIDC  LoginMethodOIDC  `json:"oidc"`
+	Email LoginMethodEmail   `json:"email"`
+	OIDC  LoginMethodOIDC    `json:"oidc"`
+	OIDCs []OIDCProviderView `json:"oidc_providers,omitempty"`
 }
 
 type LoginMethodEmail struct {
@@ -176,6 +179,53 @@ type LoginMethodOIDC struct {
 	Icon    string `json:"icon,omitempty"`
 }
 
+type OIDCProviderView struct {
+	ProviderKey   string `json:"provider_key"`
+	DisplayName   string `json:"display_name"`
+	IconURL       string `json:"icon_url,omitempty"`
+	StartURL      string `json:"start_url,omitempty"`
+	Linked        bool   `json:"linked,omitempty"`
+	ProviderEmail string `json:"provider_email,omitempty"`
+}
+
+type UpdateProfileInput struct {
+	DisplayName *string `json:"display_name,omitempty"`
+}
+
+type OIDCBindExistingInput struct {
+	PendingToken string `json:"pending_token"`
+	Password     string `json:"password"`
+}
+
+type OIDCCreateAccountInput struct {
+	PendingToken string `json:"pending_token"`
+	DisplayName  string `json:"display_name"`
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+}
+
+// UpdateProfile updates profile metadata that does not participate in
+// login identity or uniqueness checks.
+func (s *Service) UpdateProfile(ctx context.Context, userID int64, in UpdateProfileInput) (*model.User, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, ErrUserNotFound
+	}
+	updates := map[string]any{}
+	if in.DisplayName != nil {
+		updates["display_name"] = strings.TrimSpace(*in.DisplayName)
+	}
+	if len(updates) > 0 {
+		if err := s.users.Update(ctx, userID, updates); err != nil {
+			return nil, err
+		}
+	}
+	return s.users.Get(ctx, userID)
+}
+
 // Login verifies the credentials and returns the user row. Caller
 // (handler) issues the JWT.
 func (s *Service) Login(ctx context.Context, in LoginInput) (*model.User, error) {
@@ -184,10 +234,10 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*model.User, error)
 	if err != nil {
 		return nil, err
 	}
-	if u == nil || u.PasswordHash == nil {
+	if u == nil || u.PasswordHash == "" || u.PasswordHash == model.DisabledPasswordHash {
 		return nil, ErrInvalidCredentials
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(*u.PasswordHash), []byte(in.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
 	if u.Status == model.UserStatusSuspended {
@@ -196,9 +246,8 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*model.User, error)
 	return u, nil
 }
 
-// ChangePassword updates a user's password. oldPassword may be empty
-// for users that have never set one (OIDC-only path); otherwise it
-// must verify.
+// ChangePassword updates a user's password. Every P5 account has a
+// local credential, so oldPassword must verify.
 func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword, newPassword string) error {
 	if len(newPassword) < 8 {
 		return ErrPasswordTooShort
@@ -210,11 +259,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword,
 	if u == nil {
 		return ErrUserNotFound
 	}
-	if u.PasswordHash != nil {
-		if err := bcrypt.CompareHashAndPassword([]byte(*u.PasswordHash), []byte(oldPassword)); err != nil {
-			return ErrInvalidCredentials
-		}
-	} else if oldPassword != "" {
+	if u.PasswordHash == "" || u.PasswordHash == model.DisabledPasswordHash {
+		return ErrInvalidCredentials
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPassword)); err != nil {
 		return ErrInvalidCredentials
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -249,6 +297,32 @@ func (s *Service) BindEmail(ctx context.Context, userID int64, email string) err
 	})
 }
 
+// ChangeEmailVerified updates the local login email after the caller
+// has already verified ownership via the email-verification service.
+func (s *Service) ChangeEmailVerified(ctx context.Context, userID int64, email string) (*model.User, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, ErrInvalidEmail
+	}
+	if !s.emailDomainAllowed(ctx, email) {
+		return nil, ErrDomainNotAllowed
+	}
+	existing, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.ID != userID {
+		return nil, ErrEmailTaken
+	}
+	if err := s.users.Update(ctx, userID, map[string]any{
+		"email":          email,
+		"email_verified": true,
+	}); err != nil {
+		return nil, err
+	}
+	return s.users.Get(ctx, userID)
+}
+
 // LoginMethods returns the current user's visible login credentials.
 func (s *Service) LoginMethods(ctx context.Context, userID int64) (*LoginMethods, error) {
 	u, err := s.users.Get(ctx, userID)
@@ -263,21 +337,25 @@ func (s *Service) LoginMethods(ctx context.Context, userID int64) (*LoginMethods
 			Bound:    u.Email != nil && *u.Email != "",
 			Verified: u.EmailVerified,
 		},
-		OIDC: LoginMethodOIDC{
-			Bound: u.OIDCSubject != nil && *u.OIDCSubject != "",
-		},
 	}
 	if u.Email != nil {
 		out.Email.Email = *u.Email
 	}
-	oidc, err := s.effectiveOIDC(ctx)
+	providers, err := s.ListOIDCProviders(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if oidc.Enabled() {
+	out.OIDCs = providers
+	if len(providers) > 0 {
 		out.OIDC.Enabled = true
-		out.OIDC.Name = OIDCDisplayName(oidc)
-		out.OIDC.Icon = strings.TrimSpace(oidc.IconURL)
+		out.OIDC.Name = providers[0].DisplayName
+		out.OIDC.Icon = providers[0].IconURL
+		for _, p := range providers {
+			if p.Linked {
+				out.OIDC.Bound = true
+				break
+			}
+		}
 	}
 	return out, nil
 }
@@ -393,6 +471,123 @@ func (s *Service) OIDCResolve(ctx context.Context, pendingToken, action string) 
 	return s.resolveOIDCPending(ctx, pendingToken, action)
 }
 
+// OIDCBindExisting links a pending verified provider identity to an
+// existing local account after the local password is checked.
+func (s *Service) OIDCBindExisting(ctx context.Context, in OIDCBindExistingInput) (*model.User, string, error) {
+	if _, err := s.effectiveOIDC(ctx); err != nil {
+		return nil, "", err
+	}
+	pendingToken := strings.TrimSpace(in.PendingToken)
+	p := s.oidcPending.get(pendingToken)
+	if p == nil || p.existingUserID <= 0 {
+		return nil, "", ErrOIDCPendingInvalid
+	}
+	existing, err := s.users.Get(ctx, p.existingUserID)
+	if err != nil {
+		return nil, "", err
+	}
+	if existing == nil || existing.Email == nil || !strings.EqualFold(*existing.Email, p.email) {
+		return nil, "", ErrOIDCPendingInvalid
+	}
+	if existing.Status == model.UserStatusSuspended {
+		return nil, "", ErrUserSuspended
+	}
+	if existing.PasswordHash == "" || existing.PasswordHash == model.DisabledPasswordHash {
+		return nil, "", ErrInvalidCredentials
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(existing.PasswordHash), []byte(in.Password)); err != nil {
+		return nil, "", ErrInvalidCredentials
+	}
+	updates := map[string]any{}
+	if p.emailVerified && !existing.EmailVerified {
+		updates["email_verified"] = true
+	}
+	if len(updates) > 0 {
+		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
+			return nil, "", err
+		}
+	}
+	if _, err := s.LinkOIDCIdentityToUser(ctx, existing.ID, p.providerKey, p.sub, p.email, p.emailVerified); err != nil {
+		return nil, "", err
+	}
+	s.oidcPending.delete(pendingToken)
+	u, err := s.users.Get(ctx, existing.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	return u, p.redirectAfter, nil
+}
+
+// OIDCCreateAccount creates a local email/password account from a
+// pending OIDC callback. The local email may differ from the provider
+// email; the handler verifies local email ownership before calling.
+func (s *Service) OIDCCreateAccount(ctx context.Context, in OIDCCreateAccountInput) (*model.User, string, error) {
+	if _, err := s.effectiveOIDC(ctx); err != nil {
+		return nil, "", err
+	}
+	pendingToken := strings.TrimSpace(in.PendingToken)
+	p := s.oidcPending.get(pendingToken)
+	if p == nil {
+		return nil, "", ErrOIDCPendingInvalid
+	}
+	email := strings.TrimSpace(strings.ToLower(in.Email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, "", ErrInvalidEmail
+	}
+	if !s.emailDomainAllowed(ctx, email) {
+		return nil, "", ErrDomainNotAllowed
+	}
+	if len(in.Password) < 8 {
+		return nil, "", ErrPasswordTooShort
+	}
+	existing, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, "", err
+	}
+	if existing != nil {
+		return nil, "", ErrEmailTaken
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, "", fmt.Errorf("hash password: %w", err)
+	}
+	subID, err := generateSubID()
+	if err != nil {
+		return nil, "", err
+	}
+	u := &model.User{
+		Email:         &email,
+		PasswordHash:  string(hash),
+		DisplayName:   strings.TrimSpace(in.DisplayName),
+		EmailVerified: true,
+		Status:        model.UserStatusActive,
+		SubID:         subID,
+	}
+	if err := s.users.InTx(ctx, func(tx *repository.UserRepo) error {
+		if err := tx.Create(ctx, u); err != nil {
+			return err
+		}
+		return tx.LinkOIDCIdentityToUser(ctx, &model.UserOIDCIdentity{
+			UserID:                u.ID,
+			ProviderKey:           p.providerKey,
+			Subject:               p.sub,
+			ProviderEmail:         p.email,
+			ProviderEmailVerified: p.emailVerified,
+		})
+	}); err != nil {
+		if errors.Is(err, repository.ErrOIDCIdentityConflict) {
+			return nil, "", ErrOIDCEmailConflict
+		}
+		return nil, "", err
+	}
+	if err := s.applyNewUserInitialBalance(ctx, u, "oidc account completion initial balance"); err != nil {
+		return nil, "", err
+	}
+	s.bus.PublishType(event.UserRegistered, RegisteredPayload{UserID: u.ID, Email: email})
+	s.oidcPending.delete(pendingToken)
+	return u, p.redirectAfter, nil
+}
+
 // OIDCConfig returns the current effective OIDC config for UI metadata.
 // Runtime settings override env values; empty settings fall back to env.
 func (s *Service) OIDCConfig(ctx context.Context) (config.OIDC, error) {
@@ -447,7 +642,7 @@ func (s *Service) AdminCreate(ctx context.Context, in AdminCreateInput) (*model.
 	}
 	u := &model.User{
 		Email:         &in.Email,
-		PasswordHash:  &hashStr,
+		PasswordHash:  hashStr,
 		EmailVerified: true, // admin-vetted, skip email-code flow
 		Status:        model.UserStatusActive,
 		SubID:         subID,

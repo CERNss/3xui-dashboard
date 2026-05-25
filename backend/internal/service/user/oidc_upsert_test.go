@@ -1,7 +1,4 @@
-// Integration tests for OIDC user resolution. The intended identity
-// model is email-first: OIDC subject is a login credential on the
-// canonical email account, and existing emails require an explicit
-// user decision instead of silent auto-linking.
+// Integration tests for the P5 OIDC account-identity contract.
 package user
 
 import (
@@ -13,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/cern/3xui-dashboard/internal/config"
@@ -50,23 +48,71 @@ func setupOIDCDB(t *testing.T) (*gorm.DB, *Service) {
 	settingRepo := repository.NewSettingRepo(db)
 	bus := event.New()
 	svc := New(userRepo, settingRepo, bus, &config.Config{}, logger)
+	svc.cfg.OIDC = config.OIDC{
+		Issuer:       "https://idp.example.com",
+		ClientID:     "client",
+		ClientSecret: "secret",
+		RedirectURL:  "https://dashboard.example.com/oidc/callback",
+		Scopes:       []string{"openid", "profile", "email"},
+		DisplayName:  "Example SSO",
+	}
 	return db, svc
 }
 
-func seedEmailUser(t *testing.T, db *gorm.DB, email string, withOIDCSub string) *model.User {
+func seedEmailUser(t *testing.T, svc *Service, email string, password string) *model.User {
 	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
 	u := &model.User{
-		Status: model.UserStatusActive,
-		SubID:  "seed-" + email,
-		Email:  &email,
+		Status:        model.UserStatusActive,
+		SubID:         "seed-" + email,
+		Email:         &email,
+		PasswordHash:  string(hash),
+		EmailVerified: true,
 	}
-	if withOIDCSub != "" {
-		u.OIDCSubject = &withOIDCSub
-	}
-	if err := db.Create(u).Error; err != nil {
+	if err := svc.users.Create(context.Background(), u); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	return u
+}
+
+func seedOIDCIdentity(t *testing.T, svc *Service, userID int64, providerKey, subject, providerEmail string) {
+	t.Helper()
+	if err := svc.users.UpsertOIDCProvider(context.Background(), &model.OIDCProvider{
+		ProviderKey:  providerKey,
+		DisplayName:  "Provider " + providerKey,
+		Issuer:       "https://" + providerKey + ".example.com",
+		ClientID:     "client-" + providerKey,
+		ClientSecret: "secret",
+		RedirectURL:  "https://dashboard.example.com/oidc/callback",
+		Scopes:       model.StringSlice{"openid", "email", "profile"},
+		Enabled:      true,
+	}); err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if err := svc.users.LinkOIDCIdentityToUser(context.Background(), &model.UserOIDCIdentity{
+		UserID:                userID,
+		ProviderKey:           providerKey,
+		Subject:               subject,
+		ProviderEmail:         providerEmail,
+		ProviderEmailVerified: true,
+	}); err != nil {
+		t.Fatalf("seed identity: %v", err)
+	}
+}
+
+func requireIdentity(t *testing.T, svc *Service, providerKey, subject string) *model.UserOIDCIdentity {
+	t.Helper()
+	identity, err := svc.users.FindOIDCIdentity(context.Background(), providerKey, subject)
+	if err != nil {
+		t.Fatalf("find identity: %v", err)
+	}
+	if identity == nil {
+		t.Fatalf("missing identity %s/%s", providerKey, subject)
+	}
+	return identity
 }
 
 func TestEffectiveOIDC_UsesRuntimeSettings(t *testing.T) {
@@ -114,185 +160,164 @@ func TestEffectiveOIDC_UsesRuntimeSettings(t *testing.T) {
 	}
 }
 
-// Fresh sub + no existing user → create new row.
-func TestUpsertOIDC_BrandNew(t *testing.T) {
+func TestUpsertOIDC_UnlinkedSubjectReturnsPendingCreate(t *testing.T) {
 	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	res, err := svc.upsertOIDCUser(ctx, "sub-new-1", "alice@example.com", true, "/portal")
+
+	res, err := svc.upsertOIDCUser(ctx, "sub-new-1", "provider@example.com", true, "/portal")
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	got := res.User
-	if got == nil {
-		t.Fatalf("expected resolved user, got pending=%+v", res.Pending)
+	if res.User != nil {
+		t.Fatalf("unlinked OIDC callback should not auto-create user: %+v", res.User)
 	}
-	if got.OIDCSubject == nil || *got.OIDCSubject != "sub-new-1" {
-		t.Errorf("want oidc_subject=sub-new-1, got %v", got.OIDCSubject)
+	if res.Pending == nil || res.Pending.ExistingUser {
+		t.Fatalf("expected create-account pending response, got %+v", res.Pending)
 	}
-	if got.Email == nil || *got.Email != "alice@example.com" {
-		t.Errorf("want email=alice@example.com, got %v", got.Email)
+	if res.Pending.ProviderKey != defaultOIDCProviderKey {
+		t.Fatalf("provider key = %q", res.Pending.ProviderKey)
 	}
-	if !got.EmailVerified {
-		t.Errorf("email_verified should be true (IDP asserted)")
+	if res.Pending.Email != "provider@example.com" || !res.Pending.EmailVerified {
+		t.Fatalf("provider email not preserved: %+v", res.Pending)
 	}
 }
 
-// Same sub, second login, email rotated → existing row updated in place.
-func TestUpsertOIDC_ExistingSubRefreshesEmail(t *testing.T) {
+func TestOIDCCreateAccount_CreatesLocalUserAndIdentityWithDifferentEmail(t *testing.T) {
 	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	firstRes, err := svc.upsertOIDCUser(ctx, "sub-rot", "old@example.com", true, "")
+	res, err := svc.upsertOIDCUser(ctx, "sub-new-2", "provider@example.com", true, "/portal/profile")
 	if err != nil {
-		t.Fatalf("first: %v", err)
+		t.Fatalf("upsert: %v", err)
 	}
-	first := firstRes.User
-	secondRes, err := svc.upsertOIDCUser(ctx, "sub-rot", "new@example.com", true, "")
+
+	u, redirectAfter, err := svc.OIDCCreateAccount(ctx, OIDCCreateAccountInput{
+		PendingToken: res.Pending.Token,
+		DisplayName:  "Local Alice",
+		Email:        "local@example.com",
+		Password:     "password123",
+	})
 	if err != nil {
-		t.Fatalf("second: %v", err)
+		t.Fatalf("create account: %v", err)
 	}
-	second := secondRes.User
-	if second == nil {
-		t.Fatalf("expected resolved user, got pending=%+v", secondRes.Pending)
+	if redirectAfter != "/portal/profile" {
+		t.Fatalf("redirect_after = %q", redirectAfter)
 	}
-	if first.ID != second.ID {
-		t.Errorf("expected same row id, got %d vs %d", first.ID, second.ID)
+	if u.Email == nil || *u.Email != "local@example.com" {
+		t.Fatalf("local email = %v", u.Email)
 	}
-	if second.Email == nil || *second.Email != "new@example.com" {
-		t.Errorf("email not refreshed: %v", second.Email)
+	if u.DisplayName != "Local Alice" {
+		t.Fatalf("display_name = %q", u.DisplayName)
+	}
+	if !u.EmailVerified {
+		t.Fatal("local email should be verified by completion")
+	}
+	if u.PasswordHash == "" || u.PasswordHash == model.DisabledPasswordHash {
+		t.Fatalf("password_hash must be a real local credential")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("password123")); err != nil {
+		t.Fatalf("password hash mismatch: %v", err)
+	}
+	identity := requireIdentity(t, svc, defaultOIDCProviderKey, "sub-new-2")
+	if identity.UserID != u.ID {
+		t.Fatalf("identity user_id = %d, want %d", identity.UserID, u.ID)
+	}
+	if identity.ProviderEmail != "provider@example.com" || !identity.ProviderEmailVerified {
+		t.Fatalf("provider email not stored: %+v", identity)
 	}
 }
 
-func TestUpsertOIDC_ExistingSubRejectsDisallowedRefreshEmail(t *testing.T) {
+func TestUpsertOIDC_LinkedIdentityLogsInAndRefreshesProviderEmail(t *testing.T) {
 	_, svc := setupOIDCDB(t)
-	svc.cfg.EmailDomainAllowlist = []string{"example.com"}
 	ctx := context.Background()
-	firstRes, err := svc.upsertOIDCUser(ctx, "sub-rot-deny", "old@example.com", true, "")
-	if err != nil {
-		t.Fatalf("first: %v", err)
-	}
-	first := firstRes.User
+	u := seedEmailUser(t, svc, "alice@example.com", "password123")
+	seedOIDCIdentity(t, svc, u.ID, defaultOIDCProviderKey, "sub-linked", "old-provider@example.com")
 
-	_, err = svc.upsertOIDCUser(ctx, "sub-rot-deny", "new@blocked.test", true, "")
-	if !errors.Is(err, ErrDomainNotAllowed) {
-		t.Fatalf("want ErrDomainNotAllowed, got %v", err)
-	}
-
-	after, err := svc.users.Get(ctx, first.ID)
+	res, err := svc.upsertOIDCUser(ctx, "sub-linked", "new-provider@example.com", true, "/portal/orders")
 	if err != nil {
-		t.Fatalf("get after denied refresh: %v", err)
+		t.Fatalf("upsert linked: %v", err)
 	}
-	if after.Email == nil || *after.Email != "old@example.com" {
-		t.Errorf("disallowed refresh changed email: %v", after.Email)
+	if res.User == nil || res.User.ID != u.ID {
+		t.Fatalf("expected linked user login, got %+v", res)
+	}
+	if res.RedirectAfter != "/portal/orders" {
+		t.Fatalf("redirect_after = %q", res.RedirectAfter)
+	}
+	identity := requireIdentity(t, svc, defaultOIDCProviderKey, "sub-linked")
+	if identity.ProviderEmail != "new-provider@example.com" {
+		t.Fatalf("provider email not refreshed: %+v", identity)
 	}
 }
 
-// Email/password user already exists → callback must not auto-link.
-// It returns a pending decision and only links after the user chooses bind.
-func TestUpsertOIDC_ExistingEmailRequiresDecisionThenBind(t *testing.T) {
-	db, svc := setupOIDCDB(t)
+func TestOIDCBindExisting_RequiresPasswordThenLinks(t *testing.T) {
+	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	seeded := seedEmailUser(t, db, "alice@example.com", "")
+	seeded := seedEmailUser(t, svc, "alice@example.com", "password123")
 
 	res, err := svc.upsertOIDCUser(ctx, "sub-link", "alice@example.com", true, "/portal/subscription")
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if res.User != nil {
-		t.Fatalf("expected pending decision, got user id=%d", res.User.ID)
-	}
-	if res.Pending == nil {
-		t.Fatal("expected pending decision, got nil")
-	}
-	if res.Pending.Email != "alice@example.com" || res.Pending.Token == "" {
-		t.Fatalf("bad pending response: %+v", res.Pending)
+	if res.Pending == nil || !res.Pending.ExistingUser {
+		t.Fatalf("expected existing-user pending decision, got %+v", res.Pending)
 	}
 
-	got, redirectAfter, err := svc.resolveOIDCPending(ctx, res.Pending.Token, "bind")
+	_, _, err = svc.OIDCBindExisting(ctx, OIDCBindExistingInput{
+		PendingToken: res.Pending.Token,
+		Password:     "wrong-password",
+	})
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("wrong password should be rejected, got %v", err)
+	}
+
+	got, redirectAfter, err := svc.OIDCBindExisting(ctx, OIDCBindExistingInput{
+		PendingToken: res.Pending.Token,
+		Password:     "password123",
+	})
 	if err != nil {
-		t.Fatalf("resolve bind: %v", err)
+		t.Fatalf("bind existing: %v", err)
 	}
 	if redirectAfter != "/portal/subscription" {
-		t.Errorf("redirect_after = %q", redirectAfter)
+		t.Fatalf("redirect_after = %q", redirectAfter)
 	}
 	if got.ID != seeded.ID {
-		t.Errorf("expected linked to seeded user (id=%d), got %d", seeded.ID, got.ID)
+		t.Fatalf("expected linked to user %d, got %d", seeded.ID, got.ID)
 	}
-	if got.OIDCSubject == nil || *got.OIDCSubject != "sub-link" {
-		t.Errorf("oidc_subject not linked, got %v", got.OIDCSubject)
-	}
-}
-
-func TestUpsertOIDC_AutoLinkRejectsDisallowedEmail(t *testing.T) {
-	db, svc := setupOIDCDB(t)
-	svc.cfg.EmailDomainAllowlist = []string{"example.com"}
-	ctx := context.Background()
-	_ = seedEmailUser(t, db, "alice@blocked.test", "")
-
-	_, err := svc.upsertOIDCUser(ctx, "sub-link-deny", "alice@blocked.test", true, "")
-	if !errors.Is(err, ErrDomainNotAllowed) {
-		t.Fatalf("want ErrDomainNotAllowed, got %v", err)
+	identity := requireIdentity(t, svc, defaultOIDCProviderKey, "sub-link")
+	if identity.UserID != seeded.ID {
+		t.Fatalf("identity user_id = %d, want %d", identity.UserID, seeded.ID)
 	}
 }
 
-// Email matches an existing row but IDP did NOT assert
-// email_verified → still require explicit decision; no silent link.
-func TestUpsertOIDC_UnverifiedExistingEmailRequiresDecision(t *testing.T) {
-	db, svc := setupOIDCDB(t)
+func TestOIDCBindExisting_RecreateActionIsInvalid(t *testing.T) {
+	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	_ = seedEmailUser(t, db, "alice@example.com", "")
+	seedEmailUser(t, svc, "alice@example.com", "password123")
 
-	res, err := svc.upsertOIDCUser(ctx, "sub-evil", "alice@example.com", false, "")
+	res, err := svc.upsertOIDCUser(ctx, "sub-recreate", "alice@example.com", true, "")
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if res.Pending == nil {
-		t.Fatalf("expected pending decision, got %+v", res)
-	}
-	if res.Pending.EmailVerified {
-		t.Error("pending should record email_verified=false")
+	_, _, err = svc.resolveOIDCPending(ctx, res.Pending.Token, "recreate")
+	if !errors.Is(err, ErrOIDCActionInvalid) {
+		t.Fatalf("recreate should be out of P5 scope, got %v", err)
 	}
 }
 
-// Email matches an existing row that already has a DIFFERENT
-// oidc_subject linked → bind is refused, recreate can replace the
-// OIDC credential on the same canonical email row.
-func TestUpsertOIDC_ExistingDifferentSubRequiresRecreate(t *testing.T) {
-	db, svc := setupOIDCDB(t)
+func TestUpsertOIDC_RejectsUnverifiedOrMissingProviderEmail(t *testing.T) {
+	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	seeded := seedEmailUser(t, db, "alice@example.com", "sub-original")
 
-	res, err := svc.upsertOIDCUser(ctx, "sub-other", "alice@example.com", true, "")
-	if err != nil {
-		t.Fatalf("upsert: %v", err)
+	_, err := svc.upsertOIDCUser(ctx, "sub-noemail", "", false, "")
+	if !errors.Is(err, ErrOIDCEmailRequired) {
+		t.Fatalf("want ErrOIDCEmailRequired, got %v", err)
 	}
-	if res.Pending == nil || !res.Pending.ExistingHasOIDC {
-		t.Fatalf("expected pending existing_has_oidc, got %+v", res.Pending)
-	}
-	_, _, err = svc.resolveOIDCPending(ctx, res.Pending.Token, "bind")
-	if !errors.Is(err, ErrOIDCEmailConflict) {
-		t.Fatalf("bind should conflict when another OIDC subject is linked, got %v", err)
-	}
-
-	res, err = svc.upsertOIDCUser(ctx, "sub-other", "alice@example.com", true, "")
-	if err != nil {
-		t.Fatalf("upsert again: %v", err)
-	}
-	got, _, err := svc.resolveOIDCPending(ctx, res.Pending.Token, "recreate")
-	if err != nil {
-		t.Fatalf("resolve recreate: %v", err)
-	}
-	if got.ID != seeded.ID {
-		t.Errorf("expected same canonical email row id=%d, got %d", seeded.ID, got.ID)
-	}
-	if got.OIDCSubject == nil || *got.OIDCSubject != "sub-other" {
-		t.Errorf("oidc_subject not replaced, got %v", got.OIDCSubject)
-	}
-	if got.PasswordHash != nil {
-		t.Error("recreate should remove password credential")
+	_, err = svc.upsertOIDCUser(ctx, "sub-unverified", "alice@example.com", false, "")
+	if !errors.Is(err, ErrOIDCEmailUnverified) {
+		t.Fatalf("want ErrOIDCEmailUnverified, got %v", err)
 	}
 }
 
-func TestUpsertOIDC_BrandNewRejectsDisallowedEmail(t *testing.T) {
+func TestUpsertOIDC_RejectsDisallowedProviderEmail(t *testing.T) {
 	_, svc := setupOIDCDB(t)
 	svc.cfg.EmailDomainAllowlist = []string{"example.com"}
 	ctx := context.Background()
@@ -303,44 +328,30 @@ func TestUpsertOIDC_BrandNewRejectsDisallowedEmail(t *testing.T) {
 	}
 }
 
-// No email in claims → reject. Email is the canonical user identity.
-func TestUpsertOIDC_NoEmailRejected(t *testing.T) {
+func TestLinkOIDCToUser_AllowsDifferentProviderEmail(t *testing.T) {
 	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	_, err := svc.upsertOIDCUser(ctx, "sub-noemail", "", false, "")
-	if !errors.Is(err, ErrOIDCEmailRequired) {
-		t.Fatalf("want ErrOIDCEmailRequired, got %v", err)
-	}
-}
+	seeded := seedEmailUser(t, svc, "alice@example.com", "password123")
 
-func TestLinkOIDCToUser_SameEmail(t *testing.T) {
-	db, svc := setupOIDCDB(t)
-	ctx := context.Background()
-	seeded := seedEmailUser(t, db, "alice@example.com", "")
-
-	res, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-profile-link", "alice@example.com", true, "/portal/profile")
+	res, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-profile-link", "provider@example.com", true, "/portal/profile")
 	if err != nil {
 		t.Fatalf("link oidc: %v", err)
 	}
 	if res.User == nil || res.User.ID != seeded.ID {
 		t.Fatalf("expected same user, got %+v", res.User)
 	}
-	if res.RedirectAfter != "/portal/profile" {
-		t.Fatalf("redirect_after = %q", res.RedirectAfter)
-	}
-	if res.User.OIDCSubject == nil || *res.User.OIDCSubject != "sub-profile-link" {
-		t.Fatalf("oidc_subject not linked: %v", res.User.OIDCSubject)
-	}
-	if !res.User.EmailVerified {
-		t.Fatal("email_verified should be refreshed when provider verifies email")
+	identity := requireIdentity(t, svc, defaultOIDCProviderKey, "sub-profile-link")
+	if identity.ProviderEmail != "provider@example.com" {
+		t.Fatalf("provider email = %q", identity.ProviderEmail)
 	}
 }
 
 func TestLinkOIDCToUser_RejectsSubjectOwnedByAnotherUser(t *testing.T) {
-	db, svc := setupOIDCDB(t)
+	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	target := seedEmailUser(t, db, "alice@example.com", "")
-	_ = seedEmailUser(t, db, "bob@example.com", "sub-owned")
+	target := seedEmailUser(t, svc, "alice@example.com", "password123")
+	owner := seedEmailUser(t, svc, "bob@example.com", "password123")
+	seedOIDCIdentity(t, svc, owner.ID, defaultOIDCProviderKey, "sub-owned", "bob@example.com")
 
 	_, err := svc.linkOIDCToUser(ctx, target.ID, "sub-owned", "alice@example.com", true, "")
 	if !errors.Is(err, ErrOIDCEmailConflict) {
@@ -348,48 +359,38 @@ func TestLinkOIDCToUser_RejectsSubjectOwnedByAnotherUser(t *testing.T) {
 	}
 }
 
-func TestLinkOIDCToUser_RejectsDifferentEmail(t *testing.T) {
-	db, svc := setupOIDCDB(t)
+func TestListOIDCProviders_ReturnsLinkedStateForMultipleProviders(t *testing.T) {
+	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	seeded := seedEmailUser(t, db, "alice@example.com", "")
-
-	_, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-mismatch", "other@example.com", true, "")
-	if !errors.Is(err, ErrOIDCEmailMismatch) {
-		t.Fatalf("want ErrOIDCEmailMismatch, got %v", err)
+	u := seedEmailUser(t, svc, "alice@example.com", "password123")
+	for _, key := range []string{"google", "github"} {
+		if err := svc.users.UpsertOIDCProvider(ctx, &model.OIDCProvider{
+			ProviderKey:  key,
+			DisplayName:  key,
+			Issuer:       "https://" + key + ".example.com",
+			ClientID:     "client-" + key,
+			ClientSecret: "secret",
+			RedirectURL:  "https://dashboard.example.com/oidc/callback",
+			Scopes:       model.StringSlice{"openid", "email"},
+			Enabled:      true,
+		}); err != nil {
+			t.Fatalf("provider %s: %v", key, err)
+		}
 	}
-}
+	seedOIDCIdentity(t, svc, u.ID, "google", "sub-google", "alice@gmail.example")
 
-// User with no email on record (OIDC-only account, or admin-created
-// stub) tries to link an OIDC identity whose claimed email already
-// belongs to a different user. The link must reject so we don't end
-// up with two rows sharing the same email.
-func TestLinkOIDCToUser_NoEmailRejectsTakenEmail(t *testing.T) {
-	db, svc := setupOIDCDB(t)
-	ctx := context.Background()
-
-	// Target user has no email yet.
-	target := &model.User{Status: model.UserStatusActive, SubID: "seed-no-email"}
-	if err := db.Create(target).Error; err != nil {
-		t.Fatalf("seed target: %v", err)
+	providers, err := svc.ListOIDCProviders(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
 	}
-	_ = seedEmailUser(t, db, "taken@example.com", "")
-
-	_, err := svc.linkOIDCToUser(ctx, target.ID, "sub-new", "taken@example.com", true, "")
-	if !errors.Is(err, ErrEmailTaken) {
-		t.Fatalf("want ErrEmailTaken, got %v", err)
+	linked := map[string]bool{}
+	for _, provider := range providers {
+		linked[provider.ProviderKey] = provider.Linked
 	}
-}
-
-// User already bound to a different OIDC subject must not be silently
-// rebound, even when the new sub is otherwise unused. This guards the
-// hoisted pre-check that prevents stomping an established identity.
-func TestLinkOIDCToUser_RejectsExistingDifferentSub(t *testing.T) {
-	db, svc := setupOIDCDB(t)
-	ctx := context.Background()
-	seeded := seedEmailUser(t, db, "alice@example.com", "sub-existing")
-
-	_, err := svc.linkOIDCToUser(ctx, seeded.ID, "sub-other", "alice@example.com", true, "")
-	if !errors.Is(err, ErrOIDCEmailConflict) {
-		t.Fatalf("want ErrOIDCEmailConflict, got %v", err)
+	if !linked["google"] {
+		t.Fatalf("google should be linked: %+v", providers)
+	}
+	if linked["github"] {
+		t.Fatalf("github should not be linked: %+v", providers)
 	}
 }

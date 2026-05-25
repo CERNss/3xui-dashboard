@@ -14,11 +14,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -31,14 +34,16 @@ import (
 type Purpose string
 
 const (
-	PurposeRegister Purpose = "register"
+	PurposeRegister          Purpose = "register"
+	PurposeChangeEmail       Purpose = "change_email"
+	PurposeOIDCCreateAccount Purpose = "oidc_create_account"
 )
 
 const (
-	codeLength      = 6
-	codeTTL         = 10 * time.Minute
-	resendCooldown  = 60 * time.Second
-	maxAttempts     = 5 // per code row
+	codeLength     = 6
+	codeTTL        = 10 * time.Minute
+	resendCooldown = 60 * time.Second
+	maxAttempts    = 5 // per code row
 )
 
 var (
@@ -47,28 +52,49 @@ var (
 	ErrCodeExpired     = errors.New("verification: code expired — request a new one")
 	ErrCodeMismatch    = errors.New("verification: incorrect code")
 	ErrTooManyAttempts = errors.New("verification: too many attempts — request a new code")
+	ErrTokenInvalid    = errors.New("verification: token invalid or expired")
 )
 
 // Record mirrors a row in email_verification_codes. Lives here (not in
 // /model) since it's a service-internal type — handlers never see it.
 type record struct {
-	ID          int64
-	Email       string
-	Purpose     string
-	CodeHash    string `gorm:"column:code_hash"`
-	ExpiresAt   time.Time
-	SentAt      time.Time
-	ConsumedAt  *time.Time
-	Attempts    int
+	ID         int64
+	Email      string
+	Purpose    string
+	CodeHash   string `gorm:"column:code_hash"`
+	ExpiresAt  time.Time
+	SentAt     time.Time
+	ConsumedAt *time.Time
+	Attempts   int
 }
 
 func (record) TableName() string { return "email_verification_codes" }
+
+type tokenRecord struct {
+	Email     string
+	Purpose   Purpose
+	ExpiresAt time.Time
+}
+
+type StartResult struct {
+	ExpiresAt       time.Time `json:"expires_at"`
+	ResendAt        time.Time `json:"resend_at"`
+	CooldownSeconds int       `json:"cooldown_seconds"`
+}
+
+type ConfirmResult struct {
+	Token     string    `json:"verification_token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
 
 // Service is the verification-code engine.
 type Service struct {
 	db       *gorm.DB
 	messages *messages.Service
 	logger   *slog.Logger
+
+	tokensMu sync.Mutex
+	tokens   map[string]tokenRecord
 }
 
 // New constructs a Service. msgs delivers the email via the unified
@@ -76,13 +102,25 @@ type Service struct {
 // is a no-op and SendCode still records the row, so the operator
 // can read the generated code from dashboard logs.
 func New(db *gorm.DB, msgs *messages.Service, logger *slog.Logger) *Service {
-	return &Service{db: db, messages: msgs, logger: logger}
+	return &Service{
+		db:       db,
+		messages: msgs,
+		logger:   logger,
+		tokens:   map[string]tokenRecord{},
+	}
 }
 
 // SendCode generates a new code, stores its hash, and dispatches the
 // email. Rate-limited by resendCooldown per (email, purpose). If SMTP
 // is disabled, the mailer logs the code so dev can read it from stderr.
 func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) error {
+	_, err := s.Start(ctx, email, purpose)
+	return err
+}
+
+// Start generates and sends a verification code, returning timing
+// metadata the frontend can use for resend/cooldown UI.
+func (s *Service) Start(ctx context.Context, email string, purpose Purpose) (*StartResult, error) {
 	email = normalizeEmail(email)
 	now := time.Now()
 
@@ -95,15 +133,15 @@ func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) e
 		Limit(1).
 		First(&recent).Error
 	if err == nil {
-		return ErrRateLimited
+		return nil, ErrRateLimited
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("query recent codes: %w", err)
+		return nil, fmt.Errorf("query recent codes: %w", err)
 	}
 
 	code, err := generateCode()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	row := record{
@@ -114,7 +152,7 @@ func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) e
 		SentAt:    now,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return fmt.Errorf("store code: %w", err)
+		return nil, fmt.Errorf("store code: %w", err)
 	}
 
 	subject := emailSubject(purpose)
@@ -126,10 +164,14 @@ func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) e
 		// Don't roll back the row — operator can re-send after cooldown,
 		// or read the code from logs (dev) and use it directly.
 		s.logger.Warn("verification: mail send failed", "err", err, "email", email)
-		return fmt.Errorf("send mail: %w", err)
+		return nil, fmt.Errorf("send mail: %w", err)
 	}
 
-	return nil
+	return &StartResult{
+		ExpiresAt:       row.ExpiresAt,
+		ResendAt:        row.SentAt.Add(resendCooldown),
+		CooldownSeconds: int(resendCooldown.Seconds()),
+	}, nil
 }
 
 // Consume validates a presented code, marks it used, and returns nil
@@ -206,6 +248,62 @@ func (s *Service) Consume(ctx context.Context, email, code string, purpose Purpo
 	return nil
 }
 
+// Confirm consumes a six-digit code and returns a short-lived scoped
+// token. Mutating endpoints consume the token instead of accepting raw
+// codes, which keeps code validation in one place and prevents replay
+// across purposes.
+func (s *Service) Confirm(ctx context.Context, email, code string, purpose Purpose) (*ConfirmResult, error) {
+	if err := s.Consume(ctx, email, code, purpose); err != nil {
+		return nil, err
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt := time.Now().Add(codeTTL)
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	s.sweepTokensLocked(time.Now())
+	s.tokens[token] = tokenRecord{
+		Email:     normalizeEmail(email),
+		Purpose:   purpose,
+		ExpiresAt: expiresAt,
+	}
+	return &ConfirmResult{Token: token, ExpiresAt: expiresAt}, nil
+}
+
+// ConsumeToken validates and burns a scoped verification token returned
+// by Confirm.
+func (s *Service) ConsumeToken(ctx context.Context, email string, purpose Purpose, token string) error {
+	_ = ctx
+	email = normalizeEmail(email)
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ErrTokenInvalid
+	}
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	now := time.Now()
+	s.sweepTokensLocked(now)
+	row, ok := s.tokens[token]
+	if !ok {
+		return ErrTokenInvalid
+	}
+	delete(s.tokens, token)
+	if row.ExpiresAt.Before(now) || row.Email != email || row.Purpose != purpose {
+		return ErrTokenInvalid
+	}
+	return nil
+}
+
+func (s *Service) sweepTokensLocked(now time.Time) {
+	for token, row := range s.tokens {
+		if row.ExpiresAt.Before(now) {
+			delete(s.tokens, token)
+		}
+	}
+}
+
 // ---- helpers ---------------------------------------------------------------
 
 func generateCode() (string, error) {
@@ -216,6 +314,14 @@ func generateCode() (string, error) {
 		return "", fmt.Errorf("rand: %w", err)
 	}
 	return fmt.Sprintf("%0*d", codeLength, n.Int64()), nil
+}
+
+func randomToken(nBytes int) (string, error) {
+	b := make([]byte, nBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("rand token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func hashCode(code string) string {
@@ -247,6 +353,10 @@ func emailSubject(p Purpose) string {
 	switch p {
 	case PurposeRegister:
 		return "【3xui Central】注册验证码"
+	case PurposeChangeEmail:
+		return "【3xui Central】邮箱变更验证码"
+	case PurposeOIDCCreateAccount:
+		return "【3xui Central】OIDC 账号创建验证码"
 	default:
 		return "【3xui Central】验证码"
 	}
@@ -254,7 +364,14 @@ func emailSubject(p Purpose) string {
 
 func emailBody(p Purpose, code string, ttl time.Duration) string {
 	intent := "注册账户"
-	if p != PurposeRegister {
+	switch p {
+	case PurposeChangeEmail:
+		intent = "变更登录邮箱"
+	case PurposeOIDCCreateAccount:
+		intent = "创建 OIDC 登录账户"
+	case PurposeRegister:
+		intent = "注册账户"
+	default:
 		intent = "验证邮箱"
 	}
 	return fmt.Sprintf(

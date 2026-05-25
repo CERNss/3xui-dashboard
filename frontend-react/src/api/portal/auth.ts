@@ -1,4 +1,5 @@
 import { portalClient } from '../client/portal'
+import type { EmailVerificationPurpose } from './profile'
 
 export interface UserTokenResponse {
   token: string
@@ -12,27 +13,62 @@ export interface UserTokenResponse {
 export interface OIDCPendingResponse {
   status: 'pending'
   pending_token: string
-  email: string
-  email_verified: boolean
-  existing_user_id: number
-  existing_has_oidc: boolean
+  provider: {
+    key: string
+    name: string
+    icon?: string | null
+  }
+  provider_email: string
+  provider_email_verified: boolean
+  existing_user: boolean
+  existing_user_id?: number
+  email?: string
+  email_verified?: boolean
+  existing_has_oidc?: boolean
   expires_at: number
   redirect_after?: string
   next?: string
 }
 
 export type OIDCCallbackResponse = UserTokenResponse | OIDCPendingResponse
-export type OIDCResolveAction = 'bind' | 'recreate'
+export interface OIDCBindExistingInput {
+  pendingToken: string
+  password: string
+}
+
+export interface OIDCCreateAccountInput {
+  pendingToken: string
+  displayName: string
+  email: string
+  password: string
+  verificationToken: string
+}
 
 /** OIDC provider descriptor returned by /auth/oidc/providers. */
 export interface OIDCProvider {
+  key?: string       // stable provider key for multi-provider installs
   name: string       // "集换社" — human-readable display name
   icon?: string      // optional URL or SVG path; frontend falls back to a generic globe icon
-  login_url: string  // absolute or relative URL to start the OIDC flow
+  start_url?: string // relative API endpoint that starts this provider's OIDC flow
+  login_url?: string // absolute authorize URL, when backend chooses to precompute it
 }
 
 export interface RegistrationPolicy {
   email_verification_required: boolean
+}
+
+export interface EmailVerificationStartResponse {
+  status: string
+  expires_at?: string
+  resend_at?: string
+  cooldown_seconds?: number
+  resend_after_seconds?: number
+}
+
+export interface EmailVerificationConfirmResponse {
+  status: string
+  verification_token: string
+  expires_at?: string
 }
 
 export const portalAuthApi = {
@@ -51,6 +87,11 @@ export const portalAuthApi = {
   sendCode: (email: string) =>
     portalClient.post<void>('/auth/send-code', { email }).then((r) => r.data),
 
+  startEmailVerification: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+    portalClient
+      .post<EmailVerificationStartResponse>('/auth/email-verification/start', input)
+      .then((r) => r.data),
+
   registrationPolicy: () =>
     portalClient
       .get<RegistrationPolicy>('/auth/registration-policy')
@@ -63,9 +104,17 @@ export const portalAuthApi = {
 
   /** Start the OIDC dance. Returns the IDP's authorize URL; the
    *  caller is expected to navigate there via window.location.href. */
-  oidcStart: (redirectAfter?: string) =>
+  confirmEmailVerification: (input: { email: string; code: string; purpose: EmailVerificationPurpose }) =>
     portalClient
-      .post<{ authorize_url: string }>('/auth/oidc/start', { redirect_after: redirectAfter ?? '' })
+      .post<EmailVerificationConfirmResponse>('/auth/email-verification/confirm', input)
+      .then((r) => r.data),
+
+  oidcStart: (redirectAfter?: string, providerKey?: string) =>
+    portalClient
+      .post<{ authorize_url: string }>('/auth/oidc/start', {
+        redirect_after: redirectAfter ?? '',
+        provider_key: providerKey ?? '',
+      })
       .then((r) => r.data),
 
   /** Exchange the IDP-returned code + state for a portal JWT. */
@@ -75,8 +124,22 @@ export const portalAuthApi = {
       .then((r) => r.data),
 
   /** Finish a pending OIDC account decision. */
-  oidcResolve: (pendingToken: string, action: OIDCResolveAction) =>
+  oidcBindExisting: ({ pendingToken, password }: OIDCBindExistingInput) =>
     portalClient
-      .post<UserTokenResponse>('/auth/oidc/resolve', { pending_token: pendingToken, action })
+      .post<UserTokenResponse>('/auth/oidc/bind-existing', {
+        pending_token: pendingToken,
+        password,
+      })
+      .then((r) => r.data),
+
+  oidcCreateAccount: ({ pendingToken, displayName, email, password, verificationToken }: OIDCCreateAccountInput) =>
+    portalClient
+      .post<UserTokenResponse>('/auth/oidc/create-account', {
+        pending_token: pendingToken,
+        display_name: displayName,
+        email,
+        password,
+        verification_token: verificationToken,
+      })
       .then((r) => r.data),
 }

@@ -78,15 +78,17 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, e
 	return &u, nil
 }
 
-// GetByOIDCSubject returns the user matching oidc_subject, or
-// (nil, nil) on miss.
+// GetByOIDCSubject returns the user matching the legacy default OIDC
+// provider subject, or (nil, nil) on miss. New code should prefer
+// FindOIDCIdentity plus Get.
 func (r *UserRepo) GetByOIDCSubject(ctx context.Context, sub string) (*model.User, error) {
 	if sub == "" {
 		return nil, nil
 	}
 	var u model.User
 	if err := r.db.WithContext(ctx).
-		Where("oidc_subject = ?", sub).
+		Joins("JOIN user_oidc_identities i ON i.user_id = users.id").
+		Where("i.provider_key = ? AND i.subject = ?", "default", sub).
 		First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -114,11 +116,16 @@ func (r *UserRepo) GetBySubID(ctx context.Context, subID string) (*model.User, e
 	return &u, nil
 }
 
-// Create persists a new user. The caller is responsible for
-// generating SubID and PasswordHash (or setting OIDCSubject).
+// Create persists a new user. The caller is responsible for generating
+// SubID. PasswordHash is required by the P5 account contract; when a
+// legacy/internal path omits it, store the disabled sentinel rather
+// than a blank credential.
 func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 	if u.Status == "" {
 		u.Status = model.UserStatusActive
+	}
+	if u.PasswordHash == "" {
+		u.PasswordHash = model.DisabledPasswordHash
 	}
 	if err := r.db.WithContext(ctx).Create(u).Error; err != nil {
 		return fmt.Errorf("UserRepo.Create: %w", err)
@@ -169,6 +176,175 @@ func (r *UserRepo) Delete(ctx context.Context, id int64) error {
 	}
 	if res.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// OIDCProviderFilter controls provider listing.
+type OIDCProviderFilter struct {
+	EnabledOnly bool
+}
+
+// ListOIDCProviders returns configured OIDC providers in stable key order.
+func (r *UserRepo) ListOIDCProviders(ctx context.Context, filter OIDCProviderFilter) ([]model.OIDCProvider, error) {
+	var rows []model.OIDCProvider
+	q := r.db.WithContext(ctx).Order("provider_key ASC")
+	if filter.EnabledOnly {
+		q = q.Where("enabled = ?", true)
+	}
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("UserRepo.ListOIDCProviders: %w", err)
+	}
+	return rows, nil
+}
+
+// GetOIDCProvider returns a configured provider by key, or (nil, nil)
+// on miss.
+func (r *UserRepo) GetOIDCProvider(ctx context.Context, providerKey string) (*model.OIDCProvider, error) {
+	providerKey = strings.TrimSpace(providerKey)
+	if providerKey == "" {
+		return nil, nil
+	}
+	var p model.OIDCProvider
+	if err := r.db.WithContext(ctx).
+		Where("provider_key = ?", providerKey).
+		First(&p).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("UserRepo.GetOIDCProvider: %w", err)
+	}
+	return &p, nil
+}
+
+// UpsertOIDCProvider stores provider configuration. It is useful for
+// bootstrapping the legacy env/runtime OIDC config into the P5 provider
+// table before linking identities that reference it.
+func (r *UserRepo) UpsertOIDCProvider(ctx context.Context, p *model.OIDCProvider) error {
+	if p == nil || strings.TrimSpace(p.ProviderKey) == "" {
+		return fmt.Errorf("UserRepo.UpsertOIDCProvider: provider_key is required")
+	}
+	now := time.Now().UTC()
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = now
+	}
+	p.UpdatedAt = now
+	if p.Scopes == nil {
+		p.Scopes = model.StringSlice{}
+	}
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "provider_key"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"display_name",
+				"icon_url",
+				"issuer",
+				"client_id",
+				"client_secret",
+				"redirect_url",
+				"scopes",
+				"auth_url",
+				"token_url",
+				"jwks_url",
+				"user_info_url",
+				"enabled",
+				"updated_at",
+			}),
+		}).
+		Create(p).Error; err != nil {
+		return fmt.Errorf("UserRepo.UpsertOIDCProvider: %w", err)
+	}
+	return nil
+}
+
+// ListOIDCIdentities returns all identities linked to userID.
+func (r *UserRepo) ListOIDCIdentities(ctx context.Context, userID int64) ([]model.UserOIDCIdentity, error) {
+	var rows []model.UserOIDCIdentity
+	if userID <= 0 {
+		return rows, nil
+	}
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("provider_key ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("UserRepo.ListOIDCIdentities: %w", err)
+	}
+	return rows, nil
+}
+
+// FindOIDCIdentity returns the identity matching provider+subject, or
+// (nil, nil) on miss.
+func (r *UserRepo) FindOIDCIdentity(ctx context.Context, providerKey, subject string) (*model.UserOIDCIdentity, error) {
+	providerKey = strings.TrimSpace(providerKey)
+	subject = strings.TrimSpace(subject)
+	if providerKey == "" || subject == "" {
+		return nil, nil
+	}
+	var row model.UserOIDCIdentity
+	if err := r.db.WithContext(ctx).
+		Where("provider_key = ? AND subject = ?", providerKey, subject).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("UserRepo.FindOIDCIdentity: %w", err)
+	}
+	return &row, nil
+}
+
+// LinkOIDCIdentityToUser creates or refreshes a provider identity for
+// the user. It refuses to move an existing provider subject to another
+// user, and refuses to replace a user's already-linked identity for the
+// same provider.
+func (r *UserRepo) LinkOIDCIdentityToUser(ctx context.Context, identity *model.UserOIDCIdentity) error {
+	if identity == nil {
+		return fmt.Errorf("UserRepo.LinkOIDCIdentityToUser: identity is required")
+	}
+	if identity.UserID <= 0 || strings.TrimSpace(identity.ProviderKey) == "" || strings.TrimSpace(identity.Subject) == "" {
+		return fmt.Errorf("UserRepo.LinkOIDCIdentityToUser: user_id, provider_key, and subject are required")
+	}
+	identity.ProviderKey = strings.TrimSpace(identity.ProviderKey)
+	identity.Subject = strings.TrimSpace(identity.Subject)
+	identity.ProviderEmail = strings.TrimSpace(strings.ToLower(identity.ProviderEmail))
+	now := time.Now().UTC()
+	if identity.CreatedAt.IsZero() {
+		identity.CreatedAt = now
+	}
+	identity.UpdatedAt = now
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := &UserRepo{db: tx}
+		existing, err := txRepo.FindOIDCIdentity(ctx, identity.ProviderKey, identity.Subject)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if existing.UserID != identity.UserID {
+				return ErrOIDCIdentityConflict
+			}
+			return tx.Model(&model.UserOIDCIdentity{}).
+				Where("id = ?", existing.ID).
+				Updates(map[string]any{
+					"provider_email":          identity.ProviderEmail,
+					"provider_email_verified": identity.ProviderEmailVerified,
+					"updated_at":              identity.UpdatedAt,
+				}).Error
+		}
+
+		var sameProvider model.UserOIDCIdentity
+		err = tx.
+			Where("user_id = ? AND provider_key = ?", identity.UserID, identity.ProviderKey).
+			First(&sameProvider).Error
+		if err == nil {
+			return ErrOIDCIdentityConflict
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return tx.Create(identity).Error
+	})
+	if err != nil {
+		return fmt.Errorf("UserRepo.LinkOIDCIdentityToUser: %w", err)
 	}
 	return nil
 }
@@ -258,3 +434,5 @@ func (r *UserRepo) ChargeBalanceIfEnough(ctx context.Context, userID, amountCent
 }
 
 var ErrInsufficientBalance = errors.New("repository: insufficient balance")
+
+var ErrOIDCIdentityConflict = errors.New("repository: oidc identity conflict")

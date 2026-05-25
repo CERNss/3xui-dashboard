@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { portalProfileApi } from '@/api/portal/profile'
+import { portalProfileApi, type EmailVerificationPurpose } from '@/api/portal/profile'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
 import { queryKeys } from '../keys'
 
@@ -21,6 +21,35 @@ export function useLoginMethods() {
   })
   useQueryErrorReporter(result.error, result.isError)
   return result
+}
+
+export function useUpdateProfile() {
+  const queryClient = useQueryClient()
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (input: { display_name?: string | null }) => portalProfileApi.updateProfile(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
+    onError: (error) => handleError(error),
+  })
+}
+
+export function useStartEmailVerification() {
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+      portalProfileApi.startEmailVerification(input),
+    onError: (error) => handleError(error),
+  })
+}
+
+export function useChangeEmail() {
+  const queryClient = useQueryClient()
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (input: { email: string; verificationToken: string }) => portalProfileApi.changeEmail(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
+    onError: (error) => handleError(error),
+  })
 }
 
 export function useChangePassword() {
@@ -45,7 +74,8 @@ export function useBindEmail() {
 export function useStartOidcLink() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: (redirectAfter?: string) => portalProfileApi.startOIDCLink(redirectAfter),
+    mutationFn: ({ providerKey, redirectAfter }: { providerKey: string; redirectAfter?: string }) =>
+      portalProfileApi.startOIDCLink(providerKey, redirectAfter),
     onError: (error) => handleError(error),
   })
 }

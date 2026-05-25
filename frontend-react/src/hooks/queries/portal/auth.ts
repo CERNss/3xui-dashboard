@@ -1,5 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { portalAuthApi, type OIDCResolveAction } from '@/api/portal/auth'
+import {
+  portalAuthApi,
+  type OIDCBindExistingInput,
+  type OIDCCreateAccountInput,
+} from '@/api/portal/auth'
+import type { EmailVerificationPurpose } from '@/api/portal/profile'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
 import { queryKeys } from '../keys'
 
@@ -49,10 +54,20 @@ export function useSendCode() {
   })
 }
 
+export function useStartAuthEmailVerification() {
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+      portalAuthApi.startEmailVerification(input),
+    onError: (error) => handleError(error),
+  })
+}
+
 export function useOidcStart() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: (redirectAfter?: string) => portalAuthApi.oidcStart(redirectAfter),
+    mutationFn: ({ redirectAfter, providerKey }: { redirectAfter?: string; providerKey?: string } = {}) =>
+      portalAuthApi.oidcStart(redirectAfter, providerKey),
     onError: (error) => handleError(error),
   })
 }
@@ -65,11 +80,18 @@ export function useOidcCallback() {
   })
 }
 
-export function useOidcResolve() {
+export function useOidcBindExisting() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: ({ pendingToken, action }: { pendingToken: string; action: OIDCResolveAction }) =>
-      portalAuthApi.oidcResolve(pendingToken, action),
+    mutationFn: (input: OIDCBindExistingInput) => portalAuthApi.oidcBindExisting(input),
+    onError: (error) => handleError(error),
+  })
+}
+
+export function useOidcCreateAccount() {
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (input: OIDCCreateAccountInput) => portalAuthApi.oidcCreateAccount(input),
     onError: (error) => handleError(error),
   })
 }

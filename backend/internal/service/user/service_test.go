@@ -105,14 +105,13 @@ func TestRegister_EmailVerifiedFollowsInput(t *testing.T) {
 func TestBindEmail_StoresUnverified(t *testing.T) {
 	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
-	sub := "bind-email-sub"
 	u := &model.User{
-		OIDCSubject: &sub,
-		SubID:       "bind-email-sub-id",
-		Status:      model.UserStatusActive,
+		SubID:        "bind-email-sub-id",
+		Status:       model.UserStatusActive,
+		PasswordHash: model.DisabledPasswordHash,
 	}
 	if err := svc.users.Create(ctx, u); err != nil {
-		t.Fatalf("seed oidc-only user: %v", err)
+		t.Fatalf("seed user: %v", err)
 	}
 
 	if err := svc.BindEmail(ctx, u.ID, "bind@example.com"); err != nil {
@@ -127,6 +126,9 @@ func TestBindEmail_StoresUnverified(t *testing.T) {
 	}
 	if got.EmailVerified {
 		t.Error("expected bind email to leave email_verified=false")
+	}
+	if got.PasswordHash == "" {
+		t.Fatal("password_hash invariant should stay non-empty")
 	}
 }
 
@@ -168,10 +170,10 @@ func TestAdminUpdate_CanUpdateEmailAndPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get updated user: %v", err)
 	}
-	if got.PasswordHash == nil {
+	if got.PasswordHash == "" {
 		t.Fatal("password_hash not set")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(*got.PasswordHash), []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(got.PasswordHash), []byte(password)); err != nil {
 		t.Fatalf("password hash does not match new password: %v", err)
 	}
 }
