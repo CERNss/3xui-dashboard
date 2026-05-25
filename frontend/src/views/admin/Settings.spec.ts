@@ -254,6 +254,42 @@ beforeEach(() => {
       description_zh: '采集间隔秒数',
     },
     {
+      key: 'ops_collect_concurrency',
+      label: 'Health collection concurrency',
+      label_zh: '健康采集并发',
+      group: 'data_collection',
+      type: 'int',
+      value: '8',
+      has_override: false,
+      default: '8',
+      description: 'Health concurrency',
+      description_zh: '健康采集并发',
+    },
+    {
+      key: 'ops_collect_timeout_seconds',
+      label: 'Health request timeout',
+      label_zh: '健康请求超时',
+      group: 'data_collection',
+      type: 'int',
+      value: '12',
+      has_override: false,
+      default: '12',
+      description: 'Health timeout seconds',
+      description_zh: '健康请求超时秒数',
+    },
+    {
+      key: 'ops_collect_retry_attempts',
+      label: 'Health retry attempts',
+      label_zh: '健康重试次数',
+      group: 'data_collection',
+      type: 'int',
+      value: '0',
+      has_override: false,
+      default: '0',
+      description: 'Health retries',
+      description_zh: '健康重试次数',
+    },
+    {
       key: 'ops_retention_seconds',
       label: 'Health history retention',
       label_zh: '健康历史保留',
@@ -288,6 +324,42 @@ beforeEach(() => {
       default: '60',
       description: 'Traffic interval seconds',
       description_zh: '流量采集间隔秒数',
+    },
+    {
+      key: 'traffic_collect_concurrency',
+      label: 'Traffic collection concurrency',
+      label_zh: '流量采集并发',
+      group: 'data_collection',
+      type: 'int',
+      value: '8',
+      has_override: false,
+      default: '8',
+      description: 'Traffic concurrency',
+      description_zh: '流量采集并发',
+    },
+    {
+      key: 'traffic_collect_timeout_seconds',
+      label: 'Traffic request timeout',
+      label_zh: '流量请求超时',
+      group: 'data_collection',
+      type: 'int',
+      value: '30',
+      has_override: false,
+      default: '30',
+      description: 'Traffic timeout seconds',
+      description_zh: '流量请求超时秒数',
+    },
+    {
+      key: 'traffic_collect_retry_attempts',
+      label: 'Traffic retry attempts',
+      label_zh: '流量重试次数',
+      group: 'data_collection',
+      type: 'int',
+      value: '0',
+      has_override: false,
+      default: '0',
+      description: 'Traffic retries',
+      description_zh: '流量重试次数',
     },
     {
       key: 'traffic_retention_seconds',
@@ -535,15 +607,27 @@ describe('admin/Settings.vue smoke', () => {
     expect(w.text()).toContain('数据收集')
     expect(w.text()).toContain('节点健康采集')
     expect(w.text()).toContain('健康采集间隔')
+    expect(w.text()).toContain('健康采集并发')
+    expect(w.text()).toContain('健康请求超时')
+    expect(w.text()).toContain('健康重试次数')
     expect(w.text()).toContain('健康历史保留')
     expect(w.text()).toContain('节点流量采集')
     expect(w.text()).toContain('流量采集间隔')
+    expect(w.text()).toContain('流量采集并发')
+    expect(w.text()).toContain('流量请求超时')
+    expect(w.text()).toContain('流量重试次数')
     expect(w.text()).toContain('流量样本保留')
     expect(w.find('#setting-ops_collect_enabled').isVisible()).toBe(true)
     expect(w.find('#setting-ops_collect_interval_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-ops_collect_concurrency').isVisible()).toBe(true)
+    expect(w.find('#setting-ops_collect_timeout_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-ops_collect_retry_attempts').isVisible()).toBe(true)
     expect(w.find('#setting-ops_retention_seconds').isVisible()).toBe(true)
     expect(w.find('#setting-traffic_collect_enabled').isVisible()).toBe(true)
     expect(w.find('#setting-traffic_collect_interval_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-traffic_collect_concurrency').isVisible()).toBe(true)
+    expect(w.find('#setting-traffic_collect_timeout_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-traffic_collect_retry_attempts').isVisible()).toBe(true)
     expect(w.find('#setting-traffic_retention_seconds').isVisible()).toBe(true)
   })
 

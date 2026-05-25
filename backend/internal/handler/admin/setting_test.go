@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -41,6 +42,24 @@ func TestValidateOpsCollectionSettings(t *testing.T) {
 	if err := validate(model.SettingOpsCollectIntervalSeconds, "4"); err == nil {
 		t.Fatal("ops interval below 5 seconds should be rejected")
 	}
+	if err := validate(model.SettingOpsCollectConcurrency, "8"); err != nil {
+		t.Fatalf("ops concurrency rejected: %v", err)
+	}
+	if err := validate(model.SettingOpsCollectConcurrency, "0"); err == nil {
+		t.Fatal("ops concurrency below 1 should be rejected")
+	}
+	if err := validate(model.SettingOpsCollectTimeoutSeconds, "12"); err != nil {
+		t.Fatalf("ops timeout rejected: %v", err)
+	}
+	if err := validate(model.SettingOpsCollectTimeoutSeconds, "301"); err == nil {
+		t.Fatal("ops timeout above 300 seconds should be rejected")
+	}
+	if err := validate(model.SettingOpsCollectRetryAttempts, "1"); err != nil {
+		t.Fatalf("ops retry attempts rejected: %v", err)
+	}
+	if err := validate(model.SettingOpsCollectRetryAttempts, "-1"); err == nil {
+		t.Fatal("ops retry attempts below 0 should be rejected")
+	}
 	if err := validate(model.SettingOpsRetentionSeconds, "21600"); err != nil {
 		t.Fatalf("ops retention rejected: %v", err)
 	}
@@ -56,11 +75,65 @@ func TestValidateOpsCollectionSettings(t *testing.T) {
 	if err := validate(model.SettingTrafficCollectIntervalSecs, "4"); err == nil {
 		t.Fatal("traffic interval below 5 seconds should be rejected")
 	}
+	if err := validate(model.SettingTrafficCollectConcurrency, "8"); err != nil {
+		t.Fatalf("traffic concurrency rejected: %v", err)
+	}
+	if err := validate(model.SettingTrafficCollectConcurrency, "65"); err == nil {
+		t.Fatal("traffic concurrency above 64 should be rejected")
+	}
+	if err := validate(model.SettingTrafficCollectTimeoutSecs, "30"); err != nil {
+		t.Fatalf("traffic timeout rejected: %v", err)
+	}
+	if err := validate(model.SettingTrafficCollectTimeoutSecs, "0"); err == nil {
+		t.Fatal("traffic timeout below 1 second should be rejected")
+	}
+	if err := validate(model.SettingTrafficCollectRetryAttempts, "5"); err != nil {
+		t.Fatalf("traffic retry attempts rejected: %v", err)
+	}
+	if err := validate(model.SettingTrafficCollectRetryAttempts, "6"); err == nil {
+		t.Fatal("traffic retry attempts above 5 should be rejected")
+	}
 	if err := validate(model.SettingTrafficRetentionSeconds, "0"); err != nil {
 		t.Fatalf("traffic retention disabled value rejected: %v", err)
 	}
 	if err := validate(model.SettingTrafficRetentionSeconds, "-1"); err == nil {
 		t.Fatal("negative traffic retention should be rejected")
+	}
+}
+
+func TestValidateCollectionTimeoutWithinInterval(t *testing.T) {
+	h := &SettingHandler{}
+	ctx := context.Background()
+
+	if err := h.validateCollectionTimeoutWithinInterval(ctx,
+		model.SettingOpsCollectTimeoutSeconds,
+		"12",
+		model.SettingOpsCollectIntervalSeconds,
+		model.SettingOpsCollectTimeoutSeconds,
+		60,
+		12,
+	); err != nil {
+		t.Fatalf("timeout within interval rejected: %v", err)
+	}
+	if err := h.validateCollectionTimeoutWithinInterval(ctx,
+		model.SettingOpsCollectTimeoutSeconds,
+		"61",
+		model.SettingOpsCollectIntervalSeconds,
+		model.SettingOpsCollectTimeoutSeconds,
+		60,
+		12,
+	); err == nil {
+		t.Fatal("timeout greater than interval should be rejected")
+	}
+	if err := h.validateCollectionTimeoutWithinInterval(ctx,
+		model.SettingOpsCollectIntervalSeconds,
+		"5",
+		model.SettingOpsCollectIntervalSeconds,
+		model.SettingOpsCollectTimeoutSeconds,
+		60,
+		12,
+	); err == nil {
+		t.Fatal("interval below current timeout should be rejected")
 	}
 }
 

@@ -37,6 +37,7 @@ type ProbeJob struct {
 
 	mu      sync.Mutex
 	lastRun time.Time
+	running bool
 }
 
 // NewProbeJob builds a job. concurrency=8 + perCall=12s are the
@@ -66,9 +67,12 @@ func (j *ProbeJob) SetConfig(config *datacollection.ConfigService) {
 // invocation and for tests.
 func (j *ProbeJob) RunOnce(ctx context.Context) {
 	cfg := datacollection.CollectorConfig{
-		Enabled:   true,
-		Interval:  datacollection.DefaultHealthInterval,
-		Retention: datacollection.DefaultHealthRetention,
+		Enabled:       true,
+		Interval:      datacollection.DefaultHealthInterval,
+		Retention:     datacollection.DefaultHealthRetention,
+		Concurrency:   j.concurrency,
+		Timeout:       j.perCall,
+		RetryAttempts: datacollection.DefaultRetryAttempts,
 	}
 	if j.config != nil {
 		cfg = j.config.Health(ctx)
@@ -76,9 +80,16 @@ func (j *ProbeJob) RunOnce(ctx context.Context) {
 	if !cfg.Enabled {
 		return
 	}
-	if !j.shouldRun(time.Now().UTC(), cfg.Interval) {
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = j.concurrency
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = j.perCall
+	}
+	if !j.startRun(time.Now().UTC(), cfg.Interval) {
 		return
 	}
+	defer j.finishRun()
 	j.nodes.SetMetricsRetention(cfg.Retention)
 
 	rows, err := j.nodes.ListEnabled(ctx)
@@ -91,35 +102,64 @@ func (j *ProbeJob) RunOnce(ctx context.Context) {
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(j.concurrency)
+	g.SetLimit(cfg.Concurrency)
 
 	for i := range rows {
 		row := rows[i]
 		g.Go(func() error {
-			callCtx, cancel := context.WithTimeout(gctx, j.perCall)
-			defer cancel()
-			j.probeOne(callCtx, row)
+			j.probeOne(gctx, row, cfg.Timeout, cfg.RetryAttempts)
 			return nil
 		})
 	}
 	_ = g.Wait()
 }
 
-func (j *ProbeJob) shouldRun(now time.Time, interval time.Duration) bool {
+func (j *ProbeJob) startRun(now time.Time, interval time.Duration) bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if interval <= 0 {
 		interval = datacollection.DefaultHealthInterval
 	}
+	if j.running {
+		j.log.Warn("probe collection skipped; previous run still active")
+		return false
+	}
 	if !j.lastRun.IsZero() && now.Sub(j.lastRun) < interval {
 		return false
 	}
 	j.lastRun = now
+	j.running = true
 	return true
 }
 
-func (j *ProbeJob) probeOne(ctx context.Context, n model.Node) {
-	_, err := j.nodes.Probe(ctx, n.ID)
+func (j *ProbeJob) finishRun() {
+	j.mu.Lock()
+	j.running = false
+	j.mu.Unlock()
+}
+
+func (j *ProbeJob) probeOne(ctx context.Context, n model.Node, timeout time.Duration, retryAttempts int) {
+	var err error
+	for attempt := 0; attempt <= retryAttempts; attempt++ {
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		_, err = j.nodes.Probe(callCtx, n.ID)
+		cancel()
+		if err == nil || ctx.Err() != nil {
+			break
+		}
+		if attempt < retryAttempts {
+			j.log.Warn("probe failed; retrying",
+				slog.Int64("node_id", n.ID),
+				slog.String("node", n.Name),
+				slog.Int("attempt", attempt+1),
+				slog.Int("max_attempts", retryAttempts+1),
+				slog.String("error", err.Error()),
+			)
+			if !datacollection.SleepWithContext(ctx, datacollection.RetryBackoff(attempt)) {
+				break
+			}
+		}
+	}
 	if err != nil {
 		j.log.Warn("probe failed",
 			slog.Int64("node_id", n.ID),

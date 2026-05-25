@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -445,6 +446,36 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "健康数据采集间隔，单位秒；最小 5 秒。",
 	},
 	{
+		Key:           model.SettingOpsCollectConcurrency,
+		Label:         "Health collection concurrency",
+		LabelZh:       "健康采集并发",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "8",
+		Description:   "Maximum number of nodes probed at the same time. Range: 1-64.",
+		DescriptionZh: "健康采集单轮最多同时请求的节点数，范围 1-64。",
+	},
+	{
+		Key:           model.SettingOpsCollectTimeoutSeconds,
+		Label:         "Health request timeout",
+		LabelZh:       "健康请求超时",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "12",
+		Description:   "Per-node health probe timeout in seconds. Range: 1-300.",
+		DescriptionZh: "单节点健康探测超时时间，单位秒；范围 1-300。",
+	},
+	{
+		Key:           model.SettingOpsCollectRetryAttempts,
+		Label:         "Health retry attempts",
+		LabelZh:       "健康重试次数",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "0",
+		Description:   "Additional retry attempts after a failed health request. Range: 0-5.",
+		DescriptionZh: "健康请求失败后的额外重试次数，范围 0-5。",
+	},
+	{
 		Key:           model.SettingOpsRetentionSeconds,
 		Label:         "Health history retention",
 		LabelZh:       "健康历史保留",
@@ -473,6 +504,36 @@ var knownSettings = []settingDescriptor{
 		Default:       "60",
 		Description:   "Seconds between node traffic collection passes. Minimum 5 seconds.",
 		DescriptionZh: "节点流量采集间隔，单位秒；最小 5 秒。",
+	},
+	{
+		Key:           model.SettingTrafficCollectConcurrency,
+		Label:         "Traffic collection concurrency",
+		LabelZh:       "流量采集并发",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "8",
+		Description:   "Maximum number of nodes queried for traffic snapshots at the same time. Range: 1-64.",
+		DescriptionZh: "流量采集单轮最多同时请求的节点数，范围 1-64。",
+	},
+	{
+		Key:           model.SettingTrafficCollectTimeoutSecs,
+		Label:         "Traffic request timeout",
+		LabelZh:       "流量请求超时",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "30",
+		Description:   "Per-node traffic snapshot timeout in seconds. Range: 1-300.",
+		DescriptionZh: "单节点流量快照超时时间，单位秒；范围 1-300。",
+	},
+	{
+		Key:           model.SettingTrafficCollectRetryAttempts,
+		Label:         "Traffic retry attempts",
+		LabelZh:       "流量重试次数",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "0",
+		Description:   "Additional retry attempts after a failed traffic snapshot request. Range: 0-5.",
+		DescriptionZh: "流量请求失败后的额外重试次数，范围 0-5。",
 	},
 	{
 		Key:           model.SettingTrafficRetentionSeconds,
@@ -680,6 +741,10 @@ func (h *SettingHandler) Put(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := h.validateSettingState(c.Request.Context(), key, body.Value); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.repo.Set(c.Request.Context(), key, body.Value); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -748,6 +813,57 @@ func isKnown(key string) bool {
 	return false
 }
 
+func (h *SettingHandler) validateSettingState(ctx context.Context, key, value string) error {
+	switch key {
+	case model.SettingOpsCollectIntervalSeconds, model.SettingOpsCollectTimeoutSeconds:
+		return h.validateCollectionTimeoutWithinInterval(ctx, key, value,
+			model.SettingOpsCollectIntervalSeconds,
+			model.SettingOpsCollectTimeoutSeconds,
+			60,
+			12,
+		)
+	case model.SettingTrafficCollectIntervalSecs, model.SettingTrafficCollectTimeoutSecs:
+		return h.validateCollectionTimeoutWithinInterval(ctx, key, value,
+			model.SettingTrafficCollectIntervalSecs,
+			model.SettingTrafficCollectTimeoutSecs,
+			60,
+			30,
+		)
+	default:
+		return nil
+	}
+}
+
+func (h *SettingHandler) validateCollectionTimeoutWithinInterval(ctx context.Context, changedKey, changedValue, intervalKey, timeoutKey string, defaultInterval, defaultTimeout int64) error {
+	interval := defaultInterval
+	timeout := defaultTimeout
+	if h != nil && h.repo != nil {
+		var err error
+		interval, err = h.repo.GetInt(ctx, intervalKey, defaultInterval)
+		if err != nil {
+			return err
+		}
+		timeout, err = h.repo.GetInt(ctx, timeoutKey, defaultTimeout)
+		if err != nil {
+			return err
+		}
+	}
+
+	n, err := strconv.ParseInt(strings.TrimSpace(changedValue), 10, 64)
+	if err != nil {
+		return err
+	}
+	if changedKey == intervalKey {
+		interval = n
+	} else if changedKey == timeoutKey {
+		timeout = n
+	}
+	if timeout > interval {
+		return fmt.Errorf("%s cannot be greater than %s", timeoutKey, intervalKey)
+	}
+	return nil
+}
+
 // validate enforces type rules per known key. Unknown keys accept any
 // string.
 func validate(key, value string) error {
@@ -785,6 +901,18 @@ func validate(key, value string) error {
 		case model.SettingOpsCollectIntervalSeconds, model.SettingTrafficCollectIntervalSecs:
 			if n < 5 {
 				return fmt.Errorf("%s must be at least 5 seconds", key)
+			}
+		case model.SettingOpsCollectConcurrency, model.SettingTrafficCollectConcurrency:
+			if n < 1 || n > 64 {
+				return fmt.Errorf("%s must be between 1 and 64", key)
+			}
+		case model.SettingOpsCollectTimeoutSeconds, model.SettingTrafficCollectTimeoutSecs:
+			if n < 1 || n > 300 {
+				return fmt.Errorf("%s must be between 1 and 300 seconds", key)
+			}
+		case model.SettingOpsCollectRetryAttempts, model.SettingTrafficCollectRetryAttempts:
+			if n < 0 || n > 5 {
+				return fmt.Errorf("%s must be between 0 and 5", key)
 			}
 		case model.SettingOpsRetentionSeconds, model.SettingTrafficRetentionSeconds:
 			if n < 0 {

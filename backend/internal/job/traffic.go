@@ -20,6 +20,7 @@ type TrafficJob struct {
 
 	mu      sync.Mutex
 	lastRun time.Time
+	running bool
 }
 
 // NewTrafficJob builds a job.
@@ -39,9 +40,12 @@ func (j *TrafficJob) SetConfig(config *datacollection.ConfigService) {
 func (j *TrafficJob) RunOnce(ctx context.Context) {
 	now := time.Now().UTC()
 	cfg := datacollection.CollectorConfig{
-		Enabled:   true,
-		Interval:  datacollection.DefaultTrafficInterval,
-		Retention: datacollection.DefaultTrafficRetention,
+		Enabled:       true,
+		Interval:      datacollection.DefaultTrafficInterval,
+		Retention:     datacollection.DefaultTrafficRetention,
+		Concurrency:   datacollection.DefaultConcurrency,
+		Timeout:       datacollection.DefaultTrafficTimeout,
+		RetryAttempts: datacollection.DefaultRetryAttempts,
 	}
 	if j.config != nil {
 		cfg = j.config.Traffic(ctx)
@@ -49,11 +53,16 @@ func (j *TrafficJob) RunOnce(ctx context.Context) {
 	if !cfg.Enabled {
 		return
 	}
-	if !j.shouldRun(now, cfg.Interval) {
+	if !j.startRun(now, cfg.Interval) {
 		return
 	}
+	defer j.finishRun()
 
-	errs, err := j.svc.CollectAll(ctx, now)
+	errs, err := j.svc.CollectAllWithOptions(ctx, now, traffic.CollectOptions{
+		Concurrency:    cfg.Concurrency,
+		PerNodeTimeout: cfg.Timeout,
+		RetryAttempts:  cfg.RetryAttempts,
+	})
 	if err != nil {
 		j.log.Error("CollectAll", slog.String("error", err.Error()))
 		return
@@ -73,15 +82,26 @@ func (j *TrafficJob) RunOnce(ctx context.Context) {
 	}
 }
 
-func (j *TrafficJob) shouldRun(now time.Time, interval time.Duration) bool {
+func (j *TrafficJob) startRun(now time.Time, interval time.Duration) bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if interval <= 0 {
 		interval = datacollection.DefaultTrafficInterval
 	}
+	if j.running {
+		j.log.Warn("traffic collection skipped; previous run still active")
+		return false
+	}
 	if !j.lastRun.IsZero() && now.Sub(j.lastRun) < interval {
 		return false
 	}
 	j.lastRun = now
+	j.running = true
 	return true
+}
+
+func (j *TrafficJob) finishRun() {
+	j.mu.Lock()
+	j.running = false
+	j.mu.Unlock()
 }

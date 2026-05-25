@@ -19,9 +19,15 @@ const { t, locale } = useI18n()
 const helpPaths: Record<string, string> = {
   ops_collect_enabled: 'admin.settings.settingHelp.opsCollectEnabled',
   ops_collect_interval_seconds: 'admin.settings.settingHelp.opsCollectInterval',
+  ops_collect_concurrency: 'admin.settings.settingHelp.opsCollectConcurrency',
+  ops_collect_timeout_seconds: 'admin.settings.settingHelp.opsCollectTimeout',
+  ops_collect_retry_attempts: 'admin.settings.settingHelp.opsCollectRetry',
   ops_retention_seconds: 'admin.settings.settingHelp.opsRetention',
   traffic_collect_enabled: 'admin.settings.settingHelp.trafficCollectEnabled',
   traffic_collect_interval_seconds: 'admin.settings.settingHelp.trafficCollectInterval',
+  traffic_collect_concurrency: 'admin.settings.settingHelp.trafficCollectConcurrency',
+  traffic_collect_timeout_seconds: 'admin.settings.settingHelp.trafficCollectTimeout',
+  traffic_collect_retry_attempts: 'admin.settings.settingHelp.trafficCollectRetry',
   traffic_retention_seconds: 'admin.settings.settingHelp.trafficRetention',
 }
 
@@ -35,7 +41,24 @@ function settingHelp(it: SettingItem): string {
 }
 
 function inputMin(key: string): string {
-  return key.endsWith('_interval_seconds') ? '5' : '0'
+  if (key.endsWith('_interval_seconds')) return '5'
+  if (key.endsWith('_concurrency') || key.endsWith('_timeout_seconds')) return '1'
+  return '0'
+}
+
+function inputMax(key: string): string | undefined {
+  if (key.endsWith('_concurrency')) return '64'
+  if (key.endsWith('_timeout_seconds')) {
+    return String(Math.min(300, Number(props.drafts[intervalKeyForTimeout(key)] || 300)))
+  }
+  if (key.endsWith('_retry_attempts')) return '5'
+  return undefined
+}
+
+function intervalKeyForTimeout(key: string): string {
+  if (key.startsWith('ops_collect_')) return 'ops_collect_interval_seconds'
+  if (key.startsWith('traffic_collect_')) return 'traffic_collect_interval_seconds'
+  return key
 }
 </script>
 
@@ -87,6 +110,7 @@ function inputMin(key: string): string {
             v-model="props.drafts[it.key]"
             type="number"
             :min="inputMin(it.key)"
+            :max="inputMax(it.key)"
             class="h-10 w-full rounded-lg border border-surface-200 bg-surface-50 px-3 text-sm text-ink-900 transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/30 dark:border-surface-700 dark:bg-surface-800/70 dark:text-surface-50 lg:w-44"
           />
           <input
