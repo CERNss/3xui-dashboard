@@ -1,0 +1,124 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, useLocation } from 'react-router-dom'
+import { AppRouter } from './router'
+import { useAdminAuthStore } from '@/stores/adminAuth'
+import { usePortalAuthStore } from '@/stores/portalAuth'
+
+vi.mock('@/hooks/queries/branding', () => ({
+  useBranding: () => ({
+    data: {
+      title: 'Test Dashboard',
+      subtitle: 'Central panel',
+      description: 'Fleet control',
+      footer: 'Footer text',
+    },
+  }),
+}))
+
+vi.mock('@/api/portal/auth', () => ({
+  portalAuthApi: {
+    oidcCallback: vi.fn(),
+    oidcProviders: vi.fn().mockResolvedValue([]),
+    oidcResolve: vi.fn(),
+    oidcStart: vi.fn(),
+  },
+}))
+
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="location">{location.pathname + location.search}</span>
+}
+
+function renderRouter(path: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <AppRouter />
+        <LocationProbe />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+beforeEach(() => {
+  useAdminAuthStore.getState().clear()
+  usePortalAuthStore.getState().clear()
+})
+
+describe('AppRouter', () => {
+  it.each([
+    ['/admin/status', 'Admin Status'],
+    ['/admin/stats', 'Admin Stats'],
+    ['/admin/ops-monitor', 'Ops Monitor'],
+    ['/admin/nodes', 'Nodes'],
+    ['/admin/inbounds', 'Inbounds'],
+    ['/admin/users', 'Users'],
+    ['/admin/plans', 'Plans'],
+    ['/admin/provisioning-pools', 'Provisioning Pools'],
+    ['/admin/orders', 'Orders'],
+    ['/admin/audit-log', 'Audit Log'],
+    ['/admin/settings', 'Settings'],
+  ])('resolves admin route %s', async (path, title) => {
+    useAdminAuthStore.getState().setSession('admin-token', 'root')
+
+    renderRouter(path)
+
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+    expect(screen.queryByText('Page not found')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['/portal/subscription', 'Subscription'],
+    ['/portal/usage', 'Usage'],
+    ['/portal/plans', 'Portal Plans'],
+    ['/portal/orders', 'Portal Orders'],
+    ['/portal/profile', 'Profile'],
+  ])('resolves portal route %s', async (path, title) => {
+    usePortalAuthStore.getState().setSession('portal-token', { id: 7, email: 'user@example.com' })
+
+    renderRouter(path)
+
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['/', 'admin', '/admin/status'],
+    ['/admin', 'admin', '/admin/status'],
+    ['/portal', 'portal', '/portal/subscription'],
+  ])('redirects default entry %s', async (path, area, expected) => {
+    if (area === 'admin') {
+      useAdminAuthStore.getState().setSession('admin-token', 'root')
+    } else {
+      usePortalAuthStore.getState().setSession('portal-token', { id: 7, email: 'user@example.com' })
+    }
+
+    renderRouter(path)
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(expected))
+  })
+
+  it('renders NotFound for unknown admin paths without redirecting away', async () => {
+    useAdminAuthStore.getState().setSession('admin-token', 'root')
+
+    renderRouter('/admin/this-does-not-exist')
+
+    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/this-does-not-exist')
+  })
+
+  it('guards anonymous admin paths with an encoded next fullpath', async () => {
+    renderRouter('/admin/users?filter=active')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/login?next=%2Fadmin%2Fusers%3Ffilter%3Dactive',
+      ),
+    )
+  })
+})

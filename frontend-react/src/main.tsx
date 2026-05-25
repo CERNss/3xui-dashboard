@@ -4,13 +4,14 @@ import { App as AntdApp, Button, ConfigProvider, Space, Typography } from 'antd'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { createAppQueryClient } from './lib/queryClient'
+import { AppRouter } from './router'
 import { useThemeStore } from './stores/theme'
 import { darkTheme, lightTheme } from './theme'
 import './style.css'
 
 const queryClient = createAppQueryClient()
 
-function App() {
+function HelloScaffold() {
   return (
     <main className="hello-shell">
       <section className="hello-panel" aria-labelledby="react-tree-title">
@@ -39,13 +40,15 @@ function Root() {
       <AntdApp>
         <QueryClientProvider client={queryClient}>
           <BrowserRouter>
-            <App />
+            <AppRouter />
           </BrowserRouter>
         </QueryClientProvider>
       </AntdApp>
     </ConfigProvider>
   )
 }
+
+export { HelloScaffold }
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

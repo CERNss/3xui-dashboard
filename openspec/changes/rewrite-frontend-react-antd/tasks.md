@@ -61,18 +61,18 @@
 
 ## 7. P2 — Layouts + routing
 
-- [ ] 7.1 Write `frontend-react/src/components/layout/AdminLayout.tsx` using AntD `<Layout>` + `<Sider>` + `<Header>` + `<Content>`; sidebar `<Menu>` mirrors the section/items structure from the Vue AdminLayout; below the `MD_BREAKPOINT` swap the persistent sider for a hamburger + `<Drawer>` (per D13)
-- [ ] 7.2 Write `PortalLayout.tsx` similarly; below `LG_BREAKPOINT` render a fixed-position bottom-nav `<Menu mode="horizontal">` with 5 portal sections (per D13)
-- [ ] 7.3 Write `AuthLayout.tsx` (centered card shell used by Login + OIDCCallback)
-- [ ] 7.4 Write `<ProtectedRoute area="admin" | "portal">` HOC that reads the appropriate Zustand auth store and redirects to `/login?next=...` when unauthenticated
-- [ ] 7.5 Write `frontend-react/src/router.tsx` mirroring `frontend/src/router/index.ts` paths 1:1; `/admin` redirects to `/admin/status`, `/portal` redirects to `/portal/subscription`
-- [ ] 7.6 Verify navigation between paths preserves the active sidebar highlight (`useLocation` + `<Menu selectedKeys>`)
+- [x] 7.1 Write `frontend-react/src/components/layout/AdminLayout.tsx` using AntD `<Layout>` + `<Sider>` + `<Header>` + `<Content>`; sidebar `<Menu>` mirrors the section/items structure from the Vue AdminLayout; below the `MD_BREAKPOINT` swap the persistent sider for a hamburger + `<Drawer>` (per D13)
+- [x] 7.2 Write `PortalLayout.tsx` similarly; below `LG_BREAKPOINT` render a fixed-position bottom-nav `<Menu mode="horizontal">` with 5 portal sections (per D13)
+- [x] 7.3 Write `AuthLayout.tsx` (centered card shell used by Login + OIDCCallback)
+- [x] 7.4 Write `<ProtectedRoute area="admin" | "portal">` HOC that reads the appropriate Zustand auth store and redirects to `/login?next=...` when unauthenticated
+- [x] 7.5 Write `frontend-react/src/router.tsx` mirroring `frontend/src/router/index.ts` paths 1:1; `/admin` redirects to `/admin/status`, `/portal` redirects to `/portal/subscription`
+- [x] 7.6 Verify navigation between paths preserves the active sidebar highlight (`useLocation` + `<Menu selectedKeys>`)
 
 ## 8. P3 — Auth surface
 
-- [ ] 8.1 Port `Login.vue` → `Login.tsx` using AntD `Form`, supports password login + OIDC button; reads `next=` query param and routes there on success; preserve the post-failure `cooldownTimer` (anti-spam delay between failed attempts) — translate `setInterval` to a `useEffect` countdown
-- [ ] 8.2 Port `OIDCCallback.vue` → `OIDCCallback.tsx` (handles `code=&state=`, calls `/api/user/auth/oidc/callback`, stores JWT, navigates to portal)
-- [ ] 8.3 Port `NotFound.vue` → `NotFound.tsx` (AntD `Result` with `status="404"`)
+- [x] 8.1 Port `Login.vue` → `Login.tsx` using AntD `Form`, supports password login + OIDC button; reads `next=` query param and routes there on success; preserve the post-failure `cooldownTimer` (anti-spam delay between failed attempts) — translate `setInterval` to a `useEffect` countdown
+- [x] 8.2 Port `OIDCCallback.vue` → `OIDCCallback.tsx` (handles `code=&state=`, calls `/api/user/auth/oidc/callback`, stores JWT, navigates to portal)
+- [x] 8.3 Port `NotFound.vue` → `NotFound.tsx` (AntD `Result` with `status="404"`)
 - [ ] 8.4 Smoke test `make dev-frontend-react` end-to-end: open `/login`, enter admin creds, land on `/admin/status`
 
 ## 9. P4 — Admin views (light tier)
