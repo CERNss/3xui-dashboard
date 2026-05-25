@@ -1,0 +1,71 @@
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-mono/400.css';
+
+:root {
+  font-family: Geist, "DM Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: #0c0e12;
+  background: #f7f8f9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.hello-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    linear-gradient(180deg, rgb(247 248 249 / 0.92), rgb(234 236 239 / 0.75)),
+    radial-gradient(circle at 20% 15%, rgb(79 70 229 / 0.12), transparent 28%),
+    radial-gradient(circle at 80% 20%, rgb(16 185 129 / 0.10), transparent 24%);
+}
+
+.hello-panel {
+  width: min(100%, 640px);
+  padding: 32px;
+  border: 1px solid #d6dadf;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+}
+
+.hello-kicker {
+  margin: 0 0 8px;
+  color: #4f46e5;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hello-title {
+  margin: 0;
+  color: #0c0e12;
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 600;
+}
+
+.hello-copy {
+  margin: 16px 0 24px;
+  color: #525c69;
+  font-size: 16px;
+  line-height: 1.6;
+}

@@ -1,8 +1,9 @@
-.PHONY: build build-frontend build-backend dev dev-frontend dev-backend tidy clean test test-backend test-e2e test-frontend test-ui test-ui-install lint lint-backend lint-frontend migrate docker-build docker-up docker-down
+.PHONY: build build-frontend build-frontend-react build-backend dev dev-frontend dev-frontend-react dev-backend tidy clean test test-backend test-e2e test-frontend test-ui test-ui-install lint lint-backend lint-frontend migrate docker-build docker-up docker-down
 
 # ---- Paths ----
 ROOT     := $(shell pwd)
 FRONTEND := $(ROOT)/frontend
+FRONTEND_REACT := $(ROOT)/frontend-react
 BACKEND  := $(ROOT)/backend
 BIN      := $(ROOT)/3xui-dashboard
 
@@ -17,6 +18,10 @@ build-frontend:
 	@echo "==> Building frontend..."
 	cd $(FRONTEND) && npm install --no-audit --no-fund && npm run build
 
+build-frontend-react:
+	@echo "==> Building React frontend..."
+	cd $(FRONTEND_REACT) && npm install --no-audit --no-fund && npm run build
+
 build-backend:
 	@echo "==> Building backend..."
 	cd $(BACKEND) && go build -o $(BIN) ./cmd/dashboard
@@ -29,6 +34,10 @@ build-backend:
 dev-frontend:
 	@echo "==> Starting frontend dev server (http://localhost:5173)..."
 	cd $(FRONTEND) && npm install --no-audit --no-fund && npm run dev
+
+dev-frontend-react:
+	@echo "==> Starting React frontend dev server (http://localhost:5174)..."
+	cd $(FRONTEND_REACT) && npm install --no-audit --no-fund && npm run dev
 
 dev-backend:
 	@echo "==> Starting backend (http://localhost:8080)..."

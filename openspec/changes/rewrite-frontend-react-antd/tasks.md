@@ -2,17 +2,17 @@
 
 ## 1. P0 — Scaffold `frontend-react/`
 
-- [ ] 1.1 Create `frontend-react/` directory at repo root, init `package.json` with name `3xui-dashboard-frontend-react`
-- [ ] 1.2 Add dependencies: `react`, `react-dom`, `react-router-dom`, `antd`, `@ant-design/icons`, `zustand`, `@tanstack/react-query`, `react-i18next`, `i18next`, `axios`, `dayjs`, `qrcode`, `js-yaml`, `@fontsource/geist-sans`, `@fontsource/geist-mono`
-- [ ] 1.3 Add devDependencies: `vite`, `@vitejs/plugin-react`, `typescript`, `@types/react`, `@types/react-dom`, `@types/node`, `@types/qrcode`, `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`, `eslint`, `eslint-plugin-react`, `eslint-plugin-react-hooks`, `@typescript-eslint/parser`, `@typescript-eslint/eslint-plugin`, `@playwright/test`
-- [ ] 1.4 Write `frontend-react/vite.config.ts` with React plugin, `build.outDir = '../backend/internal/web/dist'`, `emptyOutDir: true`, dev proxy `/api → http://localhost:8080`
-- [ ] 1.5 Write `frontend-react/tsconfig.json` mirroring the Vue tree's strict settings + `jsx: "react-jsx"`
-- [ ] 1.6 Write `frontend-react/.eslintrc.cjs` with react / react-hooks / typescript plugins
-- [ ] 1.7 Write `frontend-react/index.html` + `frontend-react/src/main.tsx` with `<ConfigProvider>` + `<QueryClientProvider>` + `<BrowserRouter>` wiring a hello-world placeholder
-- [ ] 1.8 Write `frontend-react/src/theme.ts` exporting `lightTheme` / `darkTheme` ThemeConfigs with `colorPrimary` (indigo `#6366f1`) and `colorSuccess` (teal `#14b8a6`) ported from the Vue tree's tailwind config
-- [ ] 1.9 Add `dev`, `build`, `typecheck`, `test`, `lint`, `preview`, `e2e` scripts to `package.json` (mirror Vue tree)
-- [ ] 1.10 Add `make dev-react` target in root `Makefile` (Vue `make dev` stays untouched)
-- [ ] 1.11 Verify `npm run build` produces `backend/internal/web/dist/index.html` + `assets/*.{js,css}` (then `git restore` the dist files — backend still consumes Vue build until cutover)
+- [x] 1.1 Create `frontend-react/` directory at repo root, init `package.json` with name `3xui-dashboard-frontend-react`
+- [x] 1.2 Add dependencies: `react`, `react-dom`, `react-router-dom`, `antd`, `@ant-design/icons`, `zustand`, `@tanstack/react-query`, `react-i18next`, `i18next`, `axios`, `dayjs`, `qrcode`, `js-yaml`, `@fontsource/geist-sans`, `@fontsource/geist-mono`
+- [x] 1.3 Add devDependencies: `vite`, `@vitejs/plugin-react`, `typescript`, `@types/react`, `@types/react-dom`, `@types/node`, `@types/qrcode`, `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`, `eslint`, `eslint-plugin-react`, `eslint-plugin-react-hooks`, `@typescript-eslint/parser`, `@typescript-eslint/eslint-plugin`, `@playwright/test`
+- [x] 1.4 Write `frontend-react/vite.config.ts` with React plugin, `build.outDir = '../backend/internal/web/dist'`, `emptyOutDir: true`, dev proxy `/api → http://localhost:8080`
+- [x] 1.5 Write `frontend-react/tsconfig.json` mirroring the Vue tree's strict settings + `jsx: "react-jsx"`
+- [x] 1.6 Write `frontend-react/.eslintrc.cjs` with react / react-hooks / typescript plugins
+- [x] 1.7 Write `frontend-react/index.html` + `frontend-react/src/main.tsx` with `<ConfigProvider>` + `<QueryClientProvider>` + `<BrowserRouter>` wiring a hello-world placeholder
+- [x] 1.8 Write `frontend-react/src/theme.ts` exporting `lightTheme` / `darkTheme` ThemeConfigs with `colorPrimary` (indigo `#4f46e5`) and `colorSuccess` (green `#10b981`) ported from the Vue tree's tailwind config per D5
+- [x] 1.9 Add `dev`, `build`, `typecheck`, `test`, `lint`, `preview`, `e2e` scripts to `package.json` (mirror Vue tree)
+- [x] 1.10 Add `make dev-frontend-react` and `make build-frontend-react` targets in root `Makefile` (Vue `make dev` / `make build` stay untouched)
+- [x] 1.11 Verify `npm run build` produces `backend/internal/web/dist/index.html` + `assets/*.{js,css}` (then `git restore` the dist files — backend still consumes Vue build until cutover)
 
 ## 2. P1 — Port API layer
 
