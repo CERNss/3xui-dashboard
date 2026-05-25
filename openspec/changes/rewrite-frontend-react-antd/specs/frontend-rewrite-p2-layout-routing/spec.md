@@ -157,6 +157,76 @@ site name/logo before authenticating.
 - **AND** the same hook SHALL serve every other consumer (no
   duplicate fetch)
 
+### Requirement: AdminLayout collapses sidebar to a drawer on narrow viewports
+
+The platform SHALL render the admin sidebar as a persistent left sider above the `md` breakpoint (~768px), and SHALL collapse to a hamburger-triggered AntD `<Drawer>` below it, matching the Vue tree's `md:hidden` behavior.
+
+#### Scenario: Wide viewport shows persistent sider
+
+- **GIVEN** `window.matchMedia('(min-width: 768px)')` returns
+  `matches: true`
+- **WHEN** AdminLayout mounts
+- **THEN** the sider SHALL be visible as a persistent column on
+  the left
+- **AND** the mobile top bar (hamburger + brand) SHALL NOT be
+  rendered
+
+#### Scenario: Narrow viewport shows hamburger + drawer
+
+- **GIVEN** `window.matchMedia('(min-width: 768px)')` returns
+  `matches: false`
+- **WHEN** AdminLayout mounts
+- **THEN** the persistent sider SHALL be hidden
+- **AND** the top bar SHALL contain a hamburger button + brand
+- **AND** clicking the hamburger SHALL open an AntD `<Drawer>`
+  whose body is the same `<Menu>` items as the wide-viewport
+  sider
+
+#### Scenario: Drawer closes on backdrop click and on item select
+
+- **GIVEN** the mobile drawer is open
+- **WHEN** the operator taps the backdrop, OR taps a menu item
+- **THEN** the drawer SHALL close
+- **AND** if a menu item was tapped, the router SHALL navigate
+  to its `to` path
+
+### Requirement: PortalLayout shows a bottom-nav on narrow viewports
+
+The platform SHALL render a fixed-position bottom navigation bar below the `lg` breakpoint (~1024px), with the 5 portal sections as bottom tabs; above the breakpoint the bottom-nav SHALL be hidden and the standard sider SHALL be used (matching the Vue tree's `lg:hidden` behavior).
+
+#### Scenario: Narrow viewport shows the bottom-nav
+
+- **GIVEN** `window.matchMedia('(min-width: 1024px)')` returns
+  `matches: false`
+- **WHEN** PortalLayout mounts
+- **THEN** a fixed-position bar SHALL be rendered at
+  `bottom: 0; left: 0; right: 0`
+- **AND** the bar SHALL contain 5 items mapping to
+  `/portal/subscription`, `/portal/usage`, `/portal/plans`,
+  `/portal/orders`, `/portal/profile`
+- **AND** the currently-active route SHALL have its bar item
+  styled as selected
+
+#### Scenario: Wide viewport hides the bottom-nav
+
+- **GIVEN** `window.matchMedia('(min-width: 1024px)')` returns
+  `matches: true`
+- **WHEN** PortalLayout mounts
+- **THEN** no bottom-nav element SHALL be in the DOM
+- **AND** the standard left sider SHALL be visible
+
+### Requirement: Breakpoint constants live in `theme.ts`, not view code
+
+The platform SHALL define `MD_BREAKPOINT = 768` and `LG_BREAKPOINT = 1024` in `src/theme.ts` as exported constants; layout components SHALL reference these constants and MUST NOT inline pixel values into their `matchMedia` calls.
+
+#### Scenario: No layout file hardcodes breakpoint pixel values
+
+- **WHEN** the operator greps `src/components/layout/` for
+  `768` or `1024`
+- **THEN** the only matches SHALL be imports of
+  `MD_BREAKPOINT` / `LG_BREAKPOINT` from `@/theme`
+- **AND** no `matchMedia('(min-width: 768px)')` SHALL be inlined
+
 ### Requirement: P2 deliverables typecheck and route-level smoke tests pass
 
 The platform SHALL ship at P2 exit a working router config, three layout components (Admin / Portal / Auth), and a `<ProtectedRoute>` HOC, each MUST have at least a smoke test that mounts it and asserts the chrome shape (sidebar / header presence) or guard behavior.

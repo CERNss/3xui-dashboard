@@ -90,6 +90,76 @@ JWT in the portal Zustand store and navigate to
 - **THEN** no HTTP request SHALL be issued
 - **AND** an explanatory error state SHALL render
 
+### Requirement: OIDCCallback distinguishes typed backend errors
+
+The backend's `/api/user/auth/oidc/callback` returns one of several typed errors via HTTP status + JSON `{ error: "..." }` message. `OIDCCallback.tsx` SHALL recognize the documented typed errors below (status + substring match against the response body) and render a specific localized message for each, rather than collapsing them all into a generic "login failed". The history behind this is the 2026-05-21 fix `fb353a1` which closed several silent-failure paths.
+
+#### Scenario: Email already linked to another account (409 ErrOIDCEmailConflict)
+
+- **GIVEN** the IdP returns an email that's already linked to a
+  different account (different `oidc_subject`)
+- **WHEN** the callback POST returns `409` with body containing
+  `"oidc: email already linked to a different account"`
+- **THEN** the page SHALL render a specific message keyed off
+  `auth.oidc.errors.emailConflict` (not a generic "login failed")
+- **AND** SHALL offer two actions: "Sign in to that account
+  first, then link from Profile" and "Use a different OIDC
+  account"
+- **AND** the `portalAuth` store SHALL NOT receive a JWT (the
+  request did not succeed)
+
+#### Scenario: OIDC email does not match the currently-bound account (409 ErrOIDCEmailMismatch)
+
+- **WHEN** the callback returns `409` with body containing
+  `"OIDC email does not match"`
+- **THEN** the page SHALL render
+  `auth.oidc.errors.emailMismatch`
+- **AND** SHALL link back to Profile so the operator can unlink
+  the wrong OIDC binding
+
+#### Scenario: Invalid state (CSRF guard tripped) returns 400
+
+- **WHEN** the callback returns `400` with body containing
+  `state`
+- **THEN** the page SHALL render `auth.oidc.errors.stateInvalid`
+- **AND** SHALL offer a "Try again" button that re-initiates
+  the OIDC login flow from the start (not retries the callback,
+  since the state is one-shot)
+
+#### Scenario: Domain not allowed (403 ErrDomainNotAllowed)
+
+- **WHEN** the callback returns `403` with body containing
+  `domain`
+- **THEN** the page SHALL render
+  `auth.oidc.errors.domainNotAllowed`
+- **AND** SHALL display the email domain that was rejected so
+  the user understands why
+
+#### Scenario: Suspended account (403 ErrUserSuspended)
+
+- **WHEN** the callback returns `403` with body containing
+  `suspended`
+- **THEN** the page SHALL render
+  `auth.oidc.errors.accountSuspended`
+- **AND** SHALL NOT auto-retry
+
+#### Scenario: OIDC not configured (501)
+
+- **WHEN** the callback returns `501` (provider missing or
+  disabled by ops)
+- **THEN** the page SHALL render
+  `auth.oidc.errors.notConfigured`
+- **AND** SHALL hide the "Try again" CTA (it won't help)
+
+#### Scenario: Unknown error falls back gracefully
+
+- **WHEN** the callback returns any other non-2xx status
+- **THEN** the page SHALL render
+  `auth.oidc.errors.unknown` with the raw error body in a
+  collapsible details element (so the operator can paste it to
+  IT if support is needed)
+- **AND** SHALL NOT swallow the failure
+
 ### Requirement: NotFound renders an AntD Result
 
 `NotFound.tsx` SHALL render AntD's `<Result status="404" />`

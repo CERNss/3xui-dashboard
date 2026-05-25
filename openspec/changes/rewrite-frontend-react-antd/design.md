@@ -295,7 +295,238 @@ files. Index file is `dist/index.html`; assets land under
 `dist/assets/`. The backend's SPA fallback (any non-API route →
 serve `index.html`) is unchanged.
 
-### D10. Testing strategy
+### D10. Charting strategy: keep inline SVG, no chart library
+
+OpsMonitor.vue currently renders four chart shapes — donut, line,
+bars, dots — entirely as hand-written inline SVG (single
+`<svg viewBox="0 0 120 48">` paths). No chart library is in the
+Vue tree's `package.json`.
+
+**Decision:** carry the inline-SVG approach into React. Each
+chart becomes a tiny presentational component (e.g.
+`<DonutGauge value pct />`, `<TrendLine points />`,
+`<BarsPanel rows />`, `<DotsGrid grid />`) under
+`components/charts/`. Each ~30-80 LOC, no dependencies, no theme
+collisions.
+
+**Alternative rejected: `@ant-design/charts`.** Adds ~150KB
+gzipped and a second theme system (`@antv/g2plot`) on top of
+AntD's token system. The current charts are small, decorative,
+and don't need interactivity (no tooltips, no zoom). Not worth
+the dependency.
+
+**Alternative rejected: `recharts`.** Same complaint — heavy for
+~4 chart shapes used in one view.
+
+**Open path forward.** If OpsMonitor grows interactive tooling
+(zoom-to-range, multi-series overlays, alert annotations), we
+revisit — at that point `@ant-design/charts` becomes worth the
+weight. Until then, inline SVG keeps the bundle lean and theme
+control 100% local.
+
+### D11. `<KeepAlive>` and `<Transition>` translation
+
+The Vue tree's Overview.vue uses `<KeepAlive>` to preserve panel
+state when switching tabs, and `<Transition mode="out-in">` for
+the fade between panels. Users.vue uses `<Transition name="fade">`
+in two places for revealing batch-action bars and slide-fade for
+toast notifications. Plans.vue uses `<Transition name="fade">`
+for purchase feedback.
+
+**Decision on KeepAlive:** mount panels on first activation, keep
+them mounted, hide inactive ones via `display: none`. This is
+what the React Overview I sketched in P0 already does (lazy-add
+to a `mounted` Set, render with `v-show`-equivalent). No third-
+party library needed.
+
+**Decision on Transition:** use AntD's built-in fade/slide
+helpers (`motion` props on `Modal`, `Drawer`, `Tabs` — they
+animate by default) for the common cases. For the custom places
+(Users batch-action bar slide-in, toast slide-fade), use a
+4-line CSS transition with a `data-show` attribute. No
+`framer-motion`, no `react-transition-group`.
+
+**Alternative rejected: `react-keep-alive` / `react-activation`.**
+Both work but pull in tree-walking hacks that fight React 18's
+strict mode. The `display: none` approach is dumb and works.
+
+**Alternative rejected: `framer-motion`.** Overkill for fade in /
+out animations. Adds ~50KB. Reach for it only if we ever need
+choreographed multi-element animations, which the current UI
+doesn't.
+
+### D12. Vue tree freeze policy
+
+During the rewrite window, the Vue tree is on a strict diet:
+
+- **Allowed:** bugfixes, security patches, dependency security
+  bumps.
+- **Forbidden:** new views, new features, new endpoints from the
+  backend that the Vue tree wires up.
+- **Allowed but with cost:** if a new feature is urgent enough to
+  ship before cutover, the same PR ports it to the React tree.
+  No Vue-only features merge.
+
+Enforcement is social — one author, one main branch, this policy
+written in CLAUDE.md as a reminder. If this policy breaks down,
+the cost is real: every Vue-only feature becomes catch-up work
+in the React tree later, and cutover slides.
+
+**Why this matters.** The dashboard-user-panel batch landed 8
+days of feature work in late May; if a similar batch landed
+during a 3-week React rewrite, the React tree would never catch
+up without re-doing the same UX work twice. Better to slow
+feature velocity for 3 weeks than to ship 5 weeks late.
+
+### D13. Mobile responsive strategy
+
+The Vue tree has real mobile chrome that the rewrite must preserve:
+
+- **AdminLayout** uses `md:hidden` to swap the persistent sidebar
+  for a hamburger + overlay drawer at viewports under ~768px.
+  The mobile top bar appears with brand + hamburger; tapping the
+  hamburger opens the same nav as a drawer.
+- **PortalLayout** uses `lg:hidden` to render a fixed
+  bottom-navigation bar at viewports under ~1024px, with the 5
+  portal sections as bottom tabs. Above that breakpoint the bar
+  is hidden and the standard sider is used.
+- Multiple admin list views (Users, Nodes, ProvisioningPools)
+  switch between desktop `<Table>` and mobile card layout via
+  the `<ResponsiveListTable>` primitive introduced in
+  `refactor-admin-portal-ui-primitives`.
+
+**Decision on chrome.** AntD's `<Layout.Sider breakpoint="md"
+collapsedWidth="0">` + `<Drawer>` combo replaces the current
+`md:hidden` overlay pattern in AdminLayout. PortalLayout's
+bottom-nav has no direct AntD primitive — we render it as a
+fixed-position `<Menu mode="horizontal">` under `<lg`.
+
+**Decision on list views.** A shared `<ResponsiveListTable>`
+wrapper (under `components/common/`) accepts `columns` and an
+optional `mobileCard` render prop. Above the breakpoint it
+renders AntD `<Table>`; below it renders AntD `<List>` with the
+card render prop. Every admin list view (Users / Nodes /
+Inbounds / Webhooks / Plans / Orders / ProvisioningPools) uses
+this wrapper, never raw `<Table>` directly. This solves the
+"same component drifts" problem at the same time as solving
+mobile.
+
+**Breakpoint constants.** Match the Tailwind defaults the Vue
+tree uses: `md = 768px`, `lg = 1024px`. Codified in
+`src/theme.ts` as constants so views never hardcode pixel
+values.
+
+**Test coverage.** Each layout's `.spec.tsx` SHALL test both
+breakpoints (using `window.matchMedia` mocks).
+`<ResponsiveListTable>` SHALL have direct unit tests covering
+the breakpoint swap.
+
+### D14. Accessibility and performance budget
+
+The Vue tree never set explicit a11y or performance targets;
+"it works" was the bar. The rewrite is the right window to lock
+in measurable budgets so future drift fails CI rather than
+sliding silently.
+
+**Accessibility budget.** AntD components ship with reasonable
+ARIA defaults, but custom code (PageHeader, RefreshButton,
+ResponsiveListTable, the inline-SVG charts in OpsMonitor)
+needs explicit attention. The bar:
+
+- Every `<svg role="img">` inline chart MUST have an
+  `aria-label` derived from the chart title + summary stat
+  (e.g. "节点流量趋势，过去 24 小时，峰值 4.2 GB/s").
+- All AntD `<Drawer>` / `<Modal>` invocations MUST set
+  `title` (AntD handles `aria-labelledby` from it).
+- All interactive elements MUST be keyboard-reachable: tab
+  order matches visual order, focus ring visible, ESC closes
+  drawers/modals (AntD default).
+- The mobile drawer (D13) MUST trap focus while open and
+  return focus to the hamburger on close.
+- A CI job runs `@axe-core/playwright` against the e2e smoke's
+  three pages (login, /admin/status, /portal/subscription) and
+  fails on serious or critical violations. WCAG AA targeting.
+
+**Performance budget.** Numbers below are measured on the
+production build served by the Go binary on a cold Chrome
+cache, loopback localhost:
+
+- Initial HTML response < 50ms (it's go:embed, this is cheap).
+- Total JS gzipped < 500KB across all chunks. Vendor split
+  per D9 (`vendor-react`, `vendor-antd`, `vendor-query`,
+  `vendor-i18n`, `vendor-qrcode`, `vendor-misc`) so first paint
+  fetches < 200KB of critical JS.
+- Time to Interactive on the Login route < 1.5s on
+  Mid-Tier-Mobile (CPU 4×, Network Slow 4G) Lighthouse profile.
+- LCP on `/admin/status` (Overview) < 2.5s on same profile.
+- A CI job runs Lighthouse against a built bundle and fails if
+  any of the four metrics regresses by > 10% versus the
+  committed baseline. Baseline updates require explicit PR
+  approval of the regression.
+
+**Why both.** a11y and perf are the two things that always
+slide first when there's deadline pressure, and the easiest to
+catch automatically. Once these gates are in CI, future PRs
+either stay within budget or have to justify the regression
+out loud.
+
+**Open implementation choice.** Lighthouse CI is the canonical
+fit but it adds a Chrome-headless step. Alternative is
+`size-limit` (bundle-only, much cheaper) plus a manual
+Lighthouse run gated by release. Default to size-limit for
+bundle bytes, Lighthouse-CI optional. Decide before P6 starts.
+
+### D15. API error → UI behavior taxonomy
+
+The Vue tree's `src/utils/format.ts::formatError` already
+codifies most of the categories below. The rewrite lifts this
+into a contract so every view handles errors the same way,
+no exceptions.
+
+**Categories, source of truth, recommended UI.**
+
+| Category | Detection | Recommended UI | Recovery |
+|---|---|---|---|
+| Network unreachable | `axios.isAxiosError && (code === 'ERR_NETWORK' || !response)` | AntD `notification.error` with backend-troubleshooting hint | Retry button issuing the same mutation |
+| 400 validation | `response.status === 400`, body has field errors | Inline AntD `Form.Item` errors on the offending fields | User edits and re-submits |
+| 401 auth expired | `response.status === 401` | Axios interceptor clears the auth store and routes to `/login?next=<current>` (D6) | Re-login |
+| 403 permission denied | `response.status === 403` | Page-level `<Result status="403">` if the view itself is forbidden; AntD `message.error` if it's a single action | None within the view — operator must escalate |
+| 404 resource gone | `response.status === 404` | Page-level `<Result status="404">` if loading the resource; `message.error` if it's a deletion of an already-gone resource (idempotent success) | Navigate back; for already-gone deletion, invalidate the list so the row disappears |
+| 409 conflict | `response.status === 409` | Inline form error on the conflicting field (e.g. "name already exists") | User picks a different value |
+| 422 validation range | `response.status === 422` | Inline form error like 400 | User edits |
+| 429 rate limit | `response.status === 429` | AntD `notification.warning` with countdown if `Retry-After` is set, plain message otherwise | Auto-retry once after the delay, then surface to user |
+| 500 server | `response.status === 500` | AntD `notification.error` with the backend message body verbatim + "view dashboard logs for detail" suffix | Manual retry; encourage operator to file an issue |
+| 502 / 503 / 504 upstream | status in {502, 503, 504} | AntD `notification.error` with "上游节点不可达" template + the failing node name if available | Retry button; suggest checking the specific node's panel |
+
+**Implementation rule.** Every TanStack Query `useQuery` /
+`useMutation` SHALL pass its `onError` through a shared
+`useErrorHandler()` hook that dispatches to the above table.
+Views MUST NOT inline `try { … } catch (e) { setError(...) }`
+with raw axios errors — the shared hook is the only renderer.
+
+**Inline vs notification rule.** Mutations triggered by a form
+submission render errors inline (`Form.Item` status). Mutations
+triggered by a button click outside a form (delete row, toggle
+status, batch action) render via `notification`. Queries that
+fail at page load render as a page-level `<Result>` if the
+whole page can't function; as a panel-level empty-state if only
+one section depends on the data.
+
+**Why this matters.** The Vue tree's pattern of "every view
+puts `error.value = formatError(e)` and renders an inline red
+banner" is uniform but ignores AntD's affordances (toast,
+notification, Result, Form.Item). Lifting to the taxonomy lets
+each error category use the right affordance without view
+authors having to think about it every time.
+
+**Carry-over of the formatError catalog.** The Chinese fallback
+strings inside `formatError` (e.g. "连不上后端 — 检查 dashboard
+服务是否在跑、本机网络是否通") move into i18n keys under
+`errors.network.*` / `errors.http4xx.*` / `errors.http5xx.*`
+so they participate in the locale system. Operators can read
+these in English too.
+
+### D16. Testing strategy
 
 **Unit (Vitest + RTL).** Each view gets a `.spec.tsx` next to it,
 ported 1:1 from the corresponding `.spec.ts` in the Vue tree.
@@ -360,10 +591,15 @@ Vue's `[data-test=...]` (if any) to AntD's stable class names or
   cutover: Vue → React/AntD". Second: Makefile / README / docker
   build updates. Reviewer reads the second; the first is mechanical.
 
-- **[Trade-off]** Tailwind retention. Keeping it postcss-loaded
-  costs ~12KB gzip on the bundle and one more config file, but
-  saves "rewrite all spacing patches as `<Space>` props" work. We
-  start with it kept and decide at the end of P4 whether to remove.
+- **[Trade-off resolved]** Tailwind is dropped at cutover. With
+  the full-AntD design language choice (D1) and the mobile
+  responsive strategy leaning on `<ResponsiveListTable>` +
+  `<Drawer>` + `<Flex>` (D13), there's no Tailwind class that
+  AntD's primitives can't replace. The ~12KB gzip saving plus
+  one less config file plus zero "two-styling-system" confusion
+  is worth the ~half-day of `<div class="...">` → `<Flex>` /
+  `<Space>` translation effort in P4. No Tailwind dependency in
+  `frontend-react/package.json` from P0 onward.
 
 - **[Trade-off]** No SSR. AntD + React Router supports SSR but the
   backend `go:embed`s a pre-built bundle; SSR would mean a Node
@@ -397,14 +633,18 @@ tree is restored and operators are back where they started.
 
 ## Open Questions
 
-- **OQ-1.** Do we keep Tailwind at cutover or remove it? Decision
-  deferred until P4 lands and we can measure how often Tailwind
-  utility classes were actually needed.
-- **OQ-2.** Does the cutover happen before or after the next planned
-  product push (payment-gateway-stripe completion)? Recommendation:
-  after stripe lands in the Vue tree, then port stripe-specific
-  flows during P5. Otherwise we'd be doing stripe twice.
-- **OQ-3.** Do we keep the existing Playwright e2e selectors stable
-  by adding `data-testid` to React components, or rewrite selectors
-  to use AntD's role-based semantics? Recommendation: `data-testid`
-  for parity, role-based as a follow-up cleanup.
+- **OQ-1.** Do we keep the existing Playwright e2e selectors
+  stable by adding `data-testid` to React components, or rewrite
+  selectors to use AntD's role-based semantics? Recommendation:
+  `data-testid` for parity in the first pass, role-based as a
+  follow-up cleanup if/when accessibility audit happens.
+
+## Resolved Questions
+
+- **~~OQ-Tailwind~~** (resolved 2026-05-25): drop at cutover.
+  See the Tailwind trade-off note above.
+- **~~OQ-Stripe-timing~~** (resolved 2026-05-25): Stripe is
+  already wired in the Vue tree (`portal/Plans.vue` calls
+  `purchaseViaPayment('stripe', ...)` and `api/portal/billing.ts`
+  knows the `'stripe'` `PaymentMethod`). Cutover order is no
+  longer Stripe-blocked; P5 ports the existing Stripe flow as-is.

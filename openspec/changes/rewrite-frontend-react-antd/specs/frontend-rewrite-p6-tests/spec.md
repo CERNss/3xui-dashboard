@@ -14,7 +14,7 @@ tree, and the locale-parity guard is wired into CI.
 
 ### Requirement: Test-count parity for every spec file
 
-The React tree SHALL contain a `frontend-react/src/**/*.spec.tsx` for every `frontend/src/**/*.spec.ts` in the Vue tree at P6 entry time, mirroring the relative path, and each React spec SHALL contain at least as many `it(...)` blocks as the Vue spec.
+The React tree SHALL contain a `frontend-react/src/**/*.spec.tsx` for every `frontend/src/**/*.spec.ts` in the Vue tree at P6 entry time, mirroring the relative path, and each React spec SHALL contain at least as many `it(...)` blocks as the Vue spec. At rewrite-start time the Vue tree has 24 spec files broken down as: 4 shared components (`AccountMenu`, `ConfirmModal`, `EmptyState`, `Skeleton`), 1 layout (`AdminLayout`), 1 portal modal (`AlipayPayModal`), 1 composable (`useConfirm` — dropped per P1 rewrite, no React counterpart needed), 1 router (`router/index`), 13 admin views (every admin view file has a sibling spec), 3 portal views (`Plans`, `Profile`, plus any later additions), and `Login`.
 
 #### Scenario: Parity audit script reports zero gaps
 
@@ -25,13 +25,28 @@ The React tree SHALL contain a `frontend-react/src/**/*.spec.tsx` for every `fro
 - **AND** SHALL count `it(...)` blocks in each pair
 - **AND** SHALL exit 0 only if the React spec's count is ≥ the
   Vue spec's count for every pair
+- **AND** SHALL exclude `composables/useConfirm.spec.ts` from
+  the parity check (the composable is intentionally removed by
+  P1; no React equivalent exists)
 
 #### Scenario: Audit fails when a spec is missing on the React side
 
-- **GIVEN** a Vue spec exists with no React counterpart
+- **GIVEN** a Vue spec exists with no React counterpart and is
+  not on the documented exclusion list
 - **WHEN** the parity audit runs
 - **THEN** the script SHALL exit non-zero
 - **AND** SHALL name the missing React path
+
+#### Scenario: Router-level spec is ported, not skipped
+
+- **GIVEN** the Vue tree has `src/router/index.spec.ts` covering
+  unauthenticated admin / portal redirect behavior
+- **WHEN** the React tree at P6 exit is inspected
+- **THEN** an equivalent React spec SHALL exist (e.g.
+  `src/router.spec.tsx` or under `components/ProtectedRoute`)
+  exercising the same redirect cases — anonymous admin user
+  hits `/admin/users`, default-entry without `next=`, portal
+  session does not satisfy admin guard
 
 ### Requirement: A shared `renderWithProviders` helper exists
 
