@@ -11,12 +11,13 @@ The Vue 3 + bespoke-Tailwind frontend has hit two structural limits:
   growing more one-off copies — the user explicitly flagged
   "same component looks different across pages" as a quality bug
   during the Status+Stats → Overview merge on 2026-05-24.
-- **Form / table velocity.** The 4 heavy admin views (Settings 1565,
-  Users 1300, Inbounds 1282, InboundEditorModal 1178) are ~58% of the
-  source LOC and consist almost entirely of hand-written form + table
-  layouts. AntD's `Form`, `Table`, `Modal`, `Drawer` collapse these by
-  3-5× while solving validation, pagination, selection, and i18n
-  number/date formatting in a single library.
+- **Form / table velocity.** The heavy admin views (Settings 1565,
+  Users 1300, Inbounds 1282, InboundEditorModal 1178, OpsMonitor 658)
+  are ~63% of the source LOC and consist almost entirely of
+  hand-written form + table + inline-SVG-chart layouts. AntD's
+  `Form`, `Table`, `Modal`, `Drawer` collapse these by 3-5× while
+  solving validation, pagination, selection, and i18n number/date
+  formatting in a single library.
 
 Pre-launch greenfield (no real users, no production deploys) is the
 right window for a full platform swap. After launch the cost grows
@@ -153,11 +154,23 @@ Vue-vs-React.
 
 ### Affected code
 
-- **Deleted at cutover**: entire `frontend/src/` (21 views, 9
-  components, 5 stores, 21 API modules, 2 locale files, ~18.8K LOC).
+- **Deleted at cutover**: entire `frontend/src/` — 23 views (15
+  admin including OpsMonitor and the `settings/` sub-folder, 5
+  portal, 3 shared), 9 components, 5 stores, 21 API modules, 2
+  locale files, 24 vitest specs, ~19.5K LOC.
 - **Added during the change**: parallel `frontend-react/` tree
   containing the React equivalents. Final cutover renames it to
   `frontend/`.
+
+### Vue tree freeze policy during the rewrite window
+
+The Vue tree continues to accept **bugfixes only** during the
+rewrite window. New feature work goes into the React tree
+exclusively. If a feature is urgent enough to need shipping
+before cutover, it goes into Vue **and** gets ported to React in
+the same PR cycle — no Vue-only features get added during the
+window, otherwise the React tree falls permanently behind. This
+policy is enforced socially (one author), not by tooling.
 
 ### Affected systems
 

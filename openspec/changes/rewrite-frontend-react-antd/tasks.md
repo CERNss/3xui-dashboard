@@ -57,11 +57,12 @@
 - [ ] 6.5 Port `LocaleSwitcher.vue` to React using AntD `Segmented` with locale tokens
 - [ ] 6.6 Add a new shared `PageHeader` component (title + subtitle + trailing actions slot) — fulfills the spec scenario "Page header is a single shared component"
 - [ ] 6.7 Add a shared `RefreshButton` wrapping AntD `<Button icon={<ReloadOutlined />}>` — fulfills "Refresh button identical on every page"
+- [ ] 6.8 Add a shared `ResponsiveListTable` wrapper that swaps AntD `<Table>` (desktop) ↔ AntD `<List>` + card render-prop (mobile) at the `MD_BREAKPOINT` boundary defined in `src/theme.ts` per design D13. Sets `data-component="responsive-list-table"` on its root for tests
 
 ## 7. P2 — Layouts + routing
 
-- [ ] 7.1 Write `frontend-react/src/components/layout/AdminLayout.tsx` using AntD `<Layout>` + `<Sider>` + `<Header>` + `<Content>`; sidebar `<Menu>` mirrors the section/items structure from the Vue AdminLayout
-- [ ] 7.2 Write `PortalLayout.tsx` similarly
+- [ ] 7.1 Write `frontend-react/src/components/layout/AdminLayout.tsx` using AntD `<Layout>` + `<Sider>` + `<Header>` + `<Content>`; sidebar `<Menu>` mirrors the section/items structure from the Vue AdminLayout; below the `MD_BREAKPOINT` swap the persistent sider for a hamburger + `<Drawer>` (per D13)
+- [ ] 7.2 Write `PortalLayout.tsx` similarly; below `LG_BREAKPOINT` render a fixed-position bottom-nav `<Menu mode="horizontal">` with 5 portal sections (per D13)
 - [ ] 7.3 Write `AuthLayout.tsx` (centered card shell used by Login + OIDCCallback)
 - [ ] 7.4 Write `<ProtectedRoute area="admin" | "portal">` HOC that reads the appropriate Zustand auth store and redirects to `/login?next=...` when unauthenticated
 - [ ] 7.5 Write `frontend-react/src/router.tsx` mirroring `frontend/src/router/index.ts` paths 1:1; `/admin` redirects to `/admin/status`, `/portal` redirects to `/portal/subscription`
@@ -69,30 +70,31 @@
 
 ## 8. P3 — Auth surface
 
-- [ ] 8.1 Port `Login.vue` → `Login.tsx` using AntD `Form`, supports password login + OIDC button; reads `next=` query param and routes there on success
+- [ ] 8.1 Port `Login.vue` → `Login.tsx` using AntD `Form`, supports password login + OIDC button; reads `next=` query param and routes there on success; preserve the post-failure `cooldownTimer` (anti-spam delay between failed attempts) — translate `setInterval` to a `useEffect` countdown
 - [ ] 8.2 Port `OIDCCallback.vue` → `OIDCCallback.tsx` (handles `code=&state=`, calls `/api/user/auth/oidc/callback`, stores JWT, navigates to portal)
 - [ ] 8.3 Port `NotFound.vue` → `NotFound.tsx` (AntD `Result` with `status="404"`)
-- [ ] 8.4 Smoke test `make dev-react` end-to-end: open `/login`, enter admin creds, land on `/admin/status`
+- [ ] 8.4 Smoke test `make dev-frontend-react` end-to-end: open `/login`, enter admin creds, land on `/admin/status`
 
 ## 9. P4 — Admin views (light tier)
 
 - [ ] 9.1 Port `admin/Plans.vue` (360 LOC) → `Plans.tsx` using AntD `Table` + `Modal` form for create/edit
 - [ ] 9.2 Port `admin/Orders.vue` (232) → `Orders.tsx` (read-only `Table` + filters)
-- [ ] 9.3 Port `admin/AuditLog.vue` (227) → `AuditLog.tsx` (read-only `Table` with severity tag, pagination)
+- [ ] 9.3 Port `admin/AuditLog.vue` (227) → `AuditLog.tsx` (read-only `Table` with severity tag, pagination); preserve the 300ms search-input debounce (use `useDeferredValue` or a manual `setTimeout` in `useEffect`)
 - [ ] 9.4 Port `admin/ProvisioningPools.vue` (454) → `ProvisioningPools.tsx`
 
 ## 10. P4 — Admin views (medium tier)
 
-- [ ] 10.1 Port `admin/Overview.vue` + `Status.vue` + `Stats.vue` (750 LOC combined) → `Overview.tsx` with internal `Tabs`; tab state driven by route path; refresh button delegates to active panel via ref or query refetch
+- [ ] 10.1 Port `admin/Overview.vue` + `Status.vue` + `Stats.vue` (750 LOC combined) → `Overview.tsx` with internal `Tabs`; tab state driven by route path; refresh button delegates to active panel via ref or query refetch; KeepAlive→`mounted Set + display:none` (per D11), Transition→AntD Tabs built-in motion (per D11)
 - [ ] 10.2 Port `admin/Nodes.vue` (543) → `Nodes.tsx` with `Table` + create/edit `Drawer` + status badge
-- [ ] 10.3 Port `admin/Webhooks.vue` (504) → `Webhooks.tsx`
+- [ ] 10.3 Port `admin/Webhooks.vue` (504) → `Webhooks.tsx` — replace `useConfirm` callsite with `Modal.confirm`; accept an `embedded?: boolean` prop so the same component can serve both `/admin/webhooks` (full chrome) and `/admin/settings?tab=notifications` (no header)
+- [ ] 10.4 Port `admin/OpsMonitor.vue` (658) → `OpsMonitor.tsx` at `/admin/ops-monitor` — KPI cards, per-node metric trend, four analysis panels (bars / line / stack / dots); charts go to `src/components/charts/` as inline-SVG components (DonutGauge / TrendLine / BarsPanel / DotsGrid) per D10; partial-failure handling preserves the Vue tree's `metricError` semantics
 
 ## 11. P4 — Admin views (heavy tier)
 
-- [ ] 11.1 Port `admin/Users.vue` (1300) → `Users.tsx` with `Table` + `rowSelection` for batch ops + filter chips + status toggles
-- [ ] 11.2 Port `admin/Inbounds.vue` (1282) → `Inbounds.tsx` (list view, links to editor)
-- [ ] 11.3 Port `admin/InboundEditorModal.vue` (1178) → `InboundEditor.tsx` as a `Drawer` with `Form` and protocol-specific sub-forms
-- [ ] 11.4 Port `admin/Settings.vue` (1565) → `Settings.tsx` with `Tabs` for the 7 sections (general / subscription / alerts / securityAuth / userDefaults / messages / notifications); each tab is a separate file under `src/views/admin/settings/`
+- [ ] 11.1 Port `admin/Users.vue` (1300) → `Users.tsx` with `Table` + `rowSelection` for batch ops + filter chips + status toggles; preserve `autoRefreshTimer` (admin-side auto-refresh) via TanStack Query `refetchInterval`; preserve flash/toast timeout (translate `setTimeout` to a controlled `useEffect` cleanup)
+- [ ] 11.2 Port `admin/Inbounds.vue` (1282) → `Inbounds.tsx` (list view, links to editor); preserve the QR generation path (`qrcode.toDataURL` → AntD QR via the same `qrcode` lib or via AntD's `<QRCode>` component)
+- [ ] 11.3 Port `admin/InboundEditorModal.vue` (1178) → `InboundEditor.tsx` as a `Drawer`; split the 6 protocols (vless / vmess / trojan / shadowsocks / hysteria / wireguard) into separate files under `src/views/admin/inbound-editor/protocols/`, one component per protocol with its full field set
+- [ ] 11.4 Port `admin/Settings.vue` (1565) → `Settings.tsx` with `Tabs` for the **8** sections (general / subscription / alerts / dataCollection / securityAuth / userDefaults / messages / notifications); each tab is a separate file under `src/views/admin/settings/`. `DataCollectionSettings` was already split in the Vue tree — port it. `NotificationsSettings` is a thin wrapper around `<Webhooks embedded />` so the form code lives in one place. Include the favicon file upload (`<input type="file" accept="image/...">` + FormData POST)
 
 ## 12. P5 — Portal views
 
@@ -101,18 +103,23 @@
 - [ ] 12.3 Port `portal/Plans.vue` (305) → `Plans.tsx` (purchase flow)
 - [ ] 12.4 Port `portal/Orders.vue` (243) → `Orders.tsx`
 - [ ] 12.5 Port `portal/Profile.vue` (392) → `Profile.tsx` (email change, password change, OIDC linking)
-- [ ] 12.6 Port `components/portal/AlipayPayModal.vue` → `AlipayPayModal.tsx`
+- [ ] 12.6 Port `components/portal/AlipayPayModal.vue` → `AlipayPayModal.tsx` — QR generation via the same `qrcode` lib (or AntD `<QRCode>`), payment-status polling at 3-second interval (matches Vue tree), countdown timer, both polling and countdown cleanup on modal close
+- [ ] 12.7 Replace `useConfirm` callsites in `portal/Plans.tsx` and `portal/Subscription.tsx` with `Modal.confirm` (mirrors the admin-side change)
 
 ## 13. P6 — Tests
 
-- [ ] 13.1 Port `views/admin/Status.spec.ts` → `Overview.spec.tsx`, `Stats.spec.ts`, etc. for every admin view that has a `.spec.ts` in the Vue tree (Status, Stats, Plans, ProvisioningPools, Nodes, Users, Webhooks, Settings, Orders, InboundEditorModal — 10 specs)
-- [ ] 13.2 Port `views/portal/Register.spec.ts` (and any other portal specs)
-- [ ] 13.3 Port `composables/useConfirm.spec.ts` (or delete if `Modal.confirm` is used directly)
-- [ ] 13.4 Wrap each spec's `render` call in `QueryClientProvider` + `MemoryRouter` helper (extract to `src/test-utils/renderWithProviders.tsx`)
-- [ ] 13.5 Use `vi.mock('@/api/...')` for axios mocking (same pattern as Vue tree)
-- [ ] 13.6 Update `e2e/smoke.spec.ts` selectors to match React DOM output; add `data-testid` attributes where stable selectors are needed
-- [ ] 13.7 Verify test-count parity: every Vue `.spec.ts` has a React `.spec.tsx` with ≥ as many `it(...)` blocks
-- [ ] 13.8 `npm run typecheck` and `npm run test` both pass in `frontend-react/`
+- [ ] 13.1 Port the 13 admin view specs (Status, Stats, Overview, Plans, ProvisioningPools, Nodes, Users, Webhooks, Settings, Orders, InboundEditorModal, OpsMonitor, AuditLog, settings/DataCollectionSettings — actually 14 once the sub-folder spec is counted)
+- [ ] 13.2 Port the 3 portal view specs (`Plans`, `Profile`, plus any other present at P6 entry)
+- [ ] 13.3 Port `views/Login.spec.ts` → `Login.spec.tsx`
+- [ ] 13.4 Port the 4 shared-component specs (`AccountMenu`, `EmptyState`, `Skeleton`, plus the `AlipayPayModal` portal-modal spec). Drop `ConfirmModal.spec.ts` — component no longer exists on the React side (per P1, replaced by `Modal.confirm`)
+- [ ] 13.5 Port `components/layout/AdminLayout.spec.ts` → `AdminLayout.spec.tsx`
+- [ ] 13.6 Port `router/index.spec.ts` → equivalent React spec covering ProtectedRoute redirect cases (anonymous-admin / default-entry-no-next / portal-session-does-not-satisfy-admin)
+- [ ] 13.7 Drop `composables/useConfirm.spec.ts` — composable removed per P1; add to the parity script's exclusion list (no React counterpart expected)
+- [ ] 13.8 Wrap each spec's `render` call in `QueryClientProvider` + `MemoryRouter` helper (extract to `src/test-utils/renderWithProviders.tsx`)
+- [ ] 13.9 Use `vi.mock('@/api/...')` for axios mocking (same pattern as Vue tree)
+- [ ] 13.10 Update `e2e/smoke.spec.ts` selectors to match React DOM output; add `data-testid` attributes where stable selectors are needed
+- [ ] 13.11 Verify test-count parity: every Vue `.spec.ts` (except the documented exclusion) has a React `.spec.tsx` with ≥ as many `it(...)` blocks
+- [ ] 13.12 `npm run typecheck` and `npm run test` both pass in `frontend-react/`
 
 ## 14. P7 — Cutover
 

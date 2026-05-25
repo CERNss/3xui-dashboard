@@ -22,8 +22,24 @@ export interface Node {
 
 export interface NodeMetricPoint {
   time: string
+  status?: 'online' | 'offline' | 'unknown'
   cpu: number
   mem: number
+  cpu_cores?: number
+  mem_current_bytes?: number
+  mem_total_bytes?: number
+  uptime_s?: number
+  load1?: number
+  load5?: number
+  load15?: number
+  net_up_bytes?: number
+  net_down_bytes?: number
+  xray_state?: string
+  xray_error?: string
+  xray_version?: string
+  public_ipv4?: string
+  public_ipv6?: string
+  error?: string
 }
 
 export interface NodeMetricsResult {

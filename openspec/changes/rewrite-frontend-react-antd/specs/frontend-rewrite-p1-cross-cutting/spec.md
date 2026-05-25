@@ -165,9 +165,12 @@ hook (`useBranding()`) rather than a store.
 
 `frontend-react/src/components/common/` SHALL export the
 following primitives, each backed by AntD or a thin wrapper
-around it: `ConfirmModal` (or operator note that
-`Modal.confirm` is used directly), `EmptyState`, `Skeleton`,
-`AccountMenu`, `LocaleSwitcher`, `PageHeader`, `RefreshButton`.
+around it: `EmptyState`, `Skeleton`, `AccountMenu`,
+`LocaleSwitcher`, `PageHeader`, `RefreshButton`, and
+`ResponsiveListTable`. The Vue tree's `ConfirmModal` +
+`useConfirm` composable pair SHALL NOT be ported; every
+callsite is rewritten to use AntD's `Modal.confirm({...})`
+imperative API directly.
 
 #### Scenario: `RefreshButton` is the single source of truth
 
@@ -196,6 +199,78 @@ around it: `ConfirmModal` (or operator note that
 - **THEN** it SHALL accept the same prop names
 - **AND** it SHALL accept an `onAction` callback that fires when
   the action button is clicked
+
+#### Scenario: `<ResponsiveListTable>` swaps Table for List below the breakpoint
+
+- **GIVEN** a view passes `columns`, `dataSource`, and a
+  `mobileCard` render prop to `<ResponsiveListTable>`
+- **WHEN** the viewport is at or above `MD_BREAKPOINT` (768px)
+- **THEN** the wrapper SHALL render AntD `<Table>` with the
+  given columns
+- **AND** when the viewport is below `MD_BREAKPOINT`, it SHALL
+  render AntD `<List>` and call `mobileCard` for each row
+- **AND** the wrapper SHALL set
+  `data-component="responsive-list-table"` on its root for test
+  selection
+
+#### Scenario: Every useConfirm callsite is rewritten to Modal.confirm
+
+- **GIVEN** the Vue tree's four useConfirm callsites at
+  `views/admin/Webhooks.vue`, `views/admin/Plans.vue`,
+  `views/portal/Plans.vue`, and `views/portal/Subscription.vue`
+- **WHEN** the corresponding React view is implemented
+- **THEN** the React view SHALL invoke `Modal.confirm({ title,
+  content, onOk, onCancel })` at the point the Vue tree calls
+  `askConfirm(...)`
+- **AND** no `<ConfirmModal>` template tag SHALL appear in any
+  React view (the imperative API replaces it)
+- **AND** the four React views SHALL retain the same confirm
+  semantics (title, body, cancel-on-ESC, primary-button label)
+  as the Vue originals
+
+### Requirement: A shared `useErrorHandler()` dispatches every query/mutation error
+
+The platform SHALL ship a `src/hooks/useErrorHandler.ts` hook that maps axios errors to AntD affordances per the D15 taxonomy. Every `useQuery` / `useMutation` SHALL route `onError` through this hook; raw `setError(formatError(e))` in views is forbidden.
+
+#### Scenario: 401 routes to login with `next=`
+
+- **GIVEN** a logged-in admin's session expires server-side
+- **WHEN** any query fires and the backend returns 401
+- **THEN** the axios admin interceptor SHALL clear the
+  `adminAuth` Zustand store
+- **AND** the router SHALL navigate to
+  `/login?next=<current-fullpath>` exactly once (concurrent 401s
+  do not stack)
+
+#### Scenario: 400 with field errors renders inline
+
+- **GIVEN** a `<Form>` submitting a create-plan mutation
+- **WHEN** the backend returns 400 with body
+  `{ "error": "...", "fields": { "name": "already exists" } }`
+- **THEN** `useErrorHandler` SHALL forward the per-field error
+  shape to the calling form via the mutation's `onError`
+- **AND** the form SHALL display the message on the `name`
+  `<Form.Item>` (not as a global toast)
+
+#### Scenario: 502/503/504 surfaces upstream node name
+
+- **GIVEN** a mutation hits a backend that proxies to a 3x-ui
+  node, and the upstream returns 502
+- **WHEN** `useErrorHandler` renders the notification
+- **THEN** the notification body SHALL include the failing node
+  name if the response body carries `{ node_name: "..." }`
+  (matching the Vue tree's `node_errors` field on the
+  inbounds-fleet response)
+- **AND** the operator SHALL see a "Retry" CTA in the
+  notification footer
+
+#### Scenario: 429 backs off then surfaces
+
+- **GIVEN** a mutation returns 429 with `Retry-After: 5`
+- **WHEN** `useErrorHandler` processes the error
+- **THEN** it SHALL schedule one auto-retry after 5 seconds
+- **AND** if the retry also returns 429, the error SHALL surface
+  to the user (no infinite retry loop)
 
 ### Requirement: P1 deliverables compile, lint, and test clean
 

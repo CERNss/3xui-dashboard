@@ -12,6 +12,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	"github.com/cern/3xui-dashboard/internal/service/datacollection"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 )
@@ -43,6 +44,12 @@ type Service struct {
 	FleetConcurrency int
 }
 
+type CollectOptions struct {
+	Concurrency    int
+	PerNodeTimeout time.Duration
+	RetryAttempts  int
+}
+
 // New constructs the service.
 func New(rt *runtime.Manager, samples *repository.TrafficSampleRepo, ownership *repository.ClientOwnershipRepo, nodes NodeListSource, bus *event.Bus, lg *slog.Logger) *Service {
 	return &Service{
@@ -60,6 +67,10 @@ func New(rt *runtime.Manager, samples *repository.TrafficSampleRepo, ownership *
 // Per-node failures never abort the pass; they're logged and the
 // per-node error is collected into the returned map.
 func (s *Service) CollectAll(ctx context.Context, now time.Time) (map[int64]string, error) {
+	return s.CollectAllWithOptions(ctx, now, CollectOptions{})
+}
+
+func (s *Service) CollectAllWithOptions(ctx context.Context, now time.Time, opts CollectOptions) (map[int64]string, error) {
 	nodes, err := s.nodes.ListEnabledNodes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("traffic.CollectAll: %w", err)
@@ -68,12 +79,9 @@ func (s *Service) CollectAll(ctx context.Context, now time.Time) (map[int64]stri
 		return nil, nil
 	}
 
-	conc := s.FleetConcurrency
-	if conc <= 0 {
-		conc = 8
-	}
+	opts = s.normalizeCollectOptions(opts)
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(conc)
+	g.SetLimit(opts.Concurrency)
 
 	var (
 		mu     sync.Mutex
@@ -83,7 +91,7 @@ func (s *Service) CollectAll(ctx context.Context, now time.Time) (map[int64]stri
 	for i := range nodes {
 		n := nodes[i]
 		g.Go(func() error {
-			if err := s.collectOne(gctx, n, now); err != nil {
+			if err := s.collectOneWithPolicy(gctx, n, now, opts); err != nil {
 				mu.Lock()
 				errMap[n.ID] = err.Error()
 				mu.Unlock()
@@ -103,15 +111,85 @@ func (s *Service) CollectAll(ctx context.Context, now time.Time) (map[int64]stri
 	return errMap, nil
 }
 
+func (s *Service) normalizeCollectOptions(opts CollectOptions) CollectOptions {
+	if opts.Concurrency <= 0 {
+		opts.Concurrency = s.FleetConcurrency
+	}
+	if opts.Concurrency <= 0 {
+		opts.Concurrency = datacollection.DefaultConcurrency
+	}
+	if opts.Concurrency > datacollection.MaxConcurrency {
+		opts.Concurrency = datacollection.MaxConcurrency
+	}
+	if opts.PerNodeTimeout <= 0 {
+		opts.PerNodeTimeout = datacollection.DefaultTrafficTimeout
+	}
+	if opts.PerNodeTimeout < datacollection.MinTimeout {
+		opts.PerNodeTimeout = datacollection.MinTimeout
+	}
+	if opts.PerNodeTimeout > datacollection.MaxTimeout {
+		opts.PerNodeTimeout = datacollection.MaxTimeout
+	}
+	if opts.RetryAttempts < 0 {
+		opts.RetryAttempts = datacollection.DefaultRetryAttempts
+	}
+	if opts.RetryAttempts > datacollection.MaxRetryAttempts {
+		opts.RetryAttempts = datacollection.MaxRetryAttempts
+	}
+	return opts
+}
+
+// DeleteSamplesOlderThan trims persisted traffic samples before cutoff.
+func (s *Service) DeleteSamplesOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	return s.samples.DeleteOlderThan(ctx, cutoff)
+}
+
+func (s *Service) collectOneWithPolicy(ctx context.Context, n NodeRef, now time.Time, opts CollectOptions) error {
+	var snap *runtime.TrafficSnapshot
+	var err error
+	for attempt := 0; attempt <= opts.RetryAttempts; attempt++ {
+		callCtx, cancel := context.WithTimeout(ctx, opts.PerNodeTimeout)
+		snap, err = s.fetchTrafficSnapshot(callCtx, n)
+		cancel()
+		if err == nil || ctx.Err() != nil {
+			break
+		}
+		if attempt < opts.RetryAttempts {
+			s.log.Warn("traffic collect failed; retrying",
+				slog.Int64("node_id", n.ID),
+				slog.String("node", n.Name),
+				slog.Int("attempt", attempt+1),
+				slog.Int("max_attempts", opts.RetryAttempts+1),
+				slog.String("error", err.Error()),
+			)
+			if !datacollection.SleepWithContext(ctx, datacollection.RetryBackoff(attempt)) {
+				return err
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return s.persistTrafficSnapshot(ctx, n, snap, now)
+}
+
 func (s *Service) collectOne(ctx context.Context, n NodeRef, now time.Time) error {
+	snap, err := s.fetchTrafficSnapshot(ctx, n)
+	if err != nil {
+		return err
+	}
+	return s.persistTrafficSnapshot(ctx, n, snap, now)
+}
+
+func (s *Service) fetchTrafficSnapshot(ctx context.Context, n NodeRef) (*runtime.TrafficSnapshot, error) {
 	r, err := s.rt.Get(ctx, n.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	snap, err := r.FetchTrafficSnapshot(ctx)
-	if err != nil {
-		return err
-	}
+	return r.FetchTrafficSnapshot(ctx)
+}
+
+func (s *Service) persistTrafficSnapshot(ctx context.Context, n NodeRef, snap *runtime.TrafficSnapshot, now time.Time) error {
 	if snap == nil {
 		return nil
 	}
@@ -191,13 +269,13 @@ func (s *Service) shouldEmit(key string, now time.Time, window time.Duration) bo
 // ClientUsage is what GET admin / user traffic endpoints return for
 // one ownership row.
 type ClientUsage struct {
-	NodeID       int64     `json:"node_id"`
-	InboundTag   string    `json:"inbound_tag"`
-	ClientEmail  string    `json:"client_email"`
-	Up           int64     `json:"up"`
-	Down         int64     `json:"down"`
-	TotalBytes   int64     `json:"total"`
-	LimitBytes   *int64    `json:"limit,omitempty"`
+	NodeID       int64      `json:"node_id"`
+	InboundTag   string     `json:"inbound_tag"`
+	ClientEmail  string     `json:"client_email"`
+	Up           int64      `json:"up"`
+	Down         int64      `json:"down"`
+	TotalBytes   int64      `json:"total"`
+	LimitBytes   *int64     `json:"limit,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	LastSampleAt *time.Time `json:"last_sample_at,omitempty"`
 }

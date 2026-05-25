@@ -321,6 +321,12 @@ func (s *Service) MetricsBucketed(nodeID int64, from, to time.Time, bucket time.
 	return s.metrics.Bucketed(nodeID, from, to, bucket)
 }
 
+// SetMetricsRetention bounds the in-memory health history returned by
+// MetricsRaw/MetricsBucketed.
+func (s *Service) SetMetricsRetention(window time.Duration) {
+	s.metrics.SetRetention(window)
+}
+
 // ListEnabled returns only the enabled nodes — used by the probe and
 // traffic-collection jobs.
 func (s *Service) ListEnabled(ctx context.Context) ([]model.Node, error) {
@@ -351,11 +357,13 @@ func (s *Service) Probe(ctx context.Context, id int64) (*ProbeResult, error) {
 		return nil, err
 	}
 	res := &ProbeResult{NodeID: id, PriorStatus: row.Status}
+	now := time.Now().UTC()
 
 	r, err := s.rt.Get(ctx, id)
 	if err != nil {
 		res.Err = err
 		_ = s.applyHeartbeatErr(ctx, id)
+		s.metrics.AppendFailure(id, now, err)
 		return res, err
 	}
 
@@ -365,20 +373,20 @@ func (s *Service) Probe(ctx context.Context, id int64) (*ProbeResult, error) {
 
 	if err != nil {
 		_ = s.applyHeartbeatErr(ctx, id)
+		s.metrics.AppendFailure(id, now, err)
 		return res, err
 	}
-	if err := s.applyHeartbeatOK(ctx, id, status); err != nil {
+	if err := s.applyHeartbeatOK(ctx, id, status, now); err != nil {
 		s.log.Warn("apply heartbeat failed",
 			slog.Int64("node_id", id),
 			slog.String("error", err.Error()),
 		)
 	}
-	s.metrics.Append(id, time.Now().UTC(), status.CPU, status.MemPercent())
+	s.metrics.AppendStatus(id, now, status)
 	return res, nil
 }
 
-func (s *Service) applyHeartbeatOK(ctx context.Context, id int64, status *runtime.Status) error {
-	now := time.Now().UTC()
+func (s *Service) applyHeartbeatOK(ctx context.Context, id int64, status *runtime.Status, now time.Time) error {
 	return s.db.WithContext(ctx).Model(&model.Node{}).Where("id = ?", id).Updates(map[string]any{
 		"status":       model.NodeStatusOnline,
 		"last_seen_at": now,

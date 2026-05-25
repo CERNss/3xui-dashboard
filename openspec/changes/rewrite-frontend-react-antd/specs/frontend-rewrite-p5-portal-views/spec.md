@@ -13,28 +13,75 @@ purchase a plan, see their orders, and edit their profile.
 
 ## ADDED Requirements
 
-### Requirement: Subscription view shows URL, QR, and copy controls
+### Requirement: Subscription view exposes seven subscription formats
 
-`Subscription.tsx` SHALL display the user's subscription URL,
-render a QR code of that URL, and surface copy-to-clipboard
-controls — matching the Vue tree's `portal/Subscription.vue`
-content.
+`Subscription.tsx` SHALL render seven format options matching the Vue tree's `portal/Subscription.vue` shape: `base64`, `clash`, `singbox`, `sip008`, `wireguard`, `wireguard-zip`, `json`. `base64` is the default and the URL has no `?format=` query; the other six append `?format=<key>`. `wireguard-zip` is `downloadOnly` — its UI MUST suppress the copy button and the QR code (it's a binary attachment, not a URL the user pastes).
 
-#### Scenario: QR matches the displayed URL
+#### Scenario: Base64 URL has no format query
 
-- **GIVEN** the user is on `/portal/subscription`
+- **GIVEN** the active format is `base64`
+- **WHEN** the page computes the subscription URL
+- **THEN** the URL SHALL be
+  `<origin>/sub/<sub_id>` with no `?format=` query
+
+#### Scenario: Switching to a non-default format appends `?format=`
+
+- **GIVEN** the active format is changed to `clash`
+- **WHEN** the page recomputes the URL
+- **THEN** the URL SHALL be
+  `<origin>/sub/<sub_id>?format=clash`
+- **AND** the same pattern SHALL hold for `singbox`, `sip008`,
+  `wireguard`, `wireguard-zip`, `json`
+
+#### Scenario: wireguard-zip suppresses copy and QR
+
+- **GIVEN** the active format is `wireguard-zip`
+- **WHEN** the page renders
+- **THEN** the copy-to-clipboard button SHALL be hidden (or
+  disabled with a tooltip explaining why)
+- **AND** the QR canvas SHALL be hidden
+- **AND** a "Download ZIP" button SHALL be visible that issues
+  a `GET` to the subscription URL and triggers a file save
+
+#### Scenario: QR matches the displayed URL for non-zip formats
+
+- **GIVEN** the user is on `/portal/subscription` with any
+  non-zip format active
 - **WHEN** the page renders
 - **THEN** the QR SHALL encode exactly the URL string shown in
   the text field
-- **AND** scanning the QR SHALL yield the same string the user
-  can copy
+- **AND** changing the active format SHALL regenerate the QR
+  to match
+
+#### Scenario: QR regeneration is race-safe
+
+- **GIVEN** the user rapidly toggles between formats (faster
+  than the QR generator's promise resolves)
+- **WHEN** an older format's `QRCode.toDataURL` call resolves
+  after the user has already moved to a newer format
+- **THEN** the stale result SHALL NOT overwrite the current QR
+- **AND** the React tree SHALL achieve this via a monotonic
+  token (matching the Vue tree's `qrToken` ref pattern) or an
+  equivalent AbortController flow
 
 #### Scenario: Copy button writes to clipboard
 
-- **GIVEN** the page is rendered with a subscription URL
+- **GIVEN** the page is rendered with a non-zip format active
 - **WHEN** the operator clicks the copy button
 - **THEN** the clipboard SHALL contain the URL
-- **AND** a transient toast/message SHALL confirm the copy
+- **AND** a transient AntD `message.success` SHALL confirm the
+  copy
+
+#### Scenario: Format labels and hints come from i18n
+
+- **WHEN** the page renders the 7 format chips
+- **THEN** each chip's label SHALL be the hard-coded literal
+  (`Base64`, `Clash`, `Sing-box`, `SIP008`, `WireGuard`,
+  `WG (ZIP)`, `JSON`)
+- **AND** each chip's hint and supported-apps subtitle SHALL
+  come from `portal.subscription.formats.<key>.hint` and
+  `portal.subscription.formats.<key>.apps` (Vue tree's exact
+  i18n key shape)
 
 ### Requirement: Usage view renders traffic stats
 
@@ -149,6 +196,39 @@ reflects payment status.
   stop
 - **AND** no further requests SHALL be issued for that order's
   status
+
+### Requirement: Each portal view owns a documented i18n prefix
+
+Every React portal view SHALL consume i18n keys exclusively from its documented prefix (plus shared `common.*` / `nav.*` / `app.*` / `auth.*` keys for cross-cutting concerns).
+
+| View | Owned prefix | Notes |
+|---|---|---|
+| Subscription | `portal.subscription.*` | Format chip metadata under `portal.subscription.formats.<key>.{hint,apps}` for the 7 formats spec'd above |
+| Usage (Dashboard) | `portal.dashboard.*` | Keep the `dashboard` prefix even though the route is `/portal/usage` — preserve key set 1:1 |
+| Plans | `portal.plans.*` | Purchase confirmation under `portal.plans.confirm*`, payment method labels under `portal.plans.method.*` |
+| Orders | `portal.orders.*` | Continue-payment + paid-state strings |
+| Profile | `portal.profile.*` | Email-change / password-change / OIDC unlink sections; `auth.*` reused for OIDC provider names |
+| AlipayPayModal | `portal.alipayPay.*` | Polling status + countdown strings |
+
+#### Scenario: Portal view only references its owned prefix
+
+- **GIVEN** the React Subscription view source
+- **WHEN** grepped for `t(['"]`
+- **THEN** every matched key SHALL start with
+  `portal.subscription.`, `common.`, `nav.`, `app.`, or `auth.`
+- **AND** no `portal.plans.*` or `portal.profile.*` key SHALL
+  leak in (the Vue tree had a few cross-references during the
+  dashboard-user-panel batch; the rewrite is a chance to clean
+  those up)
+
+#### Scenario: All 7 subscription format keys are preserved
+
+- **GIVEN** the Vue tree's `zh.ts` contains seven
+  `portal.subscription.formats.<key>.{hint,apps}` pairs
+  (`base64`, `clash`, `singbox`, `sip008`, `wireguard`,
+  `wireguardZip`, `json`)
+- **WHEN** the React tree's locale files are inspected
+- **THEN** all 14 keys SHALL be present with identical values
 
 ### Requirement: P5 portal specs pass with parity
 

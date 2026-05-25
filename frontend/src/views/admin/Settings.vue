@@ -8,6 +8,7 @@ import { formatError } from '@/utils/format'
 import { settingsApi, type SettingItem } from '@/api/admin/settings'
 import { adminPlansApi, type AdminPlan } from '@/api/admin/plans'
 import { useBrandingStore } from '@/stores/branding'
+import DataCollectionSettings from '@/views/admin/settings/DataCollectionSettings.vue'
 import Webhooks from '@/views/admin/Webhooks.vue'
 
 const { t, locale } = useI18n()
@@ -57,6 +58,7 @@ const TEMPLATE_PLACEHOLDERS = [
 ] as const
 const SUBSCRIPTION_GROUP = 'subscription'
 const ALERT_GROUP = 'traffic'
+const DATA_COLLECTION_GROUP = 'data_collection'
 const settingHelpPaths: Record<string, string> = {
   subscription_remark_model: 'admin.settings.settingHelp.subscriptionRemark',
   traffic_warn_pct: 'admin.settings.settingHelp.trafficWarn',
@@ -480,7 +482,7 @@ const grouped = computed(() => {
 const generalGrouped = computed(() => {
   const buckets: Record<string, SettingItem[]> = {}
   for (const [group, rows] of Object.entries(grouped.value)) {
-    if (group === 'registration' || group === SUBSCRIPTION_GROUP || group === ALERT_GROUP) continue
+    if (group === 'registration' || group === SUBSCRIPTION_GROUP || group === ALERT_GROUP || group === DATA_COLLECTION_GROUP) continue
     buckets[group] = rows
   }
   return buckets
@@ -495,6 +497,8 @@ const alertGrouped = computed(() => {
   const rows = grouped.value[ALERT_GROUP] || []
   return rows.length > 0 ? { [ALERT_GROUP]: rows } : {}
 })
+
+const dataCollectionItems = computed(() => grouped.value[DATA_COLLECTION_GROUP] || [])
 
 const oidcStatus = computed(() => {
   const hasAllRequired = OIDC_REQUIRED_KEYS.every((key) => {
@@ -517,6 +521,7 @@ function groupLabel(g: string): string {
     registration: t('admin.settings.groupRegistration'),
     subscription: t('admin.settings.groupSubscription'),
     traffic: t('admin.settings.groupTraffic'),
+    data_collection: t('admin.settings.groupDataCollection'),
     other: t('admin.settings.groupOther'),
   } as Record<string, string>)[g] ?? g
 }
@@ -543,8 +548,8 @@ async function sendSMTPTest() {
 // Tab state — runtime settings are split by operator intent:
 // general overrides, security/auth, signup defaults, user-facing
 // messages (SMTP), and ops-facing notifications.
-type Tab = 'general' | 'subscription' | 'alerts' | 'securityAuth' | 'userDefaults' | 'messages' | 'notifications'
-const tabs: Tab[] = ['general', 'subscription', 'alerts', 'securityAuth', 'userDefaults', 'messages', 'notifications']
+type Tab = 'general' | 'subscription' | 'alerts' | 'dataCollection' | 'securityAuth' | 'userDefaults' | 'messages' | 'notifications'
+const tabs: Tab[] = ['general', 'subscription', 'alerts', 'dataCollection', 'securityAuth', 'userDefaults', 'messages', 'notifications']
 const visibleTabs = computed<Tab[]>(() => tabs)
 const defaultTab = computed<Tab>(() => visibleTabs.value[0] || 'general')
 const tab = ref<Tab>('general')
@@ -577,6 +582,7 @@ function tabLabel(target: Tab): string {
     general: t('admin.settings.generalTab'),
     subscription: t('admin.settings.subscriptionTab'),
     alerts: t('admin.settings.alertsTab'),
+    dataCollection: t('admin.settings.dataCollectionTab'),
     securityAuth: t('admin.settings.securityAuthTab'),
     userDefaults: t('admin.settings.userDefaultsTab'),
     messages: t('admin.settings.messagesTab'),
@@ -639,6 +645,7 @@ onMounted(load)
             <svg v-if="t === 'general'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
             <svg v-else-if="t === 'subscription'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h10" /><path d="m16 17 2 2 4-5" /></svg>
             <svg v-else-if="t === 'alerts'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 2.9 18a2 2 0 0 0 1.8 3h14.6a2 2 0 0 0 1.8-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
+            <svg v-else-if="t === 'dataCollection'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6" /><path d="M21 4v16" /></svg>
             <svg v-else-if="t === 'securityAuth'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-5" /></svg>
             <svg v-else-if="t === 'userDefaults'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /><path d="M17 11h4M19 9v4" /></svg>
             <svg v-else-if="t === 'messages'" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><path d="m22 6-10 7L2 6" /></svg>
@@ -1034,6 +1041,15 @@ onMounted(load)
           </div>
         </div>
       </section>
+
+      <DataCollectionSettings
+        v-show="tab === 'dataCollection'"
+        :items="dataCollectionItems"
+        :drafts="drafts"
+        :saving-key="savingKey"
+        @save="save"
+        @clear="clearOverride"
+      />
 
       <section v-show="tab === 'securityAuth'" class="settings-panel">
         <header class="settings-panel-header">

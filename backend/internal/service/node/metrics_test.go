@@ -3,6 +3,9 @@ package node
 import (
 	"testing"
 	"time"
+
+	"github.com/cern/3xui-dashboard/internal/model"
+	"github.com/cern/3xui-dashboard/internal/runtime"
 )
 
 func TestMetricsStore_AppendAndRaw(t *testing.T) {
@@ -71,6 +74,66 @@ func TestMetricsStore_BucketAverages(t *testing.T) {
 	}
 }
 
+func TestMetricsStore_AppendStatusCarriesHealthFields(t *testing.T) {
+	m := NewMetricsStore(4)
+	ts := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	m.AppendStatus(8, ts, &runtime.Status{
+		CPU:      42.5,
+		CPUCores: 4,
+		Mem:      runtime.MemStat{Current: 256, Total: 1024},
+		Xray:     runtime.XrayStat{State: "running", Version: "25.4.1"},
+		Uptime:   99,
+		Loads:    []float64{1.25, 1.5, 2.25},
+		NetIO:    runtime.NetCounters{Up: 1000, Down: 2000},
+		PublicIP: runtime.PublicIPStats{IPv4: "203.0.113.10", IPv6: "2001:db8::10"},
+	})
+
+	raw := m.Raw(8, time.Time{}, time.Time{})
+	if len(raw) != 1 {
+		t.Fatalf("len = %d, want 1", len(raw))
+	}
+	got := raw[0]
+	if got.Status != model.NodeStatusOnline || got.Mem != 25 || got.CPUCores != 4 {
+		t.Fatalf("basic fields = %+v", got)
+	}
+	if got.Load1 != 1.25 || got.Load5 != 1.5 || got.Load15 != 2.25 {
+		t.Errorf("loads = %v/%v/%v", got.Load1, got.Load5, got.Load15)
+	}
+	if got.XrayState != "running" || got.XrayVersion != "25.4.1" {
+		t.Errorf("xray fields = %+v", got)
+	}
+	if got.PublicIPv4 != "203.0.113.10" || got.PublicIPv6 != "2001:db8::10" {
+		t.Errorf("public IP fields = %+v", got)
+	}
+}
+
+func TestMetricsStore_AppendFailureCarriesOfflineError(t *testing.T) {
+	m := NewMetricsStore(4)
+	ts := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	m.AppendFailure(8, ts, errString("timeout"))
+
+	raw := m.Raw(8, time.Time{}, time.Time{})
+	if len(raw) != 1 {
+		t.Fatalf("len = %d, want 1", len(raw))
+	}
+	if raw[0].Status != model.NodeStatusOffline || raw[0].Error != "timeout" {
+		t.Errorf("failure sample = %+v", raw[0])
+	}
+}
+
+func TestMetricsStore_RetentionWindow(t *testing.T) {
+	m := NewMetricsStore(10)
+	base := time.Now().UTC().Add(-2 * time.Minute)
+	m.Append(1, base, 1, 1)
+	m.SetRetention(90 * time.Second)
+	m.Append(1, base.Add(2*time.Minute), 2, 2)
+
+	raw := m.Raw(1, time.Time{}, time.Time{})
+	if len(raw) != 1 || raw[0].CPU != 2 {
+		t.Fatalf("raw after retention = %+v, want only newest sample", raw)
+	}
+}
+
 func TestMetricsStore_DropForgetsNode(t *testing.T) {
 	m := NewMetricsStore(4)
 	m.Append(99, time.Now(), 1, 1)
@@ -79,3 +142,7 @@ func TestMetricsStore_DropForgetsNode(t *testing.T) {
 		t.Errorf("after Drop: got %+v, want nil", got)
 	}
 }
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
