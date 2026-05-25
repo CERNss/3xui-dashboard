@@ -1,5 +1,6 @@
 import {
   AuditOutlined,
+  ApiOutlined,
   BarChartOutlined,
   ClusterOutlined,
   CreditCardOutlined,
@@ -67,6 +68,7 @@ export function adminSections(t: TFunction): NavSection[] {
       label: t('section.system'),
       items: [
         { key: '/admin/audit-log', to: '/admin/audit-log', label: t('nav.audit'), icon: <AuditOutlined /> },
+        { key: '/admin/webhooks', to: '/admin/webhooks', label: t('nav.webhooks'), icon: <ApiOutlined /> },
         { key: '/admin/settings', to: '/admin/settings', label: t('nav.settings'), icon: <SettingOutlined /> },
       ],
     },

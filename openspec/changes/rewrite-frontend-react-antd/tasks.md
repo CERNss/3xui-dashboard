@@ -84,10 +84,10 @@
 
 ## 10. P4 — Admin views (medium tier)
 
-- [ ] 10.1 Port `admin/Overview.vue` + `Status.vue` + `Stats.vue` (750 LOC combined) → `Overview.tsx` with internal `Tabs`; tab state driven by route path; refresh button delegates to active panel via ref or query refetch; KeepAlive→`mounted Set + display:none` (per D11), Transition→AntD Tabs built-in motion (per D11)
-- [ ] 10.2 Port `admin/Nodes.vue` (543) → `Nodes.tsx` with `Table` + create/edit `Drawer` + status badge
-- [ ] 10.3 Port `admin/Webhooks.vue` (504) → `Webhooks.tsx` — replace `useConfirm` callsite with `Modal.confirm`; accept an `embedded?: boolean` prop so the same component can serve both `/admin/webhooks` (full chrome) and `/admin/settings?tab=notifications` (no header)
-- [ ] 10.4 Port `admin/OpsMonitor.vue` (658) → `OpsMonitor.tsx` at `/admin/ops-monitor` — KPI cards, per-node metric trend, four analysis panels (bars / line / stack / dots); charts go to `src/components/charts/` as inline-SVG components (DonutGauge / TrendLine / BarsPanel / DotsGrid) per D10; partial-failure handling preserves the Vue tree's `metricError` semantics
+- [x] 10.1 Port `admin/Overview.vue` + `Status.vue` + `Stats.vue` (750 LOC combined) → `Overview.tsx` with internal `Tabs`; tab state driven by route path; refresh button delegates to active panel via ref or query refetch; KeepAlive→`mounted Set + display:none` (per D11), Transition→AntD Tabs built-in motion (per D11)
+- [x] 10.2 Port `admin/Nodes.vue` (543) → `Nodes.tsx` with `Table` + create/edit `Drawer` + status badge
+- [x] 10.3 Port `admin/Webhooks.vue` (504) → `Webhooks.tsx` — replace `useConfirm` callsite with `Modal.confirm`; accept an `embedded?: boolean` prop so the same component can serve both `/admin/webhooks` (full chrome) and `/admin/settings?tab=notifications` (no header)
+- [x] 10.4 Port `admin/OpsMonitor.vue` (658) → `OpsMonitor.tsx` at `/admin/ops-monitor` — KPI cards, per-node metric trend, four analysis panels (bars / line / stack / dots); charts go to `src/components/charts/` as inline-SVG components (DonutGauge / TrendLine / BarsPanel / DotsGrid) per D10; partial-failure handling preserves the Vue tree's `metricError` semantics
 
 ## 11. P4 — Admin views (heavy tier)
 

@@ -2,9 +2,13 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout, AuthLayout, PortalLayout } from './components/layout'
 import AdminAuditLog from './views/admin/AuditLog'
+import AdminNodes from './views/admin/Nodes'
+import AdminOpsMonitor from './views/admin/OpsMonitor'
 import AdminOrders from './views/admin/Orders'
+import AdminOverview from './views/admin/Overview'
 import AdminPlans from './views/admin/Plans'
 import AdminProvisioningPools from './views/admin/ProvisioningPools'
+import AdminWebhooks from './views/admin/Webhooks'
 import Login from './views/Login'
 import NotFound from './views/NotFound'
 import OIDCCallback from './views/OIDCCallback'
@@ -48,16 +52,17 @@ export function AppRouter() {
       <Route element={<ProtectedRoute area="admin" />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate replace to="/admin/status" />} />
-          <Route path="status" element={<PlaceholderView title="Admin Status" />} />
-          <Route path="stats" element={<PlaceholderView title="Admin Stats" />} />
-          <Route path="ops-monitor" element={<PlaceholderView title="Ops Monitor" />} />
-          <Route path="nodes" element={<PlaceholderView title="Nodes" />} />
+          <Route path="status" element={<AdminOverview defaultTab="status" />} />
+          <Route path="stats" element={<AdminOverview defaultTab="stats" />} />
+          <Route path="ops-monitor" element={<AdminOpsMonitor />} />
+          <Route path="nodes" element={<AdminNodes />} />
           <Route path="inbounds" element={<PlaceholderView title="Inbounds" />} />
           <Route path="users" element={<PlaceholderView title="Users" />} />
           <Route path="plans" element={<AdminPlans />} />
           <Route path="provisioning-pools" element={<AdminProvisioningPools />} />
           <Route path="orders" element={<AdminOrders />} />
           <Route path="audit-log" element={<AdminAuditLog />} />
+          <Route path="webhooks" element={<AdminWebhooks />} />
           <Route path="settings" element={<PlaceholderView title="Settings" />} />
           <Route path="*" element={<NotFound />} />
         </Route>
