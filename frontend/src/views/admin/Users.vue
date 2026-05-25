@@ -97,6 +97,31 @@ const createModal = ref<{
   err: null,
 })
 
+// Edit-user modal. The product currently treats email as the user's
+// login name, so this editor labels it as username/email in copy.
+// Password is optional: blank means "keep current password".
+const editModal = ref<{
+  open: boolean
+  user: AdminUser | null
+  email: string
+  emailVerified: boolean
+  password: string
+  balanceYuan: string
+  showPassword: boolean
+  busy: boolean
+  err: string | null
+}>({
+  open: false,
+  user: null,
+  email: '',
+  emailVerified: false,
+  password: '',
+  balanceYuan: '',
+  showPassword: false,
+  busy: false,
+  err: null,
+})
+
 async function reload() {
   loading.value = true
   error.value = null
@@ -209,6 +234,20 @@ function openCreate() {
   }
 }
 
+function openEdit(u: AdminUser) {
+  editModal.value = {
+    open: true,
+    user: u,
+    email: u.email || '',
+    emailVerified: u.email_verified,
+    password: '',
+    balanceYuan: (u.balance_cents / 100).toFixed(2),
+    showPassword: false,
+    busy: false,
+    err: null,
+  }
+}
+
 async function submitCreate() {
   const m = createModal.value
   const email = m.email.trim()
@@ -255,6 +294,56 @@ async function submitCreate() {
       m.err = t('admin.users.create.emailExists')
     } else {
       m.err = formatError(e, t('admin.users.create.failed'))
+    }
+  } finally {
+    m.busy = false
+  }
+}
+
+async function submitEdit() {
+  const m = editModal.value
+  if (!m.user) return
+  const email = m.email.trim()
+  if (!email) {
+    m.err = t('admin.users.edit.emailRequired')
+    return
+  }
+  if (m.password && m.password.length < 8) {
+    m.err = t('admin.users.edit.passwordMin')
+    return
+  }
+  const balanceText = String(m.balanceYuan ?? '').trim()
+  if (!balanceText) {
+    m.err = t('admin.users.edit.balanceRequired')
+    return
+  }
+  const balanceYuan = Number(balanceText)
+  if (!Number.isFinite(balanceYuan) || balanceYuan < 0) {
+    m.err = t('admin.users.edit.balanceInvalid')
+    return
+  }
+
+  const fields: { email: string; email_verified: boolean; password?: string; balance_cents: number } = {
+    email,
+    email_verified: m.emailVerified,
+    balance_cents: Math.round(balanceYuan * 100),
+  }
+  if (m.password) fields.password = m.password
+
+  m.busy = true
+  m.err = null
+  try {
+    const updated = await adminUsersApi.update(m.user.id, fields)
+    const i = users.value.findIndex(x => x.id === updated.id)
+    if (i >= 0) users.value.splice(i, 1, updated)
+    m.open = false
+    showFlash('ok', t('admin.users.edit.success', { email: updated.email || `#${updated.id}` }))
+  } catch (e: any) {
+    const status = e?.response?.status
+    if (status === 409) {
+      m.err = t('admin.users.edit.emailExists')
+    } else {
+      m.err = formatError(e, t('admin.users.edit.failed'))
     }
   } finally {
     m.busy = false
@@ -895,6 +984,13 @@ onUnmounted(() => {
 
             <div class="mt-4 flex flex-wrap items-center justify-end gap-1.5 border-t border-surface-100 pt-3 dark:border-surface-800">
               <button
+                :title="$t('admin.users.edit.open')"
+                class="inline-flex h-8 items-center rounded-lg border border-surface-200 bg-surface-0 px-2.5 text-xs font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+                @click="openEdit(u)"
+              >
+                {{ $t('admin.users.edit.open') }}
+              </button>
+              <button
                 :title="u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend')"
                 class="inline-flex h-8 items-center rounded-lg border border-surface-200 bg-surface-0 px-2.5 text-xs font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
                 @click="toggleSuspend(u)"
@@ -962,7 +1058,7 @@ onUnmounted(() => {
                 </span>
               </th>
               <th class="px-4 py-3 font-medium">{{ $t('admin.users.column.lastActive') }}</th>
-              <th class="sticky right-0 z-10 min-w-[148px] border-l border-surface-100 bg-surface-0 px-4 py-3 text-right font-medium dark:border-surface-700 dark:bg-surface-900">{{ $t('admin.users.column.actions') }}</th>
+              <th class="sticky right-0 z-10 min-w-[188px] border-l border-surface-100 bg-surface-0 px-4 py-3 text-right font-medium dark:border-surface-700 dark:bg-surface-900">{{ $t('admin.users.column.actions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-surface-100 dark:divide-surface-700">
@@ -1056,6 +1152,13 @@ onUnmounted(() => {
               </td>
               <td class="sticky right-0 border-l border-surface-100 bg-surface-0 px-4 py-3.5 whitespace-nowrap transition-colors group-hover/row:bg-surface-50/95 dark:border-surface-700 dark:bg-surface-900 dark:group-hover/row:bg-surface-800/95">
                 <div class="flex items-center justify-end gap-1.5">
+                  <button
+                    :title="$t('admin.users.edit.open')"
+                    class="inline-flex h-7 items-center rounded-lg border border-surface-200 bg-surface-0 px-2 text-xs font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+                    @click="openEdit(u)"
+                  >
+                    {{ $t('admin.users.edit.open') }}
+                  </button>
                   <button
                     :title="u.status === 'suspended' ? $t('admin.users.unsuspend') : $t('admin.users.suspend')"
                     class="inline-flex h-7 items-center rounded-lg border border-surface-200 bg-surface-0 px-2 text-xs font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-ink-900 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
@@ -1199,6 +1302,114 @@ onUnmounted(() => {
           <footer class="-mx-6 -mb-5 flex justify-end gap-2 border-t border-surface-100 px-6 py-4 dark:border-surface-700">
             <button type="button" class="inline-flex h-9 items-center rounded-xl border border-surface-200 px-4 text-sm font-medium text-surface-700 transition-all hover:bg-surface-50 active:scale-[0.98] dark:border-surface-600 dark:text-surface-200 dark:hover:bg-surface-800" @click="createModal.open = false">{{ $t('admin.users.create.cancel') }}</button>
             <button type="submit" :disabled="createModal.busy" class="inline-flex h-9 items-center rounded-xl bg-accent-600 px-4 text-sm font-medium text-white shadow-card transition-all hover:bg-accent-500 active:scale-[0.98] disabled:opacity-60 dark:bg-accent-500 dark:hover:bg-accent-400">{{ createModal.busy ? $t('admin.users.create.submitting') : $t('admin.users.create.submit') }}</button>
+          </footer>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit-user modal -->
+    <div
+      v-if="editModal.open"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      @click.self="editModal.open = false"
+    >
+      <div class="w-full max-w-md animate-scale-in rounded-2xl bg-surface-0 shadow-elevated dark:bg-surface-900">
+        <header class="flex items-center justify-between border-b border-surface-100 px-6 py-5 dark:border-surface-700">
+          <div>
+            <h2 class="text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.users.edit.title') }}</h2>
+            <p class="mt-0.5 text-xs text-surface-500 dark:text-surface-400">{{ editModal.user ? `#${editModal.user.id}` : '' }}</p>
+          </div>
+          <button class="flex h-8 w-8 items-center justify-center rounded-lg text-surface-400 transition-colors hover:bg-surface-100 hover:text-ink-900 dark:hover:bg-surface-800 dark:hover:text-surface-50" @click="editModal.open = false">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </header>
+        <form class="space-y-4 px-6 py-5" @submit.prevent="submitEdit">
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300" for="edit-email">{{ $t('admin.users.edit.emailLabel') }}</label>
+            <input
+              id="edit-email"
+              v-model="editModal.email"
+              type="email"
+              required
+              autocomplete="off"
+              :placeholder="$t('admin.users.create.emailPlaceholder')"
+              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+            />
+          </div>
+          <div class="rounded-xl border border-surface-100 px-3.5 py-3 dark:border-surface-700">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.users.edit.verifiedLabel') }}</div>
+                <div class="mt-1 text-2xs text-surface-500 dark:text-surface-400">
+                  {{ editModal.emailVerified ? $t('admin.users.verified') : $t('admin.users.unverified') }}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="editModal.emailVerified"
+                class="inline-flex h-7 items-center gap-2 rounded-full border px-2 text-xs font-medium transition-colors"
+                :class="editModal.emailVerified
+                  ? 'border-accent-500/30 bg-accent-50 text-accent-700 dark:border-accent-500/30 dark:bg-accent-500/15 dark:text-accent-300'
+                  : 'border-surface-200 bg-surface-0 text-surface-500 hover:bg-surface-50 hover:text-surface-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-200'"
+                @click="editModal.emailVerified = !editModal.emailVerified"
+              >
+                <span
+                  class="relative h-4 w-7 rounded-full transition-colors"
+                  :class="editModal.emailVerified ? 'bg-accent-500' : 'bg-surface-300 dark:bg-surface-700'"
+                >
+                  <span
+                    class="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform"
+                    :class="editModal.emailVerified ? 'translate-x-3' : 'translate-x-0'"
+                  />
+                </span>
+                <span>{{ editModal.emailVerified ? $t('admin.users.verified') : $t('admin.users.unverified') }}</span>
+              </button>
+            </div>
+            <p class="mt-2 text-2xs text-surface-500 dark:text-surface-400">{{ $t('admin.users.edit.verifiedHint') }}</p>
+          </div>
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300" for="edit-password">{{ $t('admin.users.edit.passwordLabel') }}</label>
+            <div class="relative">
+              <input
+                id="edit-password"
+                v-model="editModal.password"
+                :type="editModal.showPassword ? 'text' : 'password'"
+                minlength="8"
+                autocomplete="new-password"
+                :placeholder="$t('admin.users.edit.passwordPlaceholder')"
+                class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 pr-11 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+              />
+              <button
+                type="button"
+                :title="editModal.showPassword ? $t('admin.users.create.hidePassword') : $t('admin.users.create.showPassword')"
+                class="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-700 dark:hover:text-surface-200"
+                @click="editModal.showPassword = !editModal.showPassword"
+              >
+                <svg v-if="editModal.showPassword" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><path d="M1 1l22 22" /></svg>
+                <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+              </button>
+            </div>
+            <p class="mt-1 text-2xs text-surface-500 dark:text-surface-400">{{ $t('admin.users.edit.passwordHint') }}</p>
+          </div>
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-surface-600 dark:text-surface-300" for="edit-balance">{{ $t('admin.users.edit.balanceLabel') }}</label>
+            <input
+              id="edit-balance"
+              v-model="editModal.balanceYuan"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              :placeholder="$t('admin.users.edit.balancePlaceholder')"
+              class="block w-full rounded-xl border border-surface-200 bg-surface-0 px-3.5 py-2.5 text-sm transition-colors focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/40 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100"
+            />
+            <p class="mt-1 text-2xs text-surface-500 dark:text-surface-400">{{ $t('admin.users.edit.balanceHint') }}</p>
+          </div>
+          <p v-if="editModal.err" class="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300">{{ editModal.err }}</p>
+          <footer class="-mx-6 -mb-5 flex justify-end gap-2 border-t border-surface-100 px-6 py-4 dark:border-surface-700">
+            <button type="button" class="inline-flex h-9 items-center rounded-xl border border-surface-200 px-4 text-sm font-medium text-surface-700 transition-all hover:bg-surface-50 active:scale-[0.98] dark:border-surface-600 dark:text-surface-200 dark:hover:bg-surface-800" @click="editModal.open = false">{{ $t('admin.users.edit.cancel') }}</button>
+            <button type="submit" :disabled="editModal.busy" class="inline-flex h-9 items-center rounded-xl bg-accent-600 px-4 text-sm font-medium text-white shadow-card transition-all hover:bg-accent-500 active:scale-[0.98] disabled:opacity-60 dark:bg-accent-500 dark:hover:bg-accent-400">{{ editModal.busy ? $t('admin.users.edit.submitting') : $t('admin.users.edit.submit') }}</button>
           </footer>
         </form>
       </div>

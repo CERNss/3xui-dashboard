@@ -134,9 +134,14 @@ func (h *UserHandler) Update(c *gin.Context) {
 		switch {
 		case errors.Is(err, usersvc.ErrEmailTaken):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-		case errors.Is(err, usersvc.ErrInvalidEmail):
+		case errors.Is(err, usersvc.ErrInvalidEmail),
+			errors.Is(err, usersvc.ErrPasswordTooShort):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
+			if strings.Contains(err.Error(), "balance_cents") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return

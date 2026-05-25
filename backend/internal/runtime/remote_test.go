@@ -375,12 +375,14 @@ func TestNormalizeBasePath(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"", "/"},
-		{"/", "/"},
+		{"", "/panel/"},
+		{"/", "/panel/"},
 		{"admin", "/admin/"},
 		{"/admin", "/admin/"},
 		{"admin/", "/admin/"},
 		{"/admin/", "/admin/"},
+		{"panel", "/panel/"},
+		{"/panel", "/panel/"},
 		{" /a/ ", "/a/"},
 	}
 	for _, c := range cases {
@@ -391,11 +393,28 @@ func TestNormalizeBasePath(t *testing.T) {
 }
 
 func TestBuildBaseURL(t *testing.T) {
-	n := &model.Node{Scheme: "https", Host: "node.example.com", Port: 2053, BasePath: "panel"}
+	n := &model.Node{Scheme: "https", Host: "node.example.com", Port: 2053, BasePath: "/panel/"}
 	got := buildBaseURL(n)
 	want := "https://node.example.com:2053/panel/"
 	if got != want {
 		t.Errorf("buildBaseURL = %q, want %q", got, want)
+	}
+}
+
+func TestRemoteURLUsesPanelPath(t *testing.T) {
+	r := NewRemote(&model.Node{
+		ID:       1,
+		Name:     "node",
+		Scheme:   "https",
+		Host:     "node.example.com",
+		Port:     2053,
+		BasePath: "/panel/",
+	}, http.DefaultClient, testLogger())
+
+	got := r.url("/server/status")
+	want := "https://node.example.com:2053/panel/api/server/status"
+	if got != want {
+		t.Errorf("url = %q, want %q", got, want)
 	}
 }
 

@@ -20,6 +20,12 @@ func TestNormalize_TrimsAndLowercases(t *testing.T) {
 	if in.Name != "Node One" {
 		t.Errorf("Name = %q, want trimmed", in.Name)
 	}
+	if in.Area != "unknown" {
+		t.Errorf("Area = %q, want unknown default", in.Area)
+	}
+	if in.Province != "unknown" {
+		t.Errorf("Province = %q, want unknown default", in.Province)
+	}
 	if in.Scheme != "https" {
 		t.Errorf("Scheme = %q, want https", in.Scheme)
 	}
@@ -28,6 +34,126 @@ func TestNormalize_TrimsAndLowercases(t *testing.T) {
 	}
 	if in.APIToken != "token" {
 		t.Errorf("APIToken = %q, want trimmed", in.APIToken)
+	}
+}
+
+func TestNormalize_TrimsAreaAndProvince(t *testing.T) {
+	in := Input{
+		Name:     "n",
+		Area:     " sg ",
+		Province: "  Central  ",
+		Scheme:   "https",
+		Host:     "host.example.com",
+		Port:     2053,
+		APIToken: "token",
+	}
+	if err := Normalize(&in); err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if in.Area != "sg" {
+		t.Errorf("Area = %q, want sg", in.Area)
+	}
+	if in.Province != "Central" {
+		t.Errorf("Province = %q, want Central", in.Province)
+	}
+}
+
+func TestNormalize_DetectsAreaAndProvince(t *testing.T) {
+	in := Input{
+		Name:     "us-redmond-1",
+		Scheme:   "https",
+		Host:     "panel.seattle.example.com",
+		Port:     2053,
+		APIToken: "token",
+	}
+	if err := Normalize(&in); err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if in.Area != "us" {
+		t.Errorf("Area = %q, want us", in.Area)
+	}
+	if in.Province != "Washington" {
+		t.Errorf("Province = %q, want Washington", in.Province)
+	}
+}
+
+func TestNormalize_DetectsAreaAndFallsBackUnknownProvince(t *testing.T) {
+	in := Input{
+		Name:     "singapore-edge",
+		Scheme:   "https",
+		Host:     "panel.example.com",
+		Port:     2053,
+		APIToken: "token",
+	}
+	if err := Normalize(&in); err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if in.Area != "sg" {
+		t.Errorf("Area = %q, want sg", in.Area)
+	}
+	if in.Province != "unknown" {
+		t.Errorf("Province = %q, want unknown", in.Province)
+	}
+}
+
+func TestNormalize_DetectsAreaFromProvince(t *testing.T) {
+	in := Input{
+		Name:     "edge",
+		Province: "Tokyo",
+		Scheme:   "https",
+		Host:     "host.example.com",
+		Port:     2053,
+		APIToken: "token",
+	}
+	if err := Normalize(&in); err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if in.Area != "jp" {
+		t.Errorf("Area = %q, want jp", in.Area)
+	}
+	if in.Province != "Tokyo" {
+		t.Errorf("Province = %q, want Tokyo", in.Province)
+	}
+}
+
+func TestNormalize_UnknownAreaStillAllowsInput(t *testing.T) {
+	in := Input{
+		Name:     "x",
+		Area:     "mars",
+		Scheme:   "https",
+		Host:     "host.example.com",
+		Port:     2053,
+		APIToken: "token",
+	}
+	if err := Normalize(&in); err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if in.Area != "unknown" {
+		t.Errorf("Area = %q, want unknown", in.Area)
+	}
+	if in.Province != "unknown" {
+		t.Errorf("Province = %q, want unknown", in.Province)
+	}
+}
+
+func TestNormalize_UnknownProvinceTriggersDetection(t *testing.T) {
+	in := Input{
+		Name:     "redmond-panel",
+		Area:     "us",
+		Province: "未知",
+		Scheme:   "https",
+		Host:     "host.example.com",
+		Port:     2053,
+		APIToken: "token",
+	}
+	if err := Normalize(&in); err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if in.Area != "us" {
+		t.Errorf("Area = %q, want us", in.Area)
+	}
+	if in.Province != "Redmond" {
+		t.Errorf("Province = %q, want Redmond", in.Province)
 	}
 }
 

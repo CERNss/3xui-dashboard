@@ -37,7 +37,13 @@ func (h *NodeHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // ---- handlers -------------------------------------------------------------
 
 func (h *NodeHandler) List(c *gin.Context) {
-	nodes, err := h.svc.List(c.Request.Context())
+	nodes, err := h.svc.List(c.Request.Context(), node.ListFilter{
+		Query:    c.Query("query"),
+		Area:     c.Query("area"),
+		Province: c.Query("province"),
+		Scheme:   c.Query("scheme"),
+		Status:   c.Query("status"),
+	})
 	if err != nil {
 		h.serverError(c, err)
 		return

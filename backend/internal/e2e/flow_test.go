@@ -55,13 +55,15 @@ func TestFullFlow(t *testing.T) {
 	u, _ := url.Parse(h.panel.URL())
 	port, _ := strconv.Atoi(u.Port())
 	var node struct {
-		ID     int64  `json:"id"`
-		Status string `json:"status"`
+		ID       int64  `json:"id"`
+		Area     string `json:"area"`
+		Province string `json:"province"`
+		Status   string `json:"status"`
 	}
 	if got := h.do(t, req{
 		method: http.MethodPost, path: "/api/admin/nodes", token: adminTok,
 		body: map[string]any{
-			"name": "mock-node", "scheme": "http", "host": u.Hostname(),
+			"name": "mock-node", "area": "sg", "scheme": "http", "host": u.Hostname(),
 			"port": port, "base_path": "", "api_token": "test-token", "enabled": true,
 		},
 	}, &node); got != http.StatusCreated {
@@ -69,6 +71,12 @@ func TestFullFlow(t *testing.T) {
 	}
 	if node.Status != "unknown" {
 		t.Errorf("new node status = %q, want unknown", node.Status)
+	}
+	if node.Area != "sg" {
+		t.Errorf("new node area = %q, want sg", node.Area)
+	}
+	if node.Province != "unknown" {
+		t.Errorf("new node province = %q, want unknown", node.Province)
 	}
 
 	// Probe the node — must reach the mock panel and flip to online.
@@ -87,6 +95,24 @@ func TestFullFlow(t *testing.T) {
 	}
 	if h.panel.Calls("/panel/api/server/status") == 0 {
 		t.Error("probe didn't reach mock panel")
+	}
+
+	var filteredNodes struct {
+		Nodes []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+			Area string `json:"area"`
+		} `json:"nodes"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodGet,
+		path:   "/api/admin/nodes?area=sg&query=mock&scheme=http&status=online",
+		token:  adminTok,
+	}, &filteredNodes); got != http.StatusOK {
+		t.Fatalf("filtered nodes: status=%d", got)
+	}
+	if len(filteredNodes.Nodes) != 1 || filteredNodes.Nodes[0].ID != node.ID || filteredNodes.Nodes[0].Area != "sg" {
+		t.Fatalf("filtered nodes = %+v, want one sg node %d", filteredNodes.Nodes, node.ID)
 	}
 
 	// Reload node — status should now be online.

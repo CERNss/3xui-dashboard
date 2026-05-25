@@ -59,9 +59,8 @@ func NewRemote(node *model.Node, httpClient *http.Client, lg *slog.Logger) *Remo
 // bound to.
 func (r *Remote) NodeID() int64 { return r.nodeID }
 
-// buildBaseURL composes the panel base URL. basePath is normalized to
-// always have a leading + trailing slash; an empty basePath becomes
-// "/".
+// buildBaseURL composes the panel root URL. BasePath is the visible
+// panel path (for example "/panel/"); an empty value uses "/panel/".
 func buildBaseURL(n *model.Node) string {
 	scheme := n.Scheme
 	if scheme == "" {
@@ -72,11 +71,11 @@ func buildBaseURL(n *model.Node) string {
 }
 
 // normalizeBasePath returns p with a leading "/" and trailing "/".
-// Empty input is normalized to "/".
+// Empty input is normalized to the stock 3x-ui panel path.
 func normalizeBasePath(p string) string {
 	p = strings.TrimSpace(p)
-	if p == "" {
-		return "/"
+	if p == "" || p == "/" {
+		return "/panel/"
 	}
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
@@ -92,7 +91,7 @@ func normalizeBasePath(p string) string {
 // ---------------------------------------------------------------------------
 
 func (r *Remote) url(path string) string {
-	return r.baseURL + "panel/api" + path
+	return r.baseURL + "api" + path
 }
 
 func (r *Remote) do(ctx context.Context, req *http.Request) (*Envelope, error) {

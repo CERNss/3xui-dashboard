@@ -152,6 +152,7 @@ export default {
         'slide-up': 'slideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-down': 'slideDown 0.24s cubic-bezier(0.16, 1, 0.3, 1)',
         'scale-in': 'scaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+        'toast-progress': 'toastProgress linear forwards',
         shimmer: 'shimmer 1.4s linear infinite'
       },
       keyframes: {
@@ -174,6 +175,10 @@ export default {
         shimmer: {
           '0%':   { backgroundPosition: '-400px 0' },
           '100%': { backgroundPosition: '400px 0' }
+        },
+        toastProgress: {
+          '0%': { transform: 'scaleX(1)' },
+          '100%': { transform: 'scaleX(0)' }
         }
       },
       backgroundImage: {
@@ -185,7 +190,7 @@ export default {
       },
       // Page max-width — matches AdminLayout container.
       maxWidth: {
-        page: '1500px'
+        page: '1760px'
       }
     }
   },

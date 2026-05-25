@@ -12,9 +12,15 @@ const apiStubs = vi.hoisted(() => ({
   disable: vi.fn(),
   remove: vi.fn(),
   probe: vi.fn(),
+  fleet: vi.fn(),
 }))
 vi.mock('@/api/admin/nodes', () => ({
   nodesApi: apiStubs,
+}))
+vi.mock('@/api/admin/inbounds', () => ({
+  inboundsApi: {
+    fleet: apiStubs.fleet,
+  },
 }))
 
 import Nodes from './Nodes.vue'
@@ -23,6 +29,8 @@ function makeNode(over: Partial<Node> = {}): Node {
   return {
     id: 1,
     name: 'tokyo-1',
+    area: 'jp',
+    province: 'Tokyo',
     scheme: 'https',
     host: 'node1.example.com',
     port: 2053,
@@ -56,12 +64,20 @@ async function mountNodes() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers()
   apiStubs.list.mockResolvedValue([
     makeNode(),
-    makeNode({ id: 2, name: 'sg-1', status: 'offline', host: 'node2.example.com' }),
+    makeNode({ id: 2, name: 'sg-1', area: 'sg', province: 'unknown', status: 'offline', host: 'node2.example.com' }),
   ])
+  apiStubs.fleet.mockResolvedValue({
+    inbounds: [
+      { node_id: 1, node_name: 'tokyo-1', inbound: { clientStats: [{ email: 'a@example.com' }] } },
+      { node_id: 2, node_name: 'sg-1', inbound: { clientStats: [] } },
+    ],
+  })
 })
 afterEach(() => {
+  vi.useRealTimers()
   vi.clearAllMocks()
   document.body.innerHTML = ''
 })
@@ -79,6 +95,74 @@ describe('admin/Nodes.vue smoke', () => {
     expect(w.text()).toContain('sg-1')
     expect(w.text()).toContain('node1.example.com')
     expect(w.text()).toContain('node2.example.com')
+  })
+
+  it('sends backend search filters', async () => {
+    const w = await mountNodes()
+    apiStubs.list.mockClear()
+    apiStubs.list.mockResolvedValueOnce([
+      makeNode({ id: 2, name: 'sg-1', area: 'sg', province: 'unknown', status: 'offline', host: 'node2.example.com' }),
+    ])
+
+    await w.find('input[placeholder="搜索代理..."]').setValue('node2')
+    await vi.advanceTimersByTimeAsync(260)
+    await flushPromises()
+
+    expect(apiStubs.list).toHaveBeenLastCalledWith({ query: 'node2', area: undefined, province: undefined, scheme: undefined, status: undefined })
+    expect(w.text()).toContain('sg-1')
+    expect(w.text()).toContain('显示 1 个，共 1 个节点')
+    expect(w.findAll('tbody tr')).toHaveLength(1)
+    expect(w.find('tbody tr').text()).not.toContain('tokyo-1')
+  })
+
+  it('sends backend area and province filters', async () => {
+    const w = await mountNodes()
+    apiStubs.list.mockClear()
+    apiStubs.list.mockResolvedValueOnce([
+      makeNode({ id: 2, name: 'sg-1', area: 'sg', province: 'unknown', status: 'offline', host: 'node2.example.com' }),
+    ])
+
+    await w.find('select[aria-label="按区域筛选"]').setValue('sg')
+    await vi.advanceTimersByTimeAsync(260)
+    await flushPromises()
+
+    expect(apiStubs.list).toHaveBeenLastCalledWith({ query: undefined, area: 'sg', province: undefined, scheme: undefined, status: undefined })
+    expect(w.text()).toContain('新加坡 · 未知')
+    expect(w.text()).toContain('显示 1 个，共 1 个节点')
+    expect(w.findAll('tbody tr')).toHaveLength(1)
+    expect(w.find('tbody tr').text()).toContain('sg-1')
+    expect(w.find('tbody tr').text()).not.toContain('tokyo-1')
+
+    apiStubs.list.mockResolvedValueOnce([
+      makeNode({ id: 1, name: 'tokyo-1', area: 'jp', province: 'Tokyo' }),
+    ])
+    await w.find('input[aria-label="按地区筛选"]').setValue('Tokyo')
+    await vi.advanceTimersByTimeAsync(260)
+    await flushPromises()
+
+    expect(apiStubs.list).toHaveBeenLastCalledWith({ query: undefined, area: 'sg', province: 'Tokyo', scheme: undefined, status: undefined })
+  })
+
+  it('sends backend protocol and status filters', async () => {
+    const w = await mountNodes()
+    apiStubs.list.mockClear()
+    apiStubs.list.mockResolvedValueOnce([
+      makeNode({ id: 2, name: 'sg-1', area: 'sg', province: 'unknown', scheme: 'http', status: 'offline', host: 'node2.example.com' }),
+    ])
+
+    await w.find('select[aria-label="按协议筛选"]').setValue('http')
+    await vi.advanceTimersByTimeAsync(260)
+    await flushPromises()
+    expect(apiStubs.list).toHaveBeenLastCalledWith({ query: undefined, area: undefined, province: undefined, scheme: 'http', status: undefined })
+
+    apiStubs.list.mockResolvedValueOnce([
+      makeNode({ id: 2, name: 'sg-1', area: 'sg', province: 'unknown', scheme: 'http', status: 'offline', host: 'node2.example.com' }),
+    ])
+    await w.find('select[aria-label="按状态筛选"]').setValue('offline')
+    await vi.advanceTimersByTimeAsync(260)
+    await flushPromises()
+
+    expect(apiStubs.list).toHaveBeenLastCalledWith({ query: undefined, area: undefined, province: undefined, scheme: 'http', status: 'offline' })
   })
 
   it('shows xray version', async () => {
@@ -110,13 +194,32 @@ describe('admin/Nodes.vue smoke', () => {
     expect(w.text()).toContain('填好面板地址和这个面板的 API 密钥后，控制台会自动探测')
   })
 
+  it('fills connection fields from a pasted panel URL', async () => {
+    const w = await mountNodes()
+    const addBtn = w.findAll('button').find((b) => b.text().includes('添加节点'))
+    expect(addBtn).toBeDefined()
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await w.find('input[placeholder="https://tokyo-edge.example.net:2053/panel/"]').setValue('https://tokyo-edge.example.net:2053/panel/')
+
+    const formSelects = w.find('form').findAll('select')
+    expect((formSelects[0].element as HTMLSelectElement).value).toBe('unknown')
+    expect((formSelects[1].element as HTMLSelectElement).value).toBe('https')
+    expect(w.find('input[placeholder="node1.example.com"]').element).toHaveProperty('value', 'tokyo-edge.example.net')
+    expect(w.find('input[type="number"]').element).toHaveProperty('value', '2053')
+    expect(w.find('input[placeholder="/panel/ 或空"]').element).toHaveProperty('value', '/panel/')
+  })
+
   it('opens an edit modal with the selected node and saves through update', async () => {
     apiStubs.update.mockResolvedValue(makeNode({ name: 'tokyo-edit' }))
     const w = await mountNodes()
-    const editBtn = w.findAll('button[title="编辑"]')[0]
+    const editBtn = w.findAll('button[title="编辑"]').find((button) =>
+      button.element.closest('article, tr')?.textContent?.includes('tokyo-1'),
+    )
     expect(editBtn).toBeDefined()
 
-    await editBtn.trigger('click')
+    await editBtn!.trigger('click')
     await flushPromises()
 
     expect(w.text()).toContain('编辑节点 · tokyo-1')
@@ -130,6 +233,8 @@ describe('admin/Nodes.vue smoke', () => {
 
     expect(apiStubs.update).toHaveBeenCalledWith(1, expect.objectContaining({
       name: 'tokyo-renamed',
+      area: 'jp',
+      province: 'Tokyo',
       host: 'node1.example.com',
       api_token: '',
     }))

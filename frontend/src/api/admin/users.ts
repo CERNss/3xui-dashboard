@@ -40,7 +40,7 @@ export const adminUsersApi = {
   create: (body: { email: string; password: string; initial_balance_cents?: number }) =>
     adminClient.post<AdminUser>('/users', body).then((r) => r.data),
 
-  update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'status' | 'auto_renew'>>) =>
+  update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'email_verified' | 'status' | 'auto_renew' | 'balance_cents'>> & { password?: string }) =>
     adminClient.put<AdminUser>(`/users/${id}`, fields).then((r) => r.data),
 
   suspend: (id: number) =>

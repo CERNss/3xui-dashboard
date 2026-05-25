@@ -112,4 +112,29 @@ describe('Users.vue smoke', () => {
       initial_balance_cents: 1234,
     })
   })
+
+  it('updates email and password from the edit dialog', async () => {
+    apiStubs.update.mockResolvedValue(makeUser({ email: 'alice2@example.com' }))
+    const w = await mountUsers()
+
+    const aliceCard = w.findAll('article').find((article) => article.text().includes('alice@example.com'))
+    expect(aliceCard).toBeTruthy()
+    const editButton = aliceCard!.findAll('button').find((button) => button.text().includes('编辑'))
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await w.find('#edit-email').setValue('alice2@example.com')
+    await w.find('#edit-password').setValue('newpass123')
+    await w.find('#edit-balance').setValue(45.67)
+    const editForm = w.findAll('form').find((form) => form.find('#edit-email').exists())!
+    await editForm.find('button[role="switch"]').trigger('click')
+    await editForm.trigger('submit')
+    await flushPromises()
+
+    expect(apiStubs.update).toHaveBeenCalledWith(1, {
+      email: 'alice2@example.com',
+      email_verified: false,
+      password: 'newpass123',
+      balance_cents: 4567,
+    })
+  })
 })

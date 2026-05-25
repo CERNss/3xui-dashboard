@@ -3,6 +3,8 @@ import { adminClient } from '../client/admin'
 export interface Node {
   id: number
   name: string
+  area: string
+  province: string
   scheme: 'http' | 'https'
   host: string
   port: number
@@ -34,6 +36,8 @@ export interface NodeMetricsResult {
 
 export interface NodeInput {
   name: string
+  area: string
+  province: string
   scheme: 'http' | 'https'
   host: string
   port: number
@@ -43,7 +47,8 @@ export interface NodeInput {
 }
 
 export const nodesApi = {
-  list: () => adminClient.get<{ nodes: Node[] }>('/nodes').then((r) => r.data.nodes),
+  list: (params?: { query?: string; area?: string; province?: string; scheme?: string; status?: string }) =>
+    adminClient.get<{ nodes: Node[] }>('/nodes', { params }).then((r) => r.data.nodes),
   get: (id: number) => adminClient.get<Node>(`/nodes/${id}`).then((r) => r.data),
   create: (body: NodeInput) => adminClient.post<Node>('/nodes', body).then((r) => r.data),
   update: (id: number, body: NodeInput) =>

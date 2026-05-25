@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
 )
@@ -125,5 +127,51 @@ func TestBindEmail_StoresUnverified(t *testing.T) {
 	}
 	if got.EmailVerified {
 		t.Error("expected bind email to leave email_verified=false")
+	}
+}
+
+func TestAdminUpdate_CanUpdateEmailAndPassword(t *testing.T) {
+	_, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	u, err := svc.AdminCreate(ctx, AdminCreateInput{
+		Email:    "old@example.com",
+		Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("admin create: %v", err)
+	}
+
+	email := "new@example.com"
+	password := "newpass123"
+	balance := int64(12345)
+	verified := false
+	updated, err := svc.AdminUpdate(ctx, u.ID, AdminUpdateInput{
+		Email:         &email,
+		Password:      &password,
+		EmailVerified: &verified,
+		BalanceCents:  &balance,
+	})
+	if err != nil {
+		t.Fatalf("admin update: %v", err)
+	}
+	if updated.Email == nil || *updated.Email != "new@example.com" {
+		t.Fatalf("email not updated: %v", updated.Email)
+	}
+	if updated.EmailVerified {
+		t.Fatal("email_verified should follow the admin patch")
+	}
+	if updated.BalanceCents != 12345 {
+		t.Fatalf("balance_cents = %d, want 12345", updated.BalanceCents)
+	}
+
+	got, err := svc.users.Get(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("get updated user: %v", err)
+	}
+	if got.PasswordHash == nil {
+		t.Fatal("password_hash not set")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(*got.PasswordHash), []byte(password)); err != nil {
+		t.Fatalf("password hash does not match new password: %v", err)
 	}
 }

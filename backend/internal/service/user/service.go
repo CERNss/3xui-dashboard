@@ -481,10 +481,12 @@ func (s *Service) AdminCreate(ctx context.Context, in AdminCreateInput) (*model.
 
 // AdminUpdateInput is the patch shape admins can apply.
 type AdminUpdateInput struct {
-	Email        *string `json:"email,omitempty"`
-	Status       *string `json:"status,omitempty"` // active | suspended
-	BalanceCents *int64  `json:"balance_cents,omitempty"`
-	AutoRenew    *bool   `json:"auto_renew,omitempty"`
+	Email         *string `json:"email,omitempty"`
+	Password      *string `json:"password,omitempty"`
+	EmailVerified *bool   `json:"email_verified,omitempty"`
+	Status        *string `json:"status,omitempty"` // active | suspended
+	BalanceCents  *int64  `json:"balance_cents,omitempty"`
+	AutoRenew     *bool   `json:"auto_renew,omitempty"`
 }
 
 // AdminUpdate applies the patch and returns the new user row.
@@ -504,6 +506,19 @@ func (s *Service) AdminUpdate(ctx context.Context, userID int64, in AdminUpdateI
 		}
 		updates["email"] = e
 	}
+	if in.Password != nil {
+		if len(*in.Password) < 8 {
+			return nil, ErrPasswordTooShort
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(*in.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		updates["password_hash"] = string(hash)
+	}
+	if in.EmailVerified != nil {
+		updates["email_verified"] = *in.EmailVerified
+	}
 	if in.Status != nil {
 		switch *in.Status {
 		case model.UserStatusActive, model.UserStatusSuspended:
@@ -513,6 +528,9 @@ func (s *Service) AdminUpdate(ctx context.Context, userID int64, in AdminUpdateI
 		}
 	}
 	if in.BalanceCents != nil {
+		if *in.BalanceCents < 0 {
+			return nil, fmt.Errorf("user.AdminUpdate: balance_cents must be >= 0")
+		}
 		updates["balance_cents"] = *in.BalanceCents
 	}
 	if in.AutoRenew != nil {

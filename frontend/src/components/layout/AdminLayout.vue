@@ -27,9 +27,6 @@ const theme = useThemeStore()
 const { t } = useI18n()
 const REPO_URL = 'https://github.com/cern/3xui-dashboard'
 
-// Mobile drawer state. Sidebar is always-on at md+ (md: visible),
-// off-canvas + toggleable below that. Close on route change so a
-// nav click doesn't leave the drawer hanging open.
 const drawerOpen = ref(false)
 watch(() => route.fullPath, () => { drawerOpen.value = false })
 const sidebarCollapsed = ref(readSidebarCollapsed())
@@ -168,25 +165,23 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 
 <template>
   <div class="app-dark-bg flex h-full bg-surface-50 dark:bg-surface-950">
-    <!-- Mobile backdrop — covers content when drawer is open. -->
     <div
       v-if="drawerOpen"
-      class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
+      class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm min-[520px]:hidden"
       @click="drawerOpen = false"
     />
 
     <aside
       :class="[
-        'app-dark-sidebar flex w-64 flex-col border-r border-surface-100/80 bg-surface-0 px-4 pb-5 pt-6 dark:border-surface-700/80',
-        'md:relative md:translate-x-0 md:shadow-none',
-        'fixed inset-y-0 left-0 z-40 shadow-elevated transition-[width,transform,padding] duration-200 ease-brand',
-        sidebarCollapsed ? 'md:w-[76px] md:px-3' : 'md:w-64',
-        drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+        'app-dark-sidebar flex h-full flex-col border-r border-surface-100/80 bg-surface-0 pb-5 pt-6 transition-[width,transform,padding] duration-200 ease-brand dark:border-surface-700/80',
+        'fixed inset-y-0 left-0 z-40 shadow-elevated min-[520px]:relative min-[520px]:z-10 min-[520px]:translate-x-0 min-[520px]:shadow-none',
+        sidebarCollapsed ? 'w-64 px-4 min-[520px]:w-[76px] min-[520px]:px-3' : 'w-64 px-4 min-[520px]:w-[76px] min-[520px]:px-3 lg:w-64 lg:px-4',
+        drawerOpen ? 'translate-x-0' : '-translate-x-full min-[520px]:translate-x-0',
       ]"
     >
       <!-- Brand -->
       <div
-        :class="sidebarCollapsed ? 'md:justify-center md:px-0' : 'px-2'"
+        :class="sidebarCollapsed ? 'px-2 min-[520px]:justify-center min-[520px]:px-0' : 'px-2 min-[520px]:max-lg:justify-center min-[520px]:max-lg:px-0'"
         class="mb-7 flex items-center gap-3"
       >
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-500 to-accent-700 text-white shadow-card ring-1 ring-accent-700/30">
@@ -195,7 +190,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
-        <div :class="sidebarCollapsed ? 'md:hidden' : ''" class="leading-tight">
+        <div :class="sidebarCollapsed ? 'min-[520px]:hidden' : 'min-[520px]:max-lg:hidden'" class="leading-tight">
           <div class="text-body-md font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ branding.title || $t('app.title') }}</div>
           <div class="text-eyebrow uppercase tracking-eyebrow text-surface-400">{{ branding.subtitle || $t('brand.centralPanel') }}</div>
         </div>
@@ -210,7 +205,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
           class="space-y-1 border-t border-surface-200/80 pt-3.5 dark:border-surface-700/70"
         >
           <div
-            :class="sidebarCollapsed ? 'md:hidden' : ''"
+            :class="sidebarCollapsed ? 'min-[520px]:hidden' : 'min-[520px]:max-lg:hidden'"
             class="px-3 pb-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-surface-500 dark:text-surface-400"
           >
             {{ section.title }}
@@ -219,9 +214,9 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
             v-for="item in section.items"
             :key="item.to"
             :to="item.to"
-            :title="sidebarCollapsed ? item.label : undefined"
+            :title="item.label"
             :aria-label="item.label"
-            :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2 md:before:left-0' : 'gap-3 px-3'"
+            :class="sidebarCollapsed ? 'gap-3 px-3 min-[520px]:justify-center min-[520px]:gap-0 min-[520px]:px-2 min-[520px]:before:left-0' : 'gap-3 px-3 min-[520px]:max-lg:justify-center min-[520px]:max-lg:gap-0 min-[520px]:max-lg:px-2 min-[520px]:max-lg:before:left-0'"
             class="group relative flex items-center rounded-xl py-2 font-medium text-surface-600 transition-all duration-150 ease-brand before:absolute before:inset-y-2 before:left-1 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
             active-class="!bg-surface-100 !text-accent-700 before:!bg-accent-500 dark:!bg-surface-800 dark:!text-accent-200 dark:before:!bg-accent-300"
             exact-active-class=""
@@ -237,7 +232,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
             >
               <path :d="item.icon" />
             </svg>
-            <span :class="sidebarCollapsed ? 'md:hidden' : ''">{{ item.label }}</span>
+            <span :class="sidebarCollapsed ? 'min-[520px]:hidden' : 'min-[520px]:max-lg:hidden'">{{ item.label }}</span>
           </router-link>
         </div>
       </nav>
@@ -247,7 +242,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
         type="button"
         :title="sidebarCollapsed ? (theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark')) : undefined"
         :aria-label="theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark')"
-        :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2' : 'gap-3 px-3'"
+        :class="sidebarCollapsed ? 'gap-3 px-3 min-[520px]:justify-center min-[520px]:gap-0 min-[520px]:px-2' : 'gap-3 px-3 min-[520px]:max-lg:justify-center min-[520px]:max-lg:gap-0 min-[520px]:max-lg:px-2'"
         class="group mt-3 flex w-full items-center rounded-xl py-2 text-sm font-medium text-surface-600 transition-all duration-150 ease-brand hover:bg-surface-100 hover:text-ink-900 dark:text-surface-300 dark:hover:bg-surface-800 dark:hover:text-surface-50"
         @click="theme.toggle()"
       >
@@ -259,14 +254,14 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
         <svg v-else class="h-[18px] w-[18px] shrink-0 transition-transform duration-200 ease-brand group-hover:scale-105" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <span :class="sidebarCollapsed ? 'md:hidden' : ''">{{ theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark') }}</span>
+        <span :class="sidebarCollapsed ? 'min-[520px]:hidden' : 'min-[520px]:max-lg:hidden'">{{ theme.theme === 'dark' ? $t('theme.light') : $t('theme.dark') }}</span>
       </button>
 
       <button
         type="button"
         :title="sidebarCollapsed ? $t('nav.expandSidebar') : $t('nav.collapseSidebar')"
         :aria-label="sidebarCollapsed ? $t('nav.expandSidebar') : $t('nav.collapseSidebar')"
-        :class="sidebarCollapsed ? 'md:justify-center md:gap-0 md:px-2' : 'gap-3 px-3'"
+        :class="sidebarCollapsed ? 'gap-3 px-3 min-[520px]:justify-center min-[520px]:gap-0 min-[520px]:px-2' : 'gap-3 px-3 min-[520px]:max-lg:justify-center min-[520px]:max-lg:gap-0 min-[520px]:max-lg:px-2'"
         class="group mt-3 flex w-full items-center rounded-xl border-t border-surface-100 pt-3 pb-2 text-sm font-medium text-surface-600 transition-colors hover:text-ink-900 dark:border-surface-800 dark:text-surface-300 dark:hover:text-surface-50"
         @click="toggleSidebarCollapsed"
       >
@@ -283,13 +278,13 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
           <path d="m11 17-5-5 5-5" />
           <path d="m18 17-5-5 5-5" />
         </svg>
-        <span :class="sidebarCollapsed ? 'md:hidden' : ''">{{ $t('nav.collapseSidebar') }}</span>
+        <span :class="sidebarCollapsed ? 'min-[520px]:hidden' : 'min-[520px]:max-lg:hidden'">{{ $t('nav.collapseSidebar') }}</span>
       </button>
 
     </aside>
 
     <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header class="app-dark-header hidden h-16 shrink-0 items-center justify-between gap-6 border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-700/80 md:flex lg:px-8">
+      <header class="app-dark-header hidden h-16 shrink-0 items-center justify-between gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-700/80 min-[520px]:flex md:gap-6 md:px-6 lg:px-8">
         <div class="min-w-0">
           <h1 class="truncate text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ pageTitle }}</h1>
           <p v-if="pageSubtitle" class="mt-0.5 truncate text-xs font-medium text-surface-600 dark:text-surface-200">{{ pageSubtitle }}</p>
@@ -309,9 +304,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
         </div>
       </header>
 
-      <!-- Mobile top bar: hamburger + brand. md:hidden because the
-           sidebar is always-visible at md+. -->
-      <header class="app-dark-header flex min-h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 py-2 dark:border-surface-700/80 md:hidden">
+      <header class="app-dark-header flex min-h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 py-2 dark:border-surface-700/80 min-[520px]:hidden">
         <button
           type="button"
           :aria-label="drawerOpen ? $t('a11y.closeNav') : $t('a11y.openNav')"
@@ -339,8 +332,8 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
         />
       </header>
 
-      <section class="min-h-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-page px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-9">
+      <section class="min-h-0 flex-1 overflow-hidden">
+        <div class="mx-auto h-full min-h-0 w-full max-w-page px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-7 lg:px-8 lg:py-9">
           <router-view />
         </div>
       </section>

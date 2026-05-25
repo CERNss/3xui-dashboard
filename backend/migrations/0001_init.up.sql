@@ -40,6 +40,8 @@ CREATE UNIQUE INDEX users_sub_id_unique        ON users (sub_id);
 CREATE TABLE nodes (
   id            BIGSERIAL        PRIMARY KEY,
   name          TEXT             NOT NULL,
+  area          TEXT             NOT NULL DEFAULT 'unknown',
+  province      TEXT             NOT NULL DEFAULT 'unknown',
   host          TEXT             NOT NULL,
   port          INTEGER          NOT NULL,
   base_path     TEXT             NOT NULL DEFAULT '',
@@ -55,6 +57,12 @@ CREATE TABLE nodes (
   updated_at    TIMESTAMPTZ      NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX nodes_name_unique ON nodes (LOWER(name));
+ALTER TABLE nodes ADD CONSTRAINT nodes_area_chk CHECK (
+  area IN ('jp', 'sg', 'hk', 'tw', 'us', 'gb', 'de', 'fr', 'nl', 'ca', 'au', 'kr', 'in', 'th', 'vn', 'unknown')
+);
+ALTER TABLE nodes ADD CONSTRAINT nodes_province_not_blank_chk CHECK (province <> '');
+CREATE INDEX nodes_area_idx ON nodes (area);
+CREATE INDEX nodes_area_province_idx ON nodes (area, province);
 
 -- ---------------------------------------------------------------------------
 -- client_ownerships — bridges a portal user to a 3x-ui client on a node's

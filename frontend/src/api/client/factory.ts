@@ -6,6 +6,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 import type { ApiEnvelope, ApiError } from '@/types/api'
+import { pushToast } from '@/composables/useToast'
 
 export interface ClientOptions {
   baseURL: string
@@ -43,6 +44,7 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
         }
         response.data = env.obj
       }
+      notifySuccess(response.config.method, response.config.url)
       return response
     },
     (error: AxiosError<ApiEnvelope<unknown>>) => {
@@ -65,4 +67,24 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
   )
 
   return instance
+}
+
+function notifySuccess(method?: string, url?: string) {
+  const m = method?.toUpperCase()
+  if (!m || m === 'GET') return
+  pushToast(successMessage(url))
+}
+
+function successMessage(url?: string): string {
+  const locale = currentLocale()
+  if (url?.includes('/auth/login')) {
+    return locale === 'zh' ? '登录成功！欢迎回来。' : 'Login successful! Welcome back.'
+  }
+  return locale === 'zh' ? '操作成功' : 'Operation successful'
+}
+
+function currentLocale(): 'en' | 'zh' {
+  const stored = globalThis.localStorage?.getItem('dashboard.locale')
+  if (stored === 'en' || stored === 'zh') return stored
+  return globalThis.navigator?.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }

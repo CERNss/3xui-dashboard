@@ -9,6 +9,8 @@ import "time"
 type Node struct {
 	ID          int64      `gorm:"primaryKey"                                  json:"id"`
 	Name        string     `gorm:"column:name;not null"                        json:"name"`
+	Area        string     `gorm:"column:area;not null;default:unknown"        json:"area"`
+	Province    string     `gorm:"column:province;not null;default:unknown"   json:"province"`
 	Scheme      string     `gorm:"column:scheme;not null;default:https"        json:"scheme"`
 	Host        string     `gorm:"column:host;not null"                        json:"host"`
 	Port        int        `gorm:"column:port;not null"                        json:"port"`
