@@ -1,9 +1,17 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout, AuthLayout, PortalLayout } from './components/layout'
+import AdminAuditLog from './views/admin/AuditLog'
+import AdminOrders from './views/admin/Orders'
+import AdminPlans from './views/admin/Plans'
+import AdminProvisioningPools from './views/admin/ProvisioningPools'
 import Login from './views/Login'
 import NotFound from './views/NotFound'
 import OIDCCallback from './views/OIDCCallback'
+import PortalOrders from './views/portal/Orders'
+import PortalPlans from './views/portal/Plans'
+import Subscription from './views/portal/Subscription'
+import Usage from './views/portal/Usage'
 
 interface PlaceholderViewProps {
   title: string
@@ -46,10 +54,10 @@ export function AppRouter() {
           <Route path="nodes" element={<PlaceholderView title="Nodes" />} />
           <Route path="inbounds" element={<PlaceholderView title="Inbounds" />} />
           <Route path="users" element={<PlaceholderView title="Users" />} />
-          <Route path="plans" element={<PlaceholderView title="Plans" />} />
-          <Route path="provisioning-pools" element={<PlaceholderView title="Provisioning Pools" />} />
-          <Route path="orders" element={<PlaceholderView title="Orders" />} />
-          <Route path="audit-log" element={<PlaceholderView title="Audit Log" />} />
+          <Route path="plans" element={<AdminPlans />} />
+          <Route path="provisioning-pools" element={<AdminProvisioningPools />} />
+          <Route path="orders" element={<AdminOrders />} />
+          <Route path="audit-log" element={<AdminAuditLog />} />
           <Route path="settings" element={<PlaceholderView title="Settings" />} />
           <Route path="*" element={<NotFound />} />
         </Route>
@@ -57,10 +65,10 @@ export function AppRouter() {
       <Route element={<ProtectedRoute area="portal" />}>
         <Route path="/portal" element={<PortalLayout />}>
           <Route index element={<Navigate replace to="/portal/subscription" />} />
-          <Route path="subscription" element={<PlaceholderView title="Subscription" />} />
-          <Route path="usage" element={<PlaceholderView title="Usage" />} />
-          <Route path="plans" element={<PlaceholderView title="Portal Plans" />} />
-          <Route path="orders" element={<PlaceholderView title="Portal Orders" />} />
+          <Route path="subscription" element={<Subscription />} />
+          <Route path="usage" element={<Usage />} />
+          <Route path="plans" element={<PortalPlans />} />
+          <Route path="orders" element={<PortalOrders />} />
           <Route path="profile" element={<PlaceholderView title="Profile" />} />
           <Route path="*" element={<NotFound />} />
         </Route>

@@ -77,10 +77,10 @@
 
 ## 9. P4 — Admin views (light tier)
 
-- [ ] 9.1 Port `admin/Plans.vue` (360 LOC) → `Plans.tsx` using AntD `Table` + `Modal` form for create/edit
-- [ ] 9.2 Port `admin/Orders.vue` (232) → `Orders.tsx` (read-only `Table` + filters)
-- [ ] 9.3 Port `admin/AuditLog.vue` (227) → `AuditLog.tsx` (read-only `Table` with severity tag, pagination); preserve the 300ms search-input debounce (use `useDeferredValue` or a manual `setTimeout` in `useEffect`)
-- [ ] 9.4 Port `admin/ProvisioningPools.vue` (454) → `ProvisioningPools.tsx`
+- [x] 9.1 Port `admin/Plans.vue` (360 LOC) → `Plans.tsx` using AntD `Table` + `Modal` form for create/edit
+- [x] 9.2 Port `admin/Orders.vue` (232) → `Orders.tsx` (read-only `Table` + filters)
+- [x] 9.3 Port `admin/AuditLog.vue` (227) → `AuditLog.tsx` (read-only `Table` with severity tag, pagination); preserve the 300ms search-input debounce (use `useDeferredValue` or a manual `setTimeout` in `useEffect`)
+- [x] 9.4 Port `admin/ProvisioningPools.vue` (454) → `ProvisioningPools.tsx`
 
 ## 10. P4 — Admin views (medium tier)
 
@@ -98,13 +98,13 @@
 
 ## 12. P5 — Portal views
 
-- [ ] 12.1 Port `portal/Subscription.vue` (289) → `Subscription.tsx` (sub URL display, QR via `qrcode` library, copy buttons)
-- [ ] 12.2 Port `portal/Dashboard.vue` (249) → `Usage.tsx` (traffic stats, progress bars)
-- [ ] 12.3 Port `portal/Plans.vue` (305) → `Plans.tsx` (purchase flow)
-- [ ] 12.4 Port `portal/Orders.vue` (243) → `Orders.tsx`
+- [x] 12.1 Port `portal/Subscription.vue` (289) → `Subscription.tsx` (sub URL display, QR via `qrcode` library, copy buttons)
+- [x] 12.2 Port `portal/Dashboard.vue` (249) → `Usage.tsx` (traffic stats, progress bars)
+- [x] 12.3 Port `portal/Plans.vue` (305) → `Plans.tsx` (purchase flow)
+- [x] 12.4 Port `portal/Orders.vue` (243) → `Orders.tsx`
 - [ ] 12.5 Port `portal/Profile.vue` (392) → `Profile.tsx` (email change, password change, OIDC linking)
-- [ ] 12.6 Port `components/portal/AlipayPayModal.vue` → `AlipayPayModal.tsx` — QR generation via the same `qrcode` lib (or AntD `<QRCode>`), payment-status polling at 3-second interval (matches Vue tree), countdown timer, both polling and countdown cleanup on modal close
-- [ ] 12.7 Replace `useConfirm` callsites in `portal/Plans.tsx` and `portal/Subscription.tsx` with `Modal.confirm` (mirrors the admin-side change)
+- [x] 12.6 Port `components/portal/AlipayPayModal.vue` → `AlipayPayModal.tsx` — QR generation via the same `qrcode` lib (or AntD `<QRCode>`), payment-status polling at 3-second interval (matches Vue tree), countdown timer, both polling and countdown cleanup on modal close
+- [x] 12.7 Replace `useConfirm` callsites in `portal/Plans.tsx` and `portal/Subscription.tsx` with `Modal.confirm` (mirrors the admin-side change)
 
 ## 13. P6 — Tests
 

@@ -26,6 +26,15 @@ vi.mock('@/api/portal/auth', () => ({
   },
 }))
 
+vi.mock('./views/admin/AuditLog', () => ({ default: () => <h1>Audit Log</h1> }))
+vi.mock('./views/admin/Orders', () => ({ default: () => <h1>Orders</h1> }))
+vi.mock('./views/admin/Plans', () => ({ default: () => <h1>Plans</h1> }))
+vi.mock('./views/admin/ProvisioningPools', () => ({ default: () => <h1>Provisioning Pools</h1> }))
+vi.mock('./views/portal/Orders', () => ({ default: () => <h1>Portal Orders</h1> }))
+vi.mock('./views/portal/Plans', () => ({ default: () => <h1>Portal Plans</h1> }))
+vi.mock('./views/portal/Subscription', () => ({ default: () => <h1>Subscription</h1> }))
+vi.mock('./views/portal/Usage', () => ({ default: () => <h1>Usage</h1> }))
+
 function LocationProbe() {
   const location = useLocation()
   return <span data-testid="location">{location.pathname + location.search}</span>
