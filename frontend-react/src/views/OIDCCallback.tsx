@@ -17,6 +17,7 @@ type ErrorKind =
   | 'stateInvalid'
   | 'domainNotAllowed'
   | 'accountSuspended'
+  | 'emailUnverified'
   | 'notConfigured'
   | 'unknown'
   | 'invalidEntry'
@@ -33,6 +34,7 @@ const oidcErrorMessages: Record<ErrorKind, string> = {
   domainNotAllowed: 'This email domain is not allowed.',
   emailConflict: 'This OIDC email is already linked to a different account.',
   emailMismatch: 'The OIDC email does not match the currently bound account.',
+  emailUnverified: 'This OIDC provider did not return a verified email.',
   invalidEntry: 'This callback URL is missing code or state.',
   notConfigured: 'OIDC login is not configured.',
   stateInvalid: 'This login link expired or failed the state check. Start again.',
@@ -108,6 +110,9 @@ export function classifyOidcError(error: unknown): TypedOidcError {
   }
   if (status === 400 && lower.includes('state')) {
     return { kind: 'stateInvalid', status, body }
+  }
+  if (status === 400 && lower.includes('verified email')) {
+    return { kind: 'emailUnverified', status, body }
   }
   if (status === 403 && lower.includes('domain')) {
     return { kind: 'domainNotAllowed', status, body, domain: rejectedDomain(body) }

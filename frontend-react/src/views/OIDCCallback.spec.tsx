@@ -240,6 +240,7 @@ describe('OIDCCallback', () => {
     expect(classifyOidcError({ status: 409, data: { error: 'oidc: email already linked to a different account' } }).kind).toBe('emailConflict')
     expect(classifyOidcError({ status: 409, data: { error: 'OIDC email does not match' } }).kind).toBe('emailMismatch')
     expect(classifyOidcError({ status: 400, data: { error: 'bad state' } }).kind).toBe('stateInvalid')
+    expect(classifyOidcError({ status: 400, data: { error: 'OIDC verified email claim is required' } }).kind).toBe('emailUnverified')
     expect(classifyOidcError({ status: 403, data: { error: 'domain example.org not allowed' } }).kind).toBe('domainNotAllowed')
     expect(classifyOidcError({ status: 403, data: { error: 'user suspended' } }).kind).toBe('accountSuspended')
     expect(classifyOidcError({ status: 501, data: { error: 'missing provider' } }).kind).toBe('notConfigured')

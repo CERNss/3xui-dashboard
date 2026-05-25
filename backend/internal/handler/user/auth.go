@@ -372,6 +372,8 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "OIDC email does not match current account"})
 		case errors.Is(err, usersvc.ErrOIDCEmailRequired):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC email claim is required"})
+		case errors.Is(err, usersvc.ErrOIDCEmailUnverified):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC verified email claim is required", "code": "oidc_verified_email_required"})
 		case errors.Is(err, usersvc.ErrDomainNotAllowed):
 			c.JSON(http.StatusForbidden, gin.H{"error": "email domain not allowed"})
 		case errors.Is(err, usersvc.ErrUserSuspended):
