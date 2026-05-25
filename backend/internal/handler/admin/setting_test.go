@@ -31,6 +31,39 @@ func TestValidateRegistrationSettings(t *testing.T) {
 	}
 }
 
+func TestValidateOpsCollectionSettings(t *testing.T) {
+	if err := validate(model.SettingOpsCollectEnabled, "true"); err != nil {
+		t.Fatalf("ops collection bool rejected: %v", err)
+	}
+	if err := validate(model.SettingOpsCollectIntervalSeconds, "5"); err != nil {
+		t.Fatalf("minimum ops interval rejected: %v", err)
+	}
+	if err := validate(model.SettingOpsCollectIntervalSeconds, "4"); err == nil {
+		t.Fatal("ops interval below 5 seconds should be rejected")
+	}
+	if err := validate(model.SettingOpsRetentionSeconds, "21600"); err != nil {
+		t.Fatalf("ops retention rejected: %v", err)
+	}
+	if err := validate(model.SettingOpsRetentionSeconds, "-1"); err == nil {
+		t.Fatal("negative ops retention should be rejected")
+	}
+	if err := validate(model.SettingTrafficCollectEnabled, "true"); err != nil {
+		t.Fatalf("traffic collection bool rejected: %v", err)
+	}
+	if err := validate(model.SettingTrafficCollectIntervalSecs, "5"); err != nil {
+		t.Fatalf("minimum traffic interval rejected: %v", err)
+	}
+	if err := validate(model.SettingTrafficCollectIntervalSecs, "4"); err == nil {
+		t.Fatal("traffic interval below 5 seconds should be rejected")
+	}
+	if err := validate(model.SettingTrafficRetentionSeconds, "0"); err != nil {
+		t.Fatalf("traffic retention disabled value rejected: %v", err)
+	}
+	if err := validate(model.SettingTrafficRetentionSeconds, "-1"); err == nil {
+		t.Fatal("negative traffic retention should be rejected")
+	}
+}
+
 func TestValidateBrandSettings(t *testing.T) {
 	if err := validate(model.SettingBrandTitle, "Acme Network"); err != nil {
 		t.Fatalf("brand title rejected: %v", err)

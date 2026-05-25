@@ -6,17 +6,19 @@ package job
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cern/3xui-dashboard/internal/model"
+	"github.com/cern/3xui-dashboard/internal/service/datacollection"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/event/payload"
 	"github.com/cern/3xui-dashboard/internal/service/node"
 )
 
-// ProbeJob walks every enabled node every 30 seconds and updates the
+// ProbeJob walks every enabled node on the configured interval and updates the
 // in-memory + persisted heartbeat. Status transitions emit
 // `node.online` / `node.offline`; every failure additionally emits
 // `node.probe_failed` so an alerting subscriber can see the reason
@@ -27,10 +29,14 @@ import (
 // concurrency.
 type ProbeJob struct {
 	nodes       *node.Service
+	config      *datacollection.ConfigService
 	bus         *event.Bus
 	log         *slog.Logger
 	concurrency int
 	perCall     time.Duration
+
+	mu      sync.Mutex
+	lastRun time.Time
 }
 
 // NewProbeJob builds a job. concurrency=8 + perCall=12s are the
@@ -51,9 +57,30 @@ func NewProbeJob(nodes *node.Service, bus *event.Bus, lg *slog.Logger, concurren
 	}
 }
 
+// SetConfig wires runtime data-collection settings. Nil keeps defaults.
+func (j *ProbeJob) SetConfig(config *datacollection.ConfigService) {
+	j.config = config
+}
+
 // RunOnce executes a single pass. Suitable both for cron-scheduled
 // invocation and for tests.
 func (j *ProbeJob) RunOnce(ctx context.Context) {
+	cfg := datacollection.CollectorConfig{
+		Enabled:   true,
+		Interval:  datacollection.DefaultHealthInterval,
+		Retention: datacollection.DefaultHealthRetention,
+	}
+	if j.config != nil {
+		cfg = j.config.Health(ctx)
+	}
+	if !cfg.Enabled {
+		return
+	}
+	if !j.shouldRun(time.Now().UTC(), cfg.Interval) {
+		return
+	}
+	j.nodes.SetMetricsRetention(cfg.Retention)
+
 	rows, err := j.nodes.ListEnabled(ctx)
 	if err != nil {
 		j.log.Error("list enabled nodes", slog.String("error", err.Error()))
@@ -76,6 +103,19 @@ func (j *ProbeJob) RunOnce(ctx context.Context) {
 		})
 	}
 	_ = g.Wait()
+}
+
+func (j *ProbeJob) shouldRun(now time.Time, interval time.Duration) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if interval <= 0 {
+		interval = datacollection.DefaultHealthInterval
+	}
+	if !j.lastRun.IsZero() && now.Sub(j.lastRun) < interval {
+		return false
+	}
+	j.lastRun = now
+	return true
 }
 
 func (j *ProbeJob) probeOne(ctx context.Context, n model.Node) {
@@ -108,12 +148,12 @@ type probeTransitionEvent struct {
 //
 // Truth table:
 //
-//   prior=online,    err=nil  → []                       (steady state)
-//   prior=online,    err≠nil  → [probe_failed, offline]  (started failing)
-//   prior=offline,   err=nil  → [online, recovered]      (recovered)
-//   prior=offline,   err≠nil  → [probe_failed]           (still failing)
-//   prior=unknown,   err=nil  → [online]                 (first probe ok)
-//   prior=unknown,   err≠nil  → [probe_failed]           (first probe failed)
+//	prior=online,    err=nil  → []                       (steady state)
+//	prior=online,    err≠nil  → [probe_failed, offline]  (started failing)
+//	prior=offline,   err=nil  → [online, recovered]      (recovered)
+//	prior=offline,   err≠nil  → [probe_failed]           (still failing)
+//	prior=unknown,   err=nil  → [online]                 (first probe ok)
+//	prior=unknown,   err≠nil  → [probe_failed]           (first probe failed)
 func probeTransitionEvents(nodeID int64, name, prior string, probeErr error) []probeTransitionEvent {
 	if probeErr != nil {
 		out := []probeTransitionEvent{{

@@ -103,6 +103,11 @@ func (s *Service) CollectAll(ctx context.Context, now time.Time) (map[int64]stri
 	return errMap, nil
 }
 
+// DeleteSamplesOlderThan trims persisted traffic samples before cutoff.
+func (s *Service) DeleteSamplesOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	return s.samples.DeleteOlderThan(ctx, cutoff)
+}
+
 func (s *Service) collectOne(ctx context.Context, n NodeRef, now time.Time) error {
 	r, err := s.rt.Get(ctx, n.ID)
 	if err != nil {
@@ -191,13 +196,13 @@ func (s *Service) shouldEmit(key string, now time.Time, window time.Duration) bo
 // ClientUsage is what GET admin / user traffic endpoints return for
 // one ownership row.
 type ClientUsage struct {
-	NodeID       int64     `json:"node_id"`
-	InboundTag   string    `json:"inbound_tag"`
-	ClientEmail  string    `json:"client_email"`
-	Up           int64     `json:"up"`
-	Down         int64     `json:"down"`
-	TotalBytes   int64     `json:"total"`
-	LimitBytes   *int64    `json:"limit,omitempty"`
+	NodeID       int64      `json:"node_id"`
+	InboundTag   string     `json:"inbound_tag"`
+	ClientEmail  string     `json:"client_email"`
+	Up           int64      `json:"up"`
+	Down         int64      `json:"down"`
+	TotalBytes   int64      `json:"total"`
+	LimitBytes   *int64     `json:"limit,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	LastSampleAt *time.Time `json:"last_sample_at,omitempty"`
 }

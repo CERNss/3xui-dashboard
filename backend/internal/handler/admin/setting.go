@@ -270,7 +270,7 @@ type settingDescriptor struct {
 	Label         string `json:"label"`
 	LabelZh       string `json:"label_zh,omitempty"`
 	Type          string `json:"type"`  // bool | int | string
-	Group         string `json:"group"` // registration / subscription / traffic
+	Group         string `json:"group"` // registration / subscription / traffic / data_collection / other
 	Default       string `json:"default"`
 	Description   string `json:"description"`
 	DescriptionZh string `json:"description_zh,omitempty"`
@@ -423,6 +423,66 @@ var knownSettings = []settingDescriptor{
 		Group:         "other",
 		Description:   "Optional userinfo endpoint override. Empty uses discovery or OIDC_USERINFO_URL.",
 		DescriptionZh: "可选 userinfo 端点覆盖。留空使用 discovery 或 OIDC_USERINFO_URL。",
+	},
+	{
+		Key:           model.SettingOpsCollectEnabled,
+		Label:         "Node health collection",
+		LabelZh:       "节点健康采集",
+		Type:          "bool",
+		Group:         "data_collection",
+		Default:       "true",
+		Description:   "Controls whether the background collector samples node health from upstream panels.",
+		DescriptionZh: "控制后台采集器是否定时从上游面板采集节点健康数据。",
+	},
+	{
+		Key:           model.SettingOpsCollectIntervalSeconds,
+		Label:         "Health collection interval",
+		LabelZh:       "健康采集间隔",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "60",
+		Description:   "Seconds between health collection passes. Minimum 5 seconds.",
+		DescriptionZh: "健康数据采集间隔，单位秒；最小 5 秒。",
+	},
+	{
+		Key:           model.SettingOpsRetentionSeconds,
+		Label:         "Health history retention",
+		LabelZh:       "健康历史保留",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "21600",
+		Description:   "Seconds of in-memory health samples retained for status and ops charts.",
+		DescriptionZh: "系统状态和 ops 图表保留的内存健康样本时长，单位秒。",
+	},
+	{
+		Key:           model.SettingTrafficCollectEnabled,
+		Label:         "Node traffic collection",
+		LabelZh:       "节点流量采集",
+		Type:          "bool",
+		Group:         "data_collection",
+		Default:       "true",
+		Description:   "Controls whether the background collector samples inbound and client traffic counters from nodes.",
+		DescriptionZh: "控制后台采集器是否定时采集节点入站和客户端流量计数。",
+	},
+	{
+		Key:           model.SettingTrafficCollectIntervalSecs,
+		Label:         "Traffic collection interval",
+		LabelZh:       "流量采集间隔",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "60",
+		Description:   "Seconds between node traffic collection passes. Minimum 5 seconds.",
+		DescriptionZh: "节点流量采集间隔，单位秒；最小 5 秒。",
+	},
+	{
+		Key:           model.SettingTrafficRetentionSeconds,
+		Label:         "Traffic sample retention",
+		LabelZh:       "流量样本保留",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "2592000",
+		Description:   "Seconds of persisted traffic samples retained for usage history. Set 0 to disable cleanup.",
+		DescriptionZh: "用量历史保留的持久化流量样本时长，单位秒；设为 0 则不清理。",
 	},
 	{
 		Key:           model.SettingSubscriptionRemarkModel,
@@ -720,6 +780,16 @@ func validate(key, value string) error {
 		}
 		if key == model.SettingNewUserInitialBalanceCents && n < 0 {
 			return fmt.Errorf("value %d cannot be negative for %q", n, key)
+		}
+		switch key {
+		case model.SettingOpsCollectIntervalSeconds, model.SettingTrafficCollectIntervalSecs:
+			if n < 5 {
+				return fmt.Errorf("%s must be at least 5 seconds", key)
+			}
+		case model.SettingOpsRetentionSeconds, model.SettingTrafficRetentionSeconds:
+			if n < 0 {
+				return fmt.Errorf("%s cannot be negative", key)
+			}
 		}
 		return nil
 	default:

@@ -4,7 +4,7 @@ export interface SettingItem {
   key: string
   label: string
   type: 'bool' | 'int' | 'string'
-  group: 'registration' | 'subscription' | 'traffic' | 'other'
+  group: 'registration' | 'subscription' | 'traffic' | 'data_collection' | 'other'
   default: string
   description: string
   value: string

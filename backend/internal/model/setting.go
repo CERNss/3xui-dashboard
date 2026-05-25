@@ -43,6 +43,12 @@ const (
 	SettingOIDCTokenURL               = "oidc_token_url"
 	SettingOIDCJWKSURL                = "oidc_jwks_url"
 	SettingOIDCUserInfoURL            = "oidc_userinfo_url"
+	SettingOpsCollectEnabled          = "ops_collect_enabled"
+	SettingOpsCollectIntervalSeconds  = "ops_collect_interval_seconds"
+	SettingOpsRetentionSeconds        = "ops_retention_seconds"
+	SettingTrafficCollectEnabled      = "traffic_collect_enabled"
+	SettingTrafficCollectIntervalSecs = "traffic_collect_interval_seconds"
+	SettingTrafficRetentionSeconds    = "traffic_retention_seconds"
 
 	// Subscription format templates — admins override the embedded
 	// defaults shipped by internal/sub/template/defaults.go.

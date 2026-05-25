@@ -28,6 +28,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	"github.com/cern/3xui-dashboard/internal/service/billing"
 	clientsvc "github.com/cern/3xui-dashboard/internal/service/client"
+	"github.com/cern/3xui-dashboard/internal/service/datacollection"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	"github.com/cern/3xui-dashboard/internal/service/messages"
@@ -188,6 +189,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Settings repo — also used by the subscription handler so admin
 	// template overrides take effect without a restart.
 	settingRepo := repository.NewSettingRepo(db)
+	dataCollectionConfig := datacollection.NewConfigService(settingRepo, logger)
 
 	// Subscription.
 	subAsm := sub.New(userRepo, ownershipRepo, &subNodeLookup{svc: nodeService}, rtManager, logger, 0)
@@ -248,9 +250,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Scheduler. Build it but don't Start — the caller decides.
 	scheduler := job.NewScheduler(logger)
 	probeJob := job.NewProbeJob(nodeService, bus, logger, 0, 0)
-	_ = scheduler.Add("probe", "@every 30s", probeJob.RunOnce)
+	probeJob.SetConfig(dataCollectionConfig)
+	_ = scheduler.Add("probe", "@every 5s", probeJob.RunOnce)
 	trafficJob := job.NewTrafficJob(trafficService, logger)
-	_ = scheduler.Add("traffic", "@every 60s", trafficJob.RunOnce)
+	trafficJob.SetConfig(dataCollectionConfig)
+	_ = scheduler.Add("traffic", "@every 5s", trafficJob.RunOnce)
 	webhookRetryJob := job.NewWebhookRetryJob(webhookService, 0, logger)
 	_ = scheduler.Add("webhook-retry", "@every 15s", webhookRetryJob.RunOnce)
 	expiryJob := job.NewExpiryJob(ownershipRepo, settingRepo, userRepo, notifyLogRepo, rtManager, bus, logger)

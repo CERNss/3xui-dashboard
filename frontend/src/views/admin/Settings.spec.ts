@@ -229,6 +229,78 @@ beforeEach(() => {
       description: 'Sing-box template',
       description_zh: 'Sing-box 模板',
     },
+    {
+      key: 'ops_collect_enabled',
+      label: 'Node health collection',
+      label_zh: '节点健康采集',
+      group: 'data_collection',
+      type: 'bool',
+      value: 'true',
+      has_override: true,
+      default: 'true',
+      description: 'Collect health',
+      description_zh: '采集健康数据',
+    },
+    {
+      key: 'ops_collect_interval_seconds',
+      label: 'Health collection interval',
+      label_zh: '健康采集间隔',
+      group: 'data_collection',
+      type: 'int',
+      value: '60',
+      has_override: false,
+      default: '60',
+      description: 'Interval seconds',
+      description_zh: '采集间隔秒数',
+    },
+    {
+      key: 'ops_retention_seconds',
+      label: 'Health history retention',
+      label_zh: '健康历史保留',
+      group: 'data_collection',
+      type: 'int',
+      value: '21600',
+      has_override: false,
+      default: '21600',
+      description: 'Retention seconds',
+      description_zh: '健康历史保留秒数',
+    },
+    {
+      key: 'traffic_collect_enabled',
+      label: 'Node traffic collection',
+      label_zh: '节点流量采集',
+      group: 'data_collection',
+      type: 'bool',
+      value: 'true',
+      has_override: true,
+      default: 'true',
+      description: 'Collect traffic',
+      description_zh: '采集节点流量计数',
+    },
+    {
+      key: 'traffic_collect_interval_seconds',
+      label: 'Traffic collection interval',
+      label_zh: '流量采集间隔',
+      group: 'data_collection',
+      type: 'int',
+      value: '60',
+      has_override: false,
+      default: '60',
+      description: 'Traffic interval seconds',
+      description_zh: '流量采集间隔秒数',
+    },
+    {
+      key: 'traffic_retention_seconds',
+      label: 'Traffic sample retention',
+      label_zh: '流量样本保留',
+      group: 'data_collection',
+      type: 'int',
+      value: '2592000',
+      has_override: false,
+      default: '2592000',
+      description: 'Traffic retention seconds',
+      description_zh: '流量样本保留秒数',
+    },
   ])
   apiStubs.listPlans.mockResolvedValue([
     {
@@ -305,7 +377,7 @@ describe('admin/Settings.vue smoke', () => {
     expect(w.find('#new-user-initial-balance').isVisible()).toBe(false)
 
     const tabButtons = w.findAll('button[role="tab"]')
-    expect(tabButtons).toHaveLength(7)
+    expect(tabButtons).toHaveLength(8)
     await tabByText(w, '用户默认值').trigger('click')
 
     expect(w.find('#new-user-initial-balance').isVisible()).toBe(true)
@@ -394,6 +466,8 @@ describe('admin/Settings.vue smoke', () => {
     const tabButtons = w.findAll('button[role="tab"]')
     expect(tabButtons[0].text()).toContain('通用')
     expect(tabButtons[1].text()).toContain('订阅配置')
+    expect(tabButtons[2].text()).toContain('告警配置')
+    expect(tabButtons[3].text()).toContain('数据收集')
     expect(w.text()).toContain('品牌信息')
     expect(w.find('#setting-clash_template_yaml').isVisible()).toBe(false)
 
@@ -450,6 +524,27 @@ describe('admin/Settings.vue smoke', () => {
     expect(w.text()).toContain('到期提醒天数')
     expect(w.find('#setting-traffic_warn_pct').isVisible()).toBe(true)
     expect(w.find('#setting-expiry_warn_days').isVisible()).toBe(true)
+  })
+
+  it('keeps node data collection settings in their own settings tab', async () => {
+    const w = await mountSettings()
+
+    expect(w.find('#setting-ops_collect_interval_seconds').isVisible()).toBe(false)
+    await tabByText(w, '数据收集').trigger('click')
+
+    expect(w.text()).toContain('数据收集')
+    expect(w.text()).toContain('节点健康采集')
+    expect(w.text()).toContain('健康采集间隔')
+    expect(w.text()).toContain('健康历史保留')
+    expect(w.text()).toContain('节点流量采集')
+    expect(w.text()).toContain('流量采集间隔')
+    expect(w.text()).toContain('流量样本保留')
+    expect(w.find('#setting-ops_collect_enabled').isVisible()).toBe(true)
+    expect(w.find('#setting-ops_collect_interval_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-ops_retention_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-traffic_collect_enabled').isVisible()).toBe(true)
+    expect(w.find('#setting-traffic_collect_interval_seconds').isVisible()).toBe(true)
+    expect(w.find('#setting-traffic_retention_seconds').isVisible()).toBe(true)
   })
 
   it('configures webhooks inside the notifications tab without a page jump', async () => {
