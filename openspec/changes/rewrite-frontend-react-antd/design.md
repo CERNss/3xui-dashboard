@@ -26,8 +26,11 @@ consumers depend on the frontend's DOM structure or class names.
 
 - Replace Vue 3 with React 18 + AntD 5 as the canonical client
   rendering platform, with zero loss of existing functionality.
-- Preserve every backend contract (JWT, REST endpoints, OIDC flow,
-  payment gateways, webhooks, subscription URLs).
+- Preserve every backend contract unless a milestone spec explicitly
+  revises that contract during the pre-launch window. P5 intentionally
+  revises the account/OIDC/email-verification backend contract; JWT,
+  payment gateways, webhooks, and subscription URLs remain parity
+  contracts.
 - Preserve every i18n key (`admin.*`, `portal.*`, `nav.*`,
   `section.*`, `auth.*`, `app.*` — full list lives in
   `frontend/src/i18n/locales/{zh,en}.ts`) so locale strings travel
@@ -45,9 +48,10 @@ consumers depend on the frontend's DOM structure or class names.
 
 - No new product features. Feature parity only; new work happens in
   follow-up changes after cutover.
-- No backend code changes. If a missing-but-needed API surfaces
-  mid-rewrite, that is a bug in the Vue tree and must be added to
-  both stacks (or deferred until cutover).
+- Backend code and database changes are allowed when a milestone spec
+  explicitly calls them out. The project has not launched, so there is
+  no production compatibility constraint. Unspecified backend
+  contracts still remain parity-only.
 - No design language refresh beyond AntD's default tokens. The
   bespoke Geist Sans / accent-teal / soft-card aesthetic is replaced
   by AntD defaults parameterized with the existing brand color.
@@ -544,6 +548,37 @@ Vue's `[data-test=...]` (if any) to AntD's stable class names or
 `frontend/src/views/**/*.spec.ts` has a corresponding
 `frontend-react/src/views/**/*.spec.tsx` with ≥ as many test cases.
 
+### D17. Account identity contract can evolve during P5
+
+P5 is allowed to change the backend account identity model because
+the service has not launched and there are no compatibility
+constraints. The older single-provider `users.oidc_subject` contract
+is replaced by:
+
+- `users.email` as the only local login identifier.
+- `users.password_hash` as a non-nullable credential. OIDC-created
+  users must choose a local password during account completion.
+- `users.display_name` as optional profile metadata; it is editable
+  and not unique.
+- `oidc_providers` for configured OIDC providers.
+- `user_oidc_identities` for `(provider_key, subject)` bindings,
+  including the provider-returned verified email for audit/display.
+
+OIDC callback resolution is explicit:
+
+1. Existing `(provider_key, subject)` binding issues a portal token.
+2. Provider verified email matching an existing local account returns
+   a pending completion token; binding that account requires the
+   account password.
+3. Creating a new local user from a pending OIDC callback requires a
+   user-entered login email, email verification code/token, display
+   name, and password. The local login email may differ from the
+   provider email.
+
+OIDC unlink is intentionally out of scope for P5. The Profile page
+shows linked providers and can start link flows for unlinked
+providers, but it does not remove identities.
+
 ## Risks / Trade-offs
 
 - **[Risk]** AntD's default visual language is meaningfully
@@ -625,11 +660,13 @@ Vue's `[data-test=...]` (if any) to AntD's stable class names or
 7. **P7 (Cutover)** is the single big commit + Makefile/README
    sweep. After this, only the React tree exists.
 
-**Rollback strategy.** Until cutover, rollback is trivial — the
-Vue tree is untouched. After cutover, rollback means
-`git revert` the cutover commit; since no backend or database
-schema is modified, that's a clean revert. Post-revert, the Vue
-tree is restored and operators are back where they started.
+**Rollback strategy.** Until cutover, rollback is trivial for the
+frontend — the Vue tree is untouched. P5 may add backend/database
+account-identity changes before launch; those migrations are not a
+production data-rollback concern because no deployed operator/user
+data exists yet. After cutover, rollback means `git revert` the
+cutover commit plus any still-unwanted pre-launch account-identity
+migrations.
 
 ## Open Questions
 

@@ -102,7 +102,11 @@
 - [x] 12.2 Port `portal/Dashboard.vue` (249) → `Usage.tsx` (traffic stats, progress bars)
 - [x] 12.3 Port `portal/Plans.vue` (305) → `Plans.tsx` (purchase flow)
 - [x] 12.4 Port `portal/Orders.vue` (243) → `Orders.tsx`
-- [ ] 12.5 Port `portal/Profile.vue` (392) → `Profile.tsx` (email change, password change, OIDC linking)
+- [ ] 12.5a Add backend account-identity schema/API for P5 Profile: `users.display_name`, non-null password invariant, `oidc_providers`, `user_oidc_identities`, and multi-provider provider listing per D17
+- [ ] 12.5b Add email-verification APIs for `change_email` and `oidc_create_account` (10-minute TTL, 60-second resend cooldown, 5 failed attempts, confirmation returns a scoped verification token)
+- [ ] 12.5c Replace the OIDC pending/resolve contract with account completion: callback returns pending token + provider metadata; bind-existing requires local account password; create-new requires display name + password + verified local email
+- [ ] 12.5d Port `portal/Profile.vue` → `Profile.tsx` with AntD forms for display name, verified email change, password change, and multi-provider OIDC link/status; render no OIDC unlink action in P5
+- [ ] 12.5e Add `Profile.spec.tsx` and OIDC completion tests covering display-name save, email-code flow, password validation, multi-provider link rendering, bind-existing password flow, and create-new verified-email flow
 - [x] 12.6 Port `components/portal/AlipayPayModal.vue` → `AlipayPayModal.tsx` — QR generation via the same `qrcode` lib (or AntD `<QRCode>`), payment-status polling at 3-second interval (matches Vue tree), countdown timer, both polling and countdown cleanup on modal close
 - [x] 12.7 Replace `useConfirm` callsites in `portal/Plans.tsx` and `portal/Subscription.tsx` with `Modal.confirm` (mirrors the admin-side change)
 

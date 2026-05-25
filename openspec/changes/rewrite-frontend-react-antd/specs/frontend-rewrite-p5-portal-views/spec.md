@@ -144,32 +144,158 @@ plan name, amount, status, created at.
   badge logic as the Vue tree (completed→accent, failed→red,
   pending→neutral)
 
-### Requirement: Profile supports email, password, OIDC linking
+### Requirement: Profile manages display name, email, password, and OIDC provider links
 
-`Profile.tsx` SHALL render the same three sections the Vue tree
-`portal/Profile.vue` exposes: email change, password change,
-linked OIDC providers. Each section SHALL use AntD `<Form>`.
+`Profile.tsx` SHALL render four account-security sections:
+display name, email, password, and connected OIDC providers. Each
+editable section SHALL use AntD `<Form>`. Email remains the only
+local login identifier; display name is profile metadata only and
+MUST NOT participate in login or uniqueness checks.
 
-#### Scenario: Email change requires current password
+The Vue tree's older Profile page is not the complete contract for
+P5. During this pre-launch window the backend/API/database MAY be
+changed to support the account model below; no compatibility with
+the current single-provider `users.oidc_subject` field is required.
+OIDC unlink is out of scope for P5.
 
-- **GIVEN** the operator is on `/portal/profile`
-- **WHEN** the operator submits the email-change form with a new
-  email but blank password
-- **THEN** the form SHALL block submission with a validation error
-  on the password field
+#### Scenario: Display name is profile metadata
 
-#### Scenario: Password change validates min length
+- **GIVEN** the user opens `/portal/profile`
+- **WHEN** the profile response contains `display_name`
+- **THEN** the Profile page SHALL render it in an editable AntD form
+- **AND** saving SHALL call a profile-update mutation that updates
+  `display_name` only
+- **AND** login SHALL continue to use `email` exclusively
+- **AND** no uniqueness validation SHALL run for `display_name`
 
-- **WHEN** the operator types a new password shorter than 8 chars
-- **THEN** the password field SHALL show a min-length error
-- **AND** SHALL NOT allow submission
+#### Scenario: Email change requires a verification code
 
-#### Scenario: OIDC unlink uses confirmation
+- **GIVEN** the user opens `/portal/profile`
+- **WHEN** the user enters a new email address
+- **THEN** the page SHALL expose a "send verification code" action
+  that calls the email-verification start endpoint with
+  `purpose = "change_email"`
+- **AND** the confirmation form SHALL require the new email and
+  verification code before submitting the email-change mutation
+- **AND** the mutation SHALL mark the new email verified on success
 
-- **GIVEN** the operator has at least one linked OIDC provider
-- **WHEN** the operator clicks "Unlink" on a provider
-- **THEN** an AntD `Modal.confirm` SHALL ask for confirmation
-- **AND** only on confirm SHALL the unlink mutation fire
+#### Scenario: Password change validates old password and min length
+
+- **WHEN** the user submits the password form
+- **THEN** the form SHALL require current password, new password,
+  and confirmation
+- **AND** a new password shorter than 8 characters SHALL show a
+  field-level validation error
+- **AND** mismatched confirmation SHALL block submission
+- **AND** a successful mutation SHALL clear all password fields
+
+#### Scenario: Connected OIDC providers list is multi-provider
+
+- **GIVEN** multiple OIDC providers are configured
+- **WHEN** the user opens `/portal/profile`
+- **THEN** the OIDC section SHALL render one row per provider
+  with provider display name, icon, and linked/unlinked state
+- **AND** clicking "Connect" on an unlinked provider SHALL start
+  that provider's OIDC link flow
+- **AND** linked providers SHALL be shown as connected
+- **AND** no "Unlink" action SHALL be rendered in P5
+
+### Requirement: OIDC uses multi-provider account identities
+
+The backend SHALL replace the single-provider account model with a
+multi-provider identity model. The database SHALL include an
+`oidc_providers` table for provider configuration and a
+`user_oidc_identities` table for linked identities. `users.email`
+remains the unique local login identifier and `users.password_hash`
+MUST NOT be nullable. OIDC-created users MUST set a local password
+during account completion.
+
+The OIDC provider's verified email and the user's local login email
+MAY differ. The provider email SHALL be stored on the OIDC identity
+for audit/display; the local login email SHALL live on `users.email`
+and SHALL be verified through the dashboard email-verification flow.
+
+#### Scenario: Provider list returns all enabled providers
+
+- **GIVEN** two OIDC providers are enabled
+- **WHEN** the login page or Profile page fetches OIDC providers
+- **THEN** the API SHALL return both providers with stable provider
+  keys, display names, optional icons, and start URLs
+- **AND** the frontend SHALL render both providers
+
+#### Scenario: OIDC callback for an already-linked identity logs in
+
+- **GIVEN** a `user_oidc_identities` row exists for
+  `(provider_key, subject)`
+- **WHEN** the OIDC callback completes for the same provider and
+  subject
+- **THEN** the backend SHALL issue the portal token for the linked
+  user
+- **AND** the frontend SHALL store the session and navigate to the
+  requested `redirect_after` path
+
+#### Scenario: OIDC callback with provider email matching an existing user requires password binding
+
+- **GIVEN** the provider returns a verified email that matches an
+  existing `users.email`
+- **AND** no identity row exists for `(provider_key, subject)`
+- **WHEN** the OIDC callback completes
+- **THEN** the backend SHALL return a pending account-completion
+  response containing a short-lived pending token, provider
+  metadata, the provider email, and `existing_user = true`
+- **AND** the frontend SHALL render a completion page that offers
+  "Bind existing account"
+- **AND** binding SHALL require the existing account password
+- **AND** the backend SHALL only link the OIDC identity and issue a
+  portal token after that password check succeeds
+
+#### Scenario: OIDC account completion can create a new user with a different verified email
+
+- **GIVEN** an OIDC callback returned a pending token
+- **WHEN** the user chooses "Create a new account"
+- **THEN** the completion page SHALL require display name,
+  password, local login email, and verification code
+- **AND** the verification start endpoint SHALL be called with
+  `purpose = "oidc_create_account"`
+- **AND** the local login email MAY differ from the provider email
+- **AND** the backend SHALL reject local emails that are already in
+  use
+- **AND** on success the backend SHALL create the user, persist the
+  OIDC identity with provider email, and issue a portal token
+
+#### Scenario: OIDC callback rejects providers without verified email
+
+- **GIVEN** an OIDC provider callback does not include a verified
+  email claim
+- **WHEN** the callback is processed
+- **THEN** the backend SHALL reject the login with a typed error
+- **AND** the frontend SHALL explain that this provider must be
+  configured to return a verified email before it can be used
+
+### Requirement: Email verification endpoints support profile and OIDC completion flows
+
+The backend SHALL expose email verification APIs that can be used
+by Profile email change and OIDC create-account completion. The
+flow SHALL enforce a 10-minute code TTL, a 60-second resend
+cooldown per email/purpose, and at most 5 failed confirmation
+attempts per issued code.
+
+#### Scenario: Verification start returns resend timing
+
+- **WHEN** the frontend starts verification for
+  `purpose = "change_email"` or `purpose = "oidc_create_account"`
+- **THEN** the backend SHALL send a code to the requested email
+- **AND** the response SHALL include cooldown/expires metadata so
+  the frontend can disable the resend button until allowed
+
+#### Scenario: Verification confirm returns a short-lived token
+
+- **GIVEN** the user enters the correct code before expiry
+- **WHEN** the frontend confirms the code
+- **THEN** the backend SHALL return a short-lived verification token
+  scoped to the email and purpose
+- **AND** Profile email-change and OIDC create-account mutations
+  SHALL require that token instead of accepting a raw code directly
 
 ### Requirement: `AlipayPayModal` renders the Alipay QR
 
@@ -207,7 +333,7 @@ Every React portal view SHALL consume i18n keys exclusively from its documented 
 | Usage (Dashboard) | `portal.dashboard.*` | Keep the `dashboard` prefix even though the route is `/portal/usage` — preserve key set 1:1 |
 | Plans | `portal.plans.*` | Purchase confirmation under `portal.plans.confirm*`, payment method labels under `portal.plans.method.*` |
 | Orders | `portal.orders.*` | Continue-payment + paid-state strings |
-| Profile | `portal.profile.*` | Email-change / password-change / OIDC unlink sections; `auth.*` reused for OIDC provider names |
+| Profile | `portal.profile.*` | Display-name / email-verification / password-change / multi-provider OIDC link sections; `auth.*` reused for OIDC callback and provider-entry strings |
 | AlipayPayModal | `portal.alipayPay.*` | Polling status + countdown strings |
 
 #### Scenario: Portal view only references its owned prefix
