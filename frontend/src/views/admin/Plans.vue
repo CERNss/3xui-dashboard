@@ -188,11 +188,7 @@ onMounted(reload)
 
 <template>
   <div>
-    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.plans.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.plans.subtitle') }}</p>
-      </div>
+    <header class="mb-5 flex justify-end">
       <div class="flex items-center gap-2">
         <button
           class="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ink-900 px-3.5 text-sm font-medium text-white shadow-card transition-all ease-brand hover:bg-ink-800 active:scale-[0.98] dark:bg-accent-600 dark:hover:bg-accent-500"

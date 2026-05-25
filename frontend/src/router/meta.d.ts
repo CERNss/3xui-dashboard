@@ -10,5 +10,7 @@ declare module 'vue-router' {
     hideInTitle?: boolean
     // Page title (i18n key resolved by useRouteTitle composable in later groups).
     titleKey?: string
+    // Page subtitle shown in the admin app header.
+    subtitleKey?: string
   }
 }

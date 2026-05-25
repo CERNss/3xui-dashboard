@@ -95,13 +95,6 @@ onMounted(reload)
 
 <template>
   <div>
-    <header class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.auditLog.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ $t('admin.auditLog.subtitle') }}</p>
-      </div>
-    </header>
-
     <!-- Filters — flex toolbar so inputs flow to natural widths and the
          refresh stays a compact icon button (don't let a grid stretch it). -->
     <div class="mb-4 flex flex-wrap items-center gap-2">

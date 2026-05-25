@@ -589,12 +589,7 @@ onMounted(load)
 
 <template>
   <div class="space-y-5">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">
-          {{ $t('admin.settings.title') }}
-        </h1>
-      </div>
+    <header class="flex justify-end">
       <button class="settings-secondary-button" type="button" @click="load">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12a9 9 0 0 1-15.4 6.4L3 16" />

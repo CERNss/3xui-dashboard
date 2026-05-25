@@ -18,6 +18,20 @@ export interface Node {
   updated_at: string
 }
 
+export interface NodeMetricPoint {
+  time: string
+  cpu: number
+  mem: number
+}
+
+export interface NodeMetricsResult {
+  id: number
+  from: number
+  to: number
+  bucket: string
+  points: NodeMetricPoint[]
+}
+
 export interface NodeInput {
   name: string
   scheme: 'http' | 'https'
@@ -39,4 +53,8 @@ export const nodesApi = {
   disable: (id: number) => adminClient.post<void>(`/nodes/${id}/disable`).then((r) => r.data),
   probe: (id: number) =>
     adminClient.post<{ id: number; prior_status: string; status: unknown }>(`/nodes/${id}/probe`).then((r) => r.data),
+  metrics: (id: number, params?: { from?: number; to?: number; bucket?: string }) =>
+    adminClient
+      .get<NodeMetricsResult>(`/nodes/${id}/metrics`, { params })
+      .then((r) => r.data),
 }

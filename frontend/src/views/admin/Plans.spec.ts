@@ -69,9 +69,10 @@ afterEach(() => {
 })
 
 describe('admin/Plans.vue smoke', () => {
-  it('mounts and renders the page title', async () => {
+  it('mounts and renders plan actions', async () => {
     const w = await mountPlans()
-    expect(w.text()).toContain('套餐管理')
+    expect(w.text()).toContain('新建套餐')
+    expect(w.find('button[title="刷新"]').exists()).toBe(true)
   })
 
   it('renders plan rows from the API with formatted prices + traffic', async () => {

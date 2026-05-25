@@ -11,19 +11,30 @@ type Tab = 'status' | 'stats'
 const tabs: Tab[] = ['status', 'stats']
 
 const active = ref<Tab>('status')
+const direction = ref<'forward' | 'back'>('forward')
 const activePanelRef = ref<{ reload: () => void } | null>(null)
-const activeComponent = computed(() => (active.value === 'status' ? Status : Stats))
+const activeIndex = computed(() => tabs.indexOf(active.value))
+const activeComponent = computed(() => {
+  if (active.value === 'status') return Status
+  return Stats
+})
 const transitionName = computed(() =>
-  active.value === 'stats' ? 'overview-slide-forward' : 'overview-slide-back',
+  direction.value === 'forward' ? 'overview-slide-forward' : 'overview-slide-back',
 )
+const tabThumbStyle = computed(() => ({
+  width: `calc((100% - 0.5rem) / ${tabs.length})`,
+  transform: `translateX(${activeIndex.value * 100}%)`,
+}))
 
 function selectTab(target: Tab) {
   if (target === active.value) return
+  direction.value = tabs.indexOf(target) > activeIndex.value ? 'forward' : 'back'
   active.value = target
 }
 
 function tabLabel(target: Tab): string {
-  return target === 'status' ? t('nav.status') : t('nav.stats')
+  if (target === 'status') return t('nav.status')
+  return t('nav.stats')
 }
 
 function reloadActive() {
@@ -32,22 +43,21 @@ function reloadActive() {
 </script>
 
 <template>
-  <div>
-    <header class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('section.overview') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-300">{{ $t('admin.overview.subtitle') }}</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
+  <div class="min-h-full">
+    <section
+      class="sticky top-0 z-20 mb-6 min-h-10 backdrop-blur"
+      data-overview-toolbar
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <nav
-          class="relative grid h-10 w-52 max-w-full grid-cols-2 overflow-hidden rounded-full bg-surface-100 p-1 ring-1 ring-inset ring-surface-200 dark:bg-surface-900/80 dark:ring-surface-600"
+          class="relative grid h-10 w-full max-w-full grid-cols-2 overflow-hidden rounded-full bg-surface-100 p-1 ring-1 ring-inset ring-surface-200 sm:w-[18rem] dark:bg-surface-900/80 dark:ring-surface-600"
           role="tablist"
           :aria-label="$t('section.overview')"
         >
           <span
             aria-hidden="true"
-            class="absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-ink-900 shadow-card transition-transform duration-300 ease-brand dark:bg-surface-50"
-            :class="active === 'stats' ? 'translate-x-full' : 'translate-x-0'"
+            class="absolute inset-y-1 left-1 rounded-full bg-ink-900 shadow-card transition-transform duration-300 ease-brand dark:bg-surface-50"
+            :style="tabThumbStyle"
           />
           <button
             v-for="tab in tabs"
@@ -75,16 +85,18 @@ function reloadActive() {
           {{ $t('admin.status.reload') }}
         </button>
       </div>
-    </header>
+    </section>
 
-    <Transition :name="transitionName" mode="out-in">
-      <KeepAlive>
-        <component
-          :is="activeComponent"
-          :key="active"
-          ref="activePanelRef"
-        />
-      </KeepAlive>
-    </Transition>
+    <section data-overview-content>
+      <Transition :name="transitionName" mode="out-in">
+        <KeepAlive>
+          <component
+            :is="activeComponent"
+            :key="active"
+            ref="activePanelRef"
+          />
+        </KeepAlive>
+      </Transition>
+    </section>
   </div>
 </template>

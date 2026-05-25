@@ -67,9 +67,10 @@ afterEach(() => {
 })
 
 describe('admin/Nodes.vue smoke', () => {
-  it('mounts and renders the page title', async () => {
+  it('mounts and renders node actions', async () => {
     const w = await mountNodes()
-    expect(w.text()).toContain('节点列表')
+    expect(w.text()).toContain('添加节点')
+    expect(w.find('button[title="编辑"]').exists()).toBe(true)
   })
 
   it('renders nodes from the API with connection strings', async () => {

@@ -65,6 +65,32 @@ describe('admin/Status.vue smoke', () => {
     expect(w.text()).toContain('tokyo-1')
   })
 
+  it('keeps aggregate traffic out of the realtime status tab', async () => {
+    apiStubs.inboundsFleet.mockResolvedValue({
+      inbounds: [
+        {
+          node_id: 1,
+          node_name: 'tokyo-1',
+          inbound: {
+            id: 1,
+            tag: 'vless-1',
+            protocol: 'vless',
+            port: 443,
+            enable: true,
+            up: 1024 ** 3,
+            down: 2 * 1024 ** 3,
+            allTime: 8 * 1024 ** 3,
+          },
+        },
+      ],
+    })
+    const w = await mountStatus()
+    expect(w.text()).toContain('需关注')
+    expect(w.text()).not.toContain('总流量')
+    expect(w.text()).not.toContain('所有时间总使用量')
+    expect(w.text()).not.toContain('3.00 GiB')
+  })
+
   it('distinguishes failed probes from disabled nodes in the table', async () => {
     apiStubs.nodesList.mockResolvedValue([
       {
@@ -102,5 +128,6 @@ describe('admin/Status.vue smoke', () => {
     expect(w.text()).toContain('33.7% · 54.2%')
     expect(w.text()).toContain('已停用')
     expect(w.text()).toContain('停用节点不采集')
+    expect(w.text()).toContain('离线 1 · 未探测 0 · 停用 1')
   })
 })

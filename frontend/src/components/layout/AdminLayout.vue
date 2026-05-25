@@ -65,6 +65,11 @@ const sections = computed<NavSection[]>(() => [
     title: t('section.overview'),
     items: [
       {
+        to: '/admin/ops-monitor',
+        label: t('nav.opsMonitor'),
+        icon: 'M4 19V5m5 14V9m5 10v-6m5 6V3M3 19h18',
+      },
+      {
         to: '/admin/status',
         label: t('nav.status'),
         icon: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 7v5l3 2',
@@ -129,6 +134,14 @@ const sections = computed<NavSection[]>(() => [
 ])
 
 const accountName = computed(() => auth.username || 'admin')
+const pageTitle = computed(() => {
+  const key = route.meta.titleKey
+  return typeof key === 'string' ? t(key) : branding.title || t('app.title')
+})
+const pageSubtitle = computed(() => {
+  const key = route.meta.subtitleKey
+  return typeof key === 'string' ? t(key) : ''
+})
 const accountMenuItems = computed<AccountMenuItem[]>(() => [
   {
     label: t('account.profile'),
@@ -276,8 +289,12 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
     </aside>
 
     <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header class="app-dark-header hidden h-16 shrink-0 items-center justify-end border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-700/80 md:flex lg:px-8">
-        <div class="flex items-center gap-2">
+      <header class="app-dark-header hidden h-16 shrink-0 items-center justify-between gap-6 border-b border-surface-100 bg-surface-0 px-6 dark:border-surface-700/80 md:flex lg:px-8">
+        <div class="min-w-0">
+          <h1 class="truncate text-base font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ pageTitle }}</h1>
+          <p v-if="pageSubtitle" class="mt-0.5 truncate text-xs font-medium text-surface-600 dark:text-surface-200">{{ pageSubtitle }}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
           <LocaleSwitcher variant="toolbar" />
           <AccountMenu
             :name="accountName"
@@ -294,7 +311,7 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
 
       <!-- Mobile top bar: hamburger + brand. md:hidden because the
            sidebar is always-visible at md+. -->
-      <header class="app-dark-header flex h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 dark:border-surface-700/80 md:hidden">
+      <header class="app-dark-header flex min-h-14 items-center gap-3 border-b border-surface-100 bg-surface-0 px-4 py-2 dark:border-surface-700/80 md:hidden">
         <button
           type="button"
           :aria-label="drawerOpen ? $t('a11y.closeNav') : $t('a11y.openNav')"
@@ -305,7 +322,10 @@ const accountMenuItems = computed<AccountMenuItem[]>(() => [
             <path d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <div class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ branding.title || $t('app.title') }}</div>
+        <div class="min-w-0 flex-1 leading-tight">
+          <div class="truncate text-sm font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ pageTitle }}</div>
+          <div v-if="pageSubtitle" class="mt-0.5 truncate text-2xs font-medium text-surface-600 dark:text-surface-200">{{ pageSubtitle }}</div>
+        </div>
         <LocaleSwitcher variant="toolbar" />
         <AccountMenu
           :name="accountName"

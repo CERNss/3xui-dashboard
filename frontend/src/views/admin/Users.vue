@@ -574,16 +574,6 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <!-- Using composition-API t() (not template $t) because the
-             smoke test mocks $t to return the raw key. t() goes
-             through the real i18n plugin and yields zh/en strings. -->
-        <h1 class="text-2xl font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ t('admin.users.title') }}</h1>
-        <p class="mt-1.5 text-sm text-surface-500 dark:text-surface-400">{{ t('admin.users.subtitle') }}</p>
-      </div>
-    </header>
-
     <p
       v-if="error"
       class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300"

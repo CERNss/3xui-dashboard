@@ -158,6 +158,26 @@ describe('admin/Stats.vue smoke', () => {
     expect(w.text()).toContain('alice@example.com → Pro 30d')
   })
 
+  it('renders core stats even when the plan list fails', async () => {
+    apiStubs.plansList.mockRejectedValue(new Error('plans offline'))
+    const w = await mountStats()
+    expect(w.text()).toContain('月新增用户')
+    expect(w.text()).toContain('节点流量排行')
+    expect(w.text()).toContain('plans offline')
+  })
+
+  it('shows a clear error when the aggregate stats payload is incomplete', async () => {
+    apiStubs.statsGet.mockResolvedValue({
+      users: { total: 4, active: 3, suspended: 1, month_new: 0, prev_month_new: 0, total_balance_cents: 0, avg_balance_cents: 0 },
+      plans: { total: 2, enabled: 2, disabled: 0 },
+      orders: { total: 0, completed: 0, failed: 0, refunded: 0, revenue_cents: 0, month_count: 0, month_revenue_cents: 0 },
+      recent_orders: [],
+    } as unknown as AdminStats)
+    const w = await mountStats()
+    expect(w.text()).toContain('统计接口返回不完整')
+    expect(w.text()).not.toContain('月新增用户')
+  })
+
   it('hits the single aggregate endpoint instead of fanning out', async () => {
     await mountStats()
     expect(apiStubs.statsGet).toHaveBeenCalledTimes(1)

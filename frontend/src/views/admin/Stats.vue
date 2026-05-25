@@ -15,24 +15,53 @@ const { t } = useI18n()
 // the wire shape.
 const stats = ref<AdminStats | null>(null)
 const plans = ref<AdminPlan[]>([])
-const loading = ref(true)
+const statsLoading = ref(true)
+const plansLoading = ref(true)
 const error = ref<string | null>(null)
+const plansError = ref<string | null>(null)
 
-async function reload() {
-  loading.value = true
+function assertStatsPayload(value: AdminStats): AdminStats {
+  if (
+    !value?.users ||
+    !value.plans ||
+    !value.orders ||
+    !value.traffic ||
+    !Array.isArray(value.top_nodes) ||
+    !Array.isArray(value.top_users) ||
+    !value.audit ||
+    !Array.isArray(value.recent_orders)
+  ) {
+    throw new Error(t('admin.stats.invalidPayload'))
+  }
+  return value
+}
+
+async function loadStats() {
+  statsLoading.value = true
   error.value = null
   try {
-    const [s, p] = await Promise.all([
-      adminStatsApi.get(),
-      adminPlansApi.list(),
-    ])
-    stats.value = s
-    plans.value = p
+    stats.value = assertStatsPayload(await adminStatsApi.get())
   } catch (e: any) {
     error.value = formatError(e, t('admin.stats.loadFailed'))
   } finally {
-    loading.value = false
+    statsLoading.value = false
   }
+}
+
+async function loadPlans() {
+  plansLoading.value = true
+  plansError.value = null
+  try {
+    plans.value = await adminPlansApi.list()
+  } catch (e: any) {
+    plansError.value = formatError(e, t('admin.stats.plansLoadFailed'))
+  } finally {
+    plansLoading.value = false
+  }
+}
+
+async function reload() {
+  await Promise.allSettled([loadStats(), loadPlans()])
 }
 
 function formatYuan(cents: number): string {
@@ -101,7 +130,7 @@ defineExpose({ reload })
   <div>
     <p v-if="error" class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-300">{{ error }}</p>
 
-    <Skeleton v-if="loading" variant="kpi" :rows="4" />
+    <Skeleton v-if="statsLoading && !stats" variant="kpi" :rows="4" />
 
     <section v-else-if="stats" class="space-y-6">
       <!-- KPI strip: 4 cards matching screenshot row 2.
@@ -276,6 +305,7 @@ defineExpose({ reload })
           <h2 class="text-[15px] font-semibold tracking-tight text-ink-900 dark:text-surface-50">{{ $t('admin.stats.plans') }}</h2>
           <p class="mt-1 text-xs text-surface-500">{{ $t('admin.stats.plansEnabledSummary', { enabled: stats.plans.enabled, disabled: stats.plans.disabled }) }}</p>
           <ul class="mt-4 space-y-2">
+            <li v-if="plansLoading && plans.length === 0" class="text-xs text-surface-500">{{ $t('admin.stats.plansLoading') }}</li>
             <li v-for="p in plans" :key="p.id" class="flex items-center justify-between gap-3 rounded-lg border border-surface-100 px-3 py-2 dark:border-surface-800" :class="!p.enabled ? 'opacity-50' : ''">
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-medium text-ink-900 dark:text-surface-50">{{ p.name }}</div>
@@ -283,8 +313,9 @@ defineExpose({ reload })
               </div>
               <div class="text-sm font-semibold tabular-nums text-ink-900 dark:text-surface-50">{{ formatYuan(p.price_cents) }}</div>
             </li>
-            <li v-if="plans.length === 0" class="text-xs text-surface-500">{{ $t('admin.stats.empty') }}</li>
+            <li v-if="!plansLoading && plans.length === 0 && !plansError" class="text-xs text-surface-500">{{ $t('admin.stats.empty') }}</li>
           </ul>
+          <p v-if="plansError" class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-inset ring-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800">{{ plansError }}</p>
         </div>
 
         <div class="rounded-2xl border border-surface-100 bg-surface-0 p-5 lg:col-span-2 dark:border-surface-700 dark:bg-surface-900">

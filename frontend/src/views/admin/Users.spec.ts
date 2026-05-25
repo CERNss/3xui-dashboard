@@ -65,9 +65,10 @@ afterEach(() => {
 })
 
 describe('Users.vue smoke', () => {
-  it('mounts and renders the page title', async () => {
+  it('mounts and renders user controls', async () => {
     const w = await mountUsers()
-    expect(w.text()).toContain('用户管理')
+    expect(w.text()).toContain('新建用户')
+    expect(w.find('input[type="text"]').exists()).toBe(true)
   })
 
   it('renders the user list from the API', async () => {

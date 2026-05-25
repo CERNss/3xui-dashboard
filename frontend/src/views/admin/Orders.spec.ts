@@ -80,11 +80,10 @@ afterEach(() => {
 })
 
 describe('admin/Orders.vue smoke', () => {
-  it('mounts and renders the page title', async () => {
+  it('mounts and renders order controls', async () => {
     const w = await mountOrders()
-    // Orders page title — fallback to "订单" substring in case of
-    // future copy change
-    expect(w.text()).toMatch(/订单/)
+    expect(w.text()).toContain('总订单')
+    expect(w.find('button[title="刷新"]').exists()).toBe(true)
   })
 
   it('renders order rows joined with plan + user lookups', async () => {

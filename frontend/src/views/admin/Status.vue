@@ -30,37 +30,25 @@ async function reload() {
   }
 }
 
-function formatBytes(n: number): string {
-  if (!n) return '0 B'
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let v = Math.abs(n)
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return (i === 0 ? v.toFixed(0) : v.toFixed(2)) + ' ' + units[i]
-}
-
 const stats = computed(() => {
   const inbounds = fleet.value.inbounds.map((f) => f.inbound)
-  const online = nodes.value.filter((n) => n.status === 'online').length
-  const offline = nodes.value.filter((n) => n.status === 'offline').length
-  const unknown = nodes.value.filter((n) => n.status === 'unknown').length
+  const disabled = nodes.value.filter((n) => !n.enabled).length
+  const enabledNodes = nodes.value.filter((n) => n.enabled)
+  const online = enabledNodes.filter((n) => n.status === 'online').length
+  const offline = enabledNodes.filter((n) => n.status === 'offline').length
+  const unknown = enabledNodes.filter((n) => n.status !== 'online' && n.status !== 'offline').length
+  const attention = offline + unknown + disabled
   return {
     nodes: nodes.value.length,
     online,
     offline,
     unknown,
+    disabled,
+    attention,
     inbounds: inbounds.length,
     clients: inbounds.reduce((s, i) => s + (i.clientStats?.length ?? 0), 0),
-    up: inbounds.reduce((s, i) => s + (i.up || 0), 0),
-    down: inbounds.reduce((s, i) => s + (i.down || 0), 0),
-    allTime: inbounds.reduce((s, i) => s + (i.allTime || 0), 0),
   }
 })
-
-const totalNow = computed(() => stats.value.up + stats.value.down)
 
 function nodeStatusText(status: string | undefined | null): string {
   if (status === 'online' || status === 'offline' || status === 'unknown') {
@@ -149,6 +137,15 @@ function xrayHint(n: Node): string {
   return t('admin.status.nodeState.staleReport')
 }
 
+const attentionDetail = computed(() => {
+  if (stats.value.attention === 0) return t('admin.status.kpi.attentionClear')
+  return t('admin.status.kpi.attentionDetail', {
+    offline: stats.value.offline,
+    unknown: stats.value.unknown,
+    disabled: stats.value.disabled,
+  })
+})
+
 onMounted(reload)
 
 // Exposed so the parent Overview page can drive a shared
@@ -221,27 +218,23 @@ defineExpose({ reload })
           <div class="mt-4 text-2xs text-surface-600 dark:text-surface-300">{{ $t('admin.status.kpi.clientsHint') }}</div>
         </div>
 
-        <!-- Traffic (pink) -->
+        <!-- Needs attention -->
         <div class="group rounded-2xl border border-surface-100 bg-surface-0 p-5 transition-all duration-200 ease-brand hover:border-surface-200 hover:shadow-card-hover dark:border-surface-700 dark:bg-surface-900 dark:hover:border-surface-500">
           <div class="flex items-start justify-between">
-            <div class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.status.kpi.traffic') }}</div>
-            <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-pink-50 text-pink-600 transition-transform duration-200 ease-brand group-hover:scale-105 dark:bg-pink-500/15 dark:text-pink-300">
-              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg>
+            <div class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ $t('admin.status.kpi.attention') }}</div>
+            <div
+              class="flex h-8 w-8 items-center justify-center rounded-xl transition-transform duration-200 ease-brand group-hover:scale-105"
+              :class="stats.attention > 0
+                ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300'
+                : 'bg-accent-50 text-accent-600 dark:bg-accent-500/15 dark:text-accent-300'"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
             </div>
           </div>
           <div class="mt-3 flex items-baseline gap-2">
-            <span class="text-2xl font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ formatBytes(totalNow) }}</span>
+            <span class="text-display-sm font-semibold leading-none tracking-tight text-ink-900 tabular-nums dark:text-surface-50">{{ stats.attention }}</span>
           </div>
-          <div class="mt-4 flex items-center gap-3 text-2xs text-surface-600 dark:text-surface-200">
-            <span class="inline-flex items-center gap-1">
-              <svg class="h-3 w-3 text-accent-600 dark:text-accent-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-              {{ formatBytes(stats.up) }}
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <svg class="h-3 w-3 text-primary-500 dark:text-primary-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
-              {{ formatBytes(stats.down) }}
-            </span>
-          </div>
+          <div class="mt-4 text-2xs text-surface-600 dark:text-surface-300">{{ attentionDetail }}</div>
         </div>
       </div>
 
@@ -316,8 +309,6 @@ defineExpose({ reload })
           </tbody>
         </table>
       </div>
-
-      <p class="text-xs text-surface-600 dark:text-surface-300">{{ $t('admin.status.allTimeUsage', { value: formatBytes(stats.allTime) }) }}</p>
     </section>
   </div>
 </template>

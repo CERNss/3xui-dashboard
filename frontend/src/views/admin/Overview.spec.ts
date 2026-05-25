@@ -12,9 +12,10 @@ const apiStubs = vi.hoisted(() => ({
   inboundsFleet: vi.fn(),
   statsGet: vi.fn(),
   plansList: vi.fn(),
+  nodeMetrics: vi.fn(),
 }))
 vi.mock('@/api/admin/nodes', () => ({
-  nodesApi: { list: apiStubs.nodesList },
+  nodesApi: { list: apiStubs.nodesList, metrics: apiStubs.nodeMetrics },
 }))
 vi.mock('@/api/admin/inbounds', () => ({
   inboundsApi: { fleet: apiStubs.inboundsFleet },
@@ -75,6 +76,7 @@ beforeEach(() => {
   apiStubs.inboundsFleet.mockResolvedValue({ inbounds: [] })
   apiStubs.statsGet.mockResolvedValue(makeStats())
   apiStubs.plansList.mockResolvedValue([{ id: 1, name: 'P', price_cents: 0, duration_days: 30, traffic_limit_bytes: 0, enabled: true } as AdminPlan])
+  apiStubs.nodeMetrics.mockResolvedValue({ id: 1, from: 0, to: 0, bucket: '10m', points: [] })
 })
 afterEach(() => {
   vi.clearAllMocks()
@@ -84,11 +86,12 @@ afterEach(() => {
 describe('admin/Overview.vue', () => {
   it('renders the combined overview page on /admin/status', async () => {
     const { w } = await mountOverview('/admin/status')
-    expect(w.text()).toContain('总览')
-    expect(w.text()).toContain('同一页查看集群状态和运营统计')
+    expect(w.findAll('button[role="tab"]').map((button) => button.text())).toEqual(['系统状态', '统计'])
+    expect(w.text()).not.toContain('同一页查看集群状态和运营统计')
     // Stats panel must NOT have fetched (lazy mount).
     expect(apiStubs.statsGet).not.toHaveBeenCalled()
     expect(apiStubs.nodesList).toHaveBeenCalledTimes(1)
+    expect(w.findAll('button[role="tab"]')).toHaveLength(2)
   })
 
   it('switches active tab inside the overview page', async () => {
@@ -124,5 +127,6 @@ describe('admin/Overview.vue', () => {
     expect(apiStubs.statsGet).toHaveBeenCalledTimes(1)
     expect(apiStubs.plansList).toHaveBeenCalledTimes(1)
     expect(apiStubs.nodesList).not.toHaveBeenCalled()
+
   })
 })
