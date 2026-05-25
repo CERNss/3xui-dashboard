@@ -1,12 +1,14 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { Button, ConfigProvider, Space, Typography } from 'antd'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { App as AntdApp, Button, ConfigProvider, Space, Typography } from 'antd'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
-import { lightTheme } from './theme'
+import { createAppQueryClient } from './lib/queryClient'
+import { useThemeStore } from './stores/theme'
+import { darkTheme, lightTheme } from './theme'
 import './style.css'
 
-const queryClient = new QueryClient()
+const queryClient = createAppQueryClient()
 
 function App() {
   return (
@@ -29,14 +31,24 @@ function App() {
   )
 }
 
+function Root() {
+  const resolvedTheme = useThemeStore((state) => state.resolvedTheme)
+
+  return (
+    <ConfigProvider theme={resolvedTheme === 'dark' ? darkTheme : lightTheme}>
+      <AntdApp>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </QueryClientProvider>
+      </AntdApp>
+    </ConfigProvider>
+  )
+}
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <ConfigProvider theme={lightTheme}>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </QueryClientProvider>
-    </ConfigProvider>
+    <Root />
   </React.StrictMode>
 )

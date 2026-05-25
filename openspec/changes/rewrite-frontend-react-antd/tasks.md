@@ -16,48 +16,48 @@
 
 ## 2. P1 — Port API layer
 
-- [ ] 2.1 Port `frontend/src/api/client/factory.ts` → `frontend-react/src/api/client/factory.ts` (axios setup unchanged)
-- [ ] 2.2 Port `frontend/src/api/client/admin.ts` and `client/portal.ts` (axios instances + interceptors)
-- [ ] 2.3 Port `frontend/src/api/branding.ts` (public endpoint)
-- [ ] 2.4 Port `frontend/src/api/admin/*.ts` (10 modules: auth, nodes, inbounds, users, plans, orders, provisioningPools, stats, webhooks, settings, audit, index)
-- [ ] 2.5 Port `frontend/src/api/portal/*.ts` (5 modules: auth, billing, profile, traffic, index)
-- [ ] 2.6 Verify axios calls compile and types align with backend by running `npm run typecheck` (no React hooks consume them yet)
+- [x] 2.1 Port `frontend/src/api/client/factory.ts` → `frontend-react/src/api/client/factory.ts` (axios setup unchanged)
+- [x] 2.2 Port `frontend/src/api/client/admin.ts` and `client/portal.ts` (axios instances + interceptors)
+- [x] 2.3 Port `frontend/src/api/branding.ts` (public endpoint)
+- [x] 2.4 Port `frontend/src/api/admin/*.ts` (10 modules: auth, nodes, inbounds, users, plans, orders, provisioningPools, stats, webhooks, settings, audit, index)
+- [x] 2.5 Port `frontend/src/api/portal/*.ts` (5 modules: auth, billing, profile, traffic, index)
+- [x] 2.6 Verify axios calls compile and types align with backend by running `npm run typecheck` (no React hooks consume them yet)
 
 ## 3. P1 — Wrap API in TanStack Query hooks
 
-- [ ] 3.1 Create `frontend-react/src/hooks/queries/` folder mirroring api/{admin,portal} structure
-- [ ] 3.2 For each admin api module, write `useXxxList()`, `useXxxDetail()`, etc. wrapping `useQuery` with the 3-segment query key convention from design D3
-- [ ] 3.3 For each admin api mutation, write `useCreateXxx()`, `useUpdateXxx()`, `useDeleteXxx()` wrapping `useMutation` with `onSuccess: invalidate [area, resource]`
-- [ ] 3.4 Repeat 3.2 + 3.3 for every portal api module
-- [ ] 3.5 Add a single `QueryClient` factory in `src/lib/queryClient.ts` with the stale-time defaults from design D3 (30s for lists, 5min for branding/settings)
+- [x] 3.1 Create `frontend-react/src/hooks/queries/` folder mirroring api/{admin,portal} structure
+- [x] 3.2 For each admin api module, write `useXxxList()`, `useXxxDetail()`, etc. wrapping `useQuery` with the 3-segment query key convention from design D3
+- [x] 3.3 For each admin api mutation, write `useCreateXxx()`, `useUpdateXxx()`, `useDeleteXxx()` wrapping `useMutation` with `onSuccess: invalidate [area, resource]`
+- [x] 3.4 Repeat 3.2 + 3.3 for every portal api module
+- [x] 3.5 Add a single `QueryClient` factory in `src/lib/queryClient.ts` with the stale-time defaults from design D3 (30s for lists, 5min for branding/settings)
 
 ## 4. P1 — Port i18n + utils
 
-- [ ] 4.1 Copy `frontend/src/i18n/locales/zh.ts` → `frontend-react/src/i18n/locales/zh.ts`, change `export default` to named `export const zh`
-- [ ] 4.2 Copy `en.ts` the same way
-- [ ] 4.3 Write `frontend-react/src/i18n/index.ts` initializing `i18next` with `{ resources: { zh: { translation: zh }, en: { translation: en } }, returnNull: false, keySeparator: '.', interpolation: { prefix: '{', suffix: '}' } }`
-- [ ] 4.4 Write a locale-parity script `frontend-react/scripts/check-locale-parity.mjs` that flattens both locale objects from Vue + React trees and asserts the key set diff is empty (CI guard)
-- [ ] 4.5 Port `frontend/src/utils/format.ts` → `frontend-react/src/utils/format.ts` verbatim (no Vue-specific imports)
-- [ ] 4.6 Delete `useConfirm` composable from the React tree's TODO list — use `Modal.confirm` directly
+- [x] 4.1 Copy `frontend/src/i18n/locales/zh.ts` → `frontend-react/src/i18n/locales/zh.ts`, change `export default` to named `export const zh`
+- [x] 4.2 Copy `en.ts` the same way
+- [x] 4.3 Write `frontend-react/src/i18n/index.ts` initializing `i18next` with `{ resources: { zh: { translation: zh }, en: { translation: en } }, returnNull: false, keySeparator: '.', interpolation: { prefix: '{', suffix: '}' } }`
+- [x] 4.4 Write a locale-parity script `frontend-react/scripts/check-locale-parity.mjs` that flattens both locale objects from Vue + React trees and asserts the key set diff is empty (CI guard)
+- [x] 4.5 Port `frontend/src/utils/format.ts` → `frontend-react/src/utils/format.ts` verbatim (no Vue-specific imports)
+- [x] 4.6 Delete `useConfirm` composable from the React tree's TODO list — use `Modal.confirm` directly
 
 ## 5. P1 — Port stores to Zustand
 
-- [ ] 5.1 Port `stores/adminAuth.ts` to Zustand with `persist` middleware, localStorage key `3xui.adminAuth` (matches Vue tree per spec scenario "Storage keys are stable across cutover")
-- [ ] 5.2 Port `stores/portalAuth.ts` to Zustand with `persist`, localStorage key `3xui.portalAuth`
-- [ ] 5.3 Port `stores/app.ts` (locale ephemeral state, no persist)
-- [ ] 5.4 Port `stores/theme.ts` to Zustand with `persist`, localStorage key matches Vue tree; expose `mode: 'light' | 'dark' | 'system'`
-- [ ] 5.5 Replace `stores/branding.ts` Pinia store with a `useBranding()` TanStack Query hook (server state, not client state per design D4)
+- [x] 5.1 Port `stores/adminAuth.ts` to Zustand with `persist` middleware, localStorage key `3xui.adminAuth` (matches Vue tree per spec scenario "Storage keys are stable across cutover")
+- [x] 5.2 Port `stores/portalAuth.ts` to Zustand with `persist`, localStorage key `3xui.portalAuth`
+- [x] 5.3 Port `stores/app.ts` (locale ephemeral state, no persist)
+- [x] 5.4 Port `stores/theme.ts` to Zustand with `persist`, localStorage key matches Vue tree; expose `mode: 'light' | 'dark' | 'system'`
+- [x] 5.5 Replace `stores/branding.ts` Pinia store with a `useBranding()` TanStack Query hook (server state, not client state per design D4)
 
 ## 6. P1 — Port shared components
 
-- [ ] 6.1 Replace `components/common/ConfirmModal.vue` callers with AntD `Modal.confirm` — no React component needed
-- [ ] 6.2 Replace `EmptyState.vue` with a thin wrapper around AntD `Empty` that accepts `icon`, `title`, `description`, `actionLabel`, `onAction` props
-- [ ] 6.3 Replace `Skeleton.vue` with a wrapper around AntD `Skeleton` that supports the existing `variant="kpi"` + `rows` prop shape used by Status/Stats panels
-- [ ] 6.4 Port `AccountMenu.vue` to React using AntD `Dropdown` + `Menu` items
-- [ ] 6.5 Port `LocaleSwitcher.vue` to React using AntD `Segmented` with locale tokens
-- [ ] 6.6 Add a new shared `PageHeader` component (title + subtitle + trailing actions slot) — fulfills the spec scenario "Page header is a single shared component"
-- [ ] 6.7 Add a shared `RefreshButton` wrapping AntD `<Button icon={<ReloadOutlined />}>` — fulfills "Refresh button identical on every page"
-- [ ] 6.8 Add a shared `ResponsiveListTable` wrapper that swaps AntD `<Table>` (desktop) ↔ AntD `<List>` + card render-prop (mobile) at the `MD_BREAKPOINT` boundary defined in `src/theme.ts` per design D13. Sets `data-component="responsive-list-table"` on its root for tests
+- [x] 6.1 Replace `components/common/ConfirmModal.vue` callers with AntD `Modal.confirm` — no React component needed
+- [x] 6.2 Replace `EmptyState.vue` with a thin wrapper around AntD `Empty` that accepts `icon`, `title`, `description`, `actionLabel`, `onAction` props
+- [x] 6.3 Replace `Skeleton.vue` with a wrapper around AntD `Skeleton` that supports the existing `variant="kpi"` + `rows` prop shape used by Status/Stats panels
+- [x] 6.4 Port `AccountMenu.vue` to React using AntD `Dropdown` + `Menu` items
+- [x] 6.5 Port `LocaleSwitcher.vue` to React using AntD `Segmented` with locale tokens
+- [x] 6.6 Add a new shared `PageHeader` component (title + subtitle + trailing actions slot) — fulfills the spec scenario "Page header is a single shared component"
+- [x] 6.7 Add a shared `RefreshButton` wrapping AntD `<Button icon={<ReloadOutlined />}>` — fulfills "Refresh button identical on every page"
+- [x] 6.8 Add a shared `ResponsiveListTable` wrapper that swaps AntD `<Table>` (desktop) ↔ AntD `<List>` + card render-prop (mobile) at the `MD_BREAKPOINT` boundary defined in `src/theme.ts` per design D13. Sets `data-component="responsive-list-table"` on its root for tests
 
 ## 7. P2 — Layouts + routing
 
