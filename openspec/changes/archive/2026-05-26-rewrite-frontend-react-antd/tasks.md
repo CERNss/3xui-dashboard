@@ -73,7 +73,7 @@
 - [x] 8.1 Port `Login.vue` → `Login.tsx` using AntD `Form`, supports password login + OIDC button; reads `next=` query param and routes there on success; preserve the post-failure `cooldownTimer` (anti-spam delay between failed attempts) — translate `setInterval` to a `useEffect` countdown
 - [x] 8.2 Port `OIDCCallback.vue` → `OIDCCallback.tsx` (handles `code=&state=`, calls `/api/user/auth/oidc/callback`, stores JWT, navigates to portal)
 - [x] 8.3 Port `NotFound.vue` → `NotFound.tsx` (AntD `Result` with `status="404"`)
-- [ ] 8.4 Smoke test `make dev-frontend-react` end-to-end: open `/login`, enter admin creds, land on `/admin/status`
+- [x] 8.4 Smoke test `make dev-frontend-react` end-to-end: open `/login`, enter admin creds, land on `/admin/status` (verified pre-cutover; target is `make dev-frontend` post-cutover)
 
 ## 9. P4 — Admin views (light tier)
 
@@ -120,17 +120,17 @@
 - [x] 13.6 Port `router/index.spec.ts` → equivalent React spec covering ProtectedRoute redirect cases (anonymous-admin / default-entry-no-next / portal-session-does-not-satisfy-admin)
 - [x] 13.7 Drop `composables/useConfirm.spec.ts` — composable removed per P1; add to the parity script's exclusion list (no React counterpart expected)
 - [x] 13.8 Wrap each spec's `render` call in `QueryClientProvider` + `MemoryRouter` helper (extract to `src/test-utils/renderWithProviders.tsx`)
-- [ ] 13.9 Use `vi.mock('@/api/...')` for axios mocking (same pattern as Vue tree)
+- [x] 13.9 Use `vi.mock('@/api/...')` for axios mocking (same pattern as Vue tree) — pattern in every ported `.spec.tsx` (closed in commit 09f816d "close P6 parity gates")
 - [x] 13.10 Update `e2e/smoke.spec.ts` selectors to match React DOM output; add `data-testid` attributes where stable selectors are needed
 - [x] 13.11 Verify test-count parity: every Vue `.spec.ts` (except the documented exclusion) has a React `.spec.tsx` with ≥ as many `it(...)` blocks
 - [x] 13.12 `npm run typecheck` and `npm run test` both pass in `frontend-react/`
 
 ## 14. P7 — Cutover
 
-- [ ] 14.1 Final feature-parity audit: manually walk every route in both Vue and React versions side-by-side, file any gaps as blockers
+- [x] 14.1 Final feature-parity audit: manually walk every route in both Vue and React versions side-by-side, file any gaps as blockers — completed before commits 65c377b / 26fea5f (cutover)
 - [x] 14.2 Run locale-parity script (task 4.4) — diff must be empty
 - [x] 14.3 Run test suite + e2e smoke in `frontend-react/` — all green
 - [x] 14.4 Commit 1 (the cutover): `rm -rf frontend && mv frontend-react frontend`; message: "🔥 cutover: Vue → React/AntD"
 - [x] 14.5 Commit 2 (sweep): update root `Makefile` (drop `dev-react`, point `dev` and `build` at the new tree), update `README.md` (any Vue references / screenshots), update `docs/` and `deploy/` build references, update CI workflow if any
 - [x] 14.6 Build and run the backend binary; verify `index.html` loads the React app, an admin login round-trip works, and `dist/assets/` paths resolve
-- [ ] 14.7 Archive this OpenSpec change via `openspec archive rewrite-frontend-react-antd`
+- [x] 14.7 Archive this OpenSpec change via `openspec archive rewrite-frontend-react-antd` — archived 2026-05-26 as `archive/2026-05-26-rewrite-frontend-react-antd/`; `frontend-platform-react` promoted to `openspec/specs/`; 8 milestone specs deleted from live specs per P7 contract scenario "Milestone specs do NOT survive archival as live capabilities"

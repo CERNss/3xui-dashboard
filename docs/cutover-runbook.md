@@ -1,5 +1,12 @@
 # Cutover Runbook — Vue → React/AntD
 
+> **历史档案** — cutover **已于 2026-05-26 执行完成**（commits
+> `65c377b` "replace Vue frontend with React" + `26fea5f` "point
+> tooling at React frontend"）。下面的 T-24h / T-0 / T+1h 清单
+> 是当时跑过的操作手册，保留作为参考。**不要再按这份 runbook
+> 执行**——`frontend-react/` 目录已经不存在，`frontend/` 现在就
+> 是 React 树。
+
 操作手册。cutover 是 OpenSpec change `rewrite-frontend-react-antd` 的 P7 里程碑，一次性把 `frontend/` (Vue) 换成 `frontend-react/` (React)。这份文档列出 T-24h、T-0、T+1h 三个时间点要做的事。
 
 执行者：项目维护者本人。前提：P0–P6 全部完成、`openspec validate rewrite-frontend-react-antd` 通过、`frontend-react/` 下 `npm run typecheck && npm run lint && npm run test && npm run e2e` 全绿。

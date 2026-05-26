@@ -1,8 +1,14 @@
 # 前端 React + AntD 重构计划
 
+> **历史档案** — 此文档记录的是 2026-05-25 立项、2026-05-26
+> cutover 完成的前端重构计划。**cutover 已执行完毕**，`frontend/`
+> 现在是 React 树。下面所有"当前前端是 Vue 3 …"、"未来 cutover
+> 时…"等未来式表述都应按"已发生的历史决策"阅读，不是 active 工作。
+> 现行架构请看 `CLAUDE.md` 顶部"Stack at a glance"。
+
 ## 为什么要重构
 
-当前前端是 Vue 3 + Pinia + vue-router + 自研 Tailwind 设计系统，~18.8K 行代码、23 个 view（含 OpsMonitor 和 settings 子目录）、9 个共享组件。两个结构性问题逼着换栈：
+（重构前）前端是 Vue 3 + Pinia + vue-router + 自研 Tailwind 设计系统，~18.8K 行代码、23 个 view（含 OpsMonitor 和 settings 子目录）、9 个共享组件。两个结构性问题逼着换栈：
 
 **组件漂移**。同样语义的 widget（刷新按钮、page header、状态徽章、KPI 卡片）在每个 view 里被重新写一遍，Tailwind class 串各不相同。`refactor-admin-portal-ui-primitives` 这个 OpenSpec 已经尝试抽过一轮 primitives，但每加一个 admin 页面都还在长出新的一次性副本。用户在 2026-05-24 Status+Stats merge 时明确点名这是质量问题。
 

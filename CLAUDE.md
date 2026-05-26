@@ -9,10 +9,11 @@ React Router for routing, and react-i18next/i18next for locale
 handling.
 
 The former rewrite plan lives in `docs/frontend-rewrite.md`; the
-formal OpenSpec change was `rewrite-frontend-react-antd`
-(`openspec/changes/`) until archival. Treat those artifacts as
-historical context unless the user is explicitly asking about the
-rewrite itself.
+formal OpenSpec change `rewrite-frontend-react-antd` is archived
+at `openspec/changes/archive/2026-05-26-rewrite-frontend-react-antd/`,
+and its long-term contract lives in `openspec/specs/frontend-platform-react/`.
+Treat the rewrite-plan / runbook docs as historical context unless
+the user is explicitly asking about the rewrite itself.
 
 For new frontend work, edit `frontend/`. There is no parallel
 frontend tree after cutover.
@@ -21,8 +22,12 @@ frontend tree after cutover.
 
 - `docs/frontend-rewrite.md` — historical narrative pitch +
   design summary for the React rewrite.
-- `openspec/changes/rewrite-frontend-react-antd/` — formal
-  rewrite spec until it is archived.
+- `openspec/specs/frontend-platform-react/` — canonical
+  platform contract promoted at archival (which libraries,
+  build output, state model). Long-term spec, not historical.
+- `openspec/changes/archive/2026-05-26-rewrite-frontend-react-antd/`
+  — archived rewrite change (proposal / design / 9 phase specs
+  / tasks). Historical reference.
 - `docs/3xui-node-reference.md` — node-side API + data-shape
   reference. Consult before touching any node-facing code.
 - `docs/operator/` — runbook-style docs (OIDC setup,
