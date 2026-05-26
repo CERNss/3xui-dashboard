@@ -1,6 +1,8 @@
 import { Alert, Card, Col, Row, Space, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import type { TFunction } from 'i18next'
 import { forwardRef, useEffect, useImperativeHandle, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { EmptyState, ResponsiveListTable } from '@/components/common'
 import type { Node } from '@/api/admin/nodes'
@@ -29,24 +31,22 @@ function statusColor(tone: NodeTone) {
   return 'gold'
 }
 
-function nodeLabel(node: Node) {
+function nodeLabel(node: Node, t: TFunction) {
   const tone = nodeTone(node)
-  if (tone === 'disabled') return 'Disabled'
-  if (tone === 'unknown') return 'Unknown'
-  return tone === 'online' ? 'Online' : 'Offline'
+  return t(`admin.status.nodeState.${tone}`)
 }
 
 function hasProbeData(node: Node) {
   return Boolean(node.last_seen_at || node.xray_version || node.cpu_pct > 0 || node.mem_pct > 0)
 }
 
-function nodeDetail(node: Node) {
+function nodeDetail(node: Node, t: TFunction) {
   const tone = nodeTone(node)
-  if (tone === 'online') return 'Live probe data'
-  if (tone === 'disabled') return 'Disabled nodes do not report probes'
-  if (tone === 'unknown') return 'No successful probe has reported yet'
-  if (node.last_seen_at) return `Last seen ${formatDateTime(node.last_seen_at)}`
-  return 'Never seen online'
+  if (tone === 'online') return t('admin.status.nodeState.onlineHint')
+  if (tone === 'disabled') return t('admin.status.nodeState.disabledHint')
+  if (tone === 'unknown') return t('admin.status.nodeState.unknownHint')
+  if (node.last_seen_at) return t('admin.status.nodeState.offlineLastSeen', { time: formatDateTime(node.last_seen_at) })
+  return t('admin.status.nodeState.offlineNeverSeen')
 }
 
 function nodeMetrics(node: Node) {
@@ -59,6 +59,7 @@ interface StatusPanelProps {
 }
 
 export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(function StatusPanel({ onFetchingChange }, ref) {
+  const { t } = useTranslation()
   const nodesQuery = useNodesList()
   const fleetQuery = useInboundsFleet()
 
@@ -106,30 +107,30 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
 
   const columns: ColumnsType<Node> = [
     {
-      title: 'Name',
+      title: t('admin.status.column.name'),
       dataIndex: 'name',
       render: (_value, node) => (
         <Space direction="vertical" size={2}>
           <Typography.Text strong>{node.name}</Typography.Text>
-          {!node.enabled ? <Typography.Text type="secondary">Disabled</Typography.Text> : null}
+          {!node.enabled ? <Typography.Text type="secondary">{t('admin.status.nodeState.disabled')}</Typography.Text> : null}
         </Space>
       ),
     },
     {
-      title: 'Status',
+      title: t('admin.status.column.status'),
       dataIndex: 'status',
       render: (_value, node) => {
         const tone = nodeTone(node)
         return (
           <Space direction="vertical" size={2}>
-            <Tag color={statusColor(tone)}>{nodeLabel(node)}</Tag>
-            <Typography.Text type="secondary">{nodeDetail(node)}</Typography.Text>
+            <Tag color={statusColor(tone)}>{nodeLabel(node, t)}</Tag>
+            <Typography.Text type="secondary">{nodeDetail(node, t)}</Typography.Text>
           </Space>
         )
       },
     },
     {
-      title: 'CPU / Mem',
+      title: t('admin.status.column.cpuMem'),
       key: 'cpuMem',
       render: (_value, node) => <Typography.Text>{nodeMetrics(node)}</Typography.Text>,
     },
@@ -139,7 +140,7 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
       render: (value: string) => <Typography.Text code>{value || '—'}</Typography.Text>,
     },
     {
-      title: 'Last seen',
+      title: t('admin.status.column.lastSeen'),
       dataIndex: 'last_seen_at',
       render: (value?: string | null) => formatDateTime(value),
     },
@@ -147,38 +148,38 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
-      {error ? <Alert type="error" showIcon message="Status load failed" /> : null}
+      {error ? <Alert type="error" showIcon message={t('admin.status.loadFailed')} /> : null}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} lg={6}>
           <KpiCard
-            title="Nodes"
+            title={t('admin.status.kpi.nodes')}
             value={stats.nodes}
-            extra={`${stats.online} online · ${stats.offline} offline · ${stats.unknown} unknown`}
+            extra={`${t('admin.status.kpi.online', { n: stats.online })} · ${t('admin.status.kpi.offline', { n: stats.offline })} · ${t('admin.status.kpi.unknown', { n: stats.unknown })}`}
           />
         </Col>
         <Col xs={24} md={12} lg={6}>
-          <KpiCard title="Inbounds" value={stats.inbounds} extra={`${stats.nodes} nodes in fleet`} />
+          <KpiCard title={t('admin.status.kpi.inbounds')} value={stats.inbounds} extra={t('admin.status.kpi.inboundsHint', { n: stats.nodes })} />
         </Col>
         <Col xs={24} md={12} lg={6}>
-          <KpiCard title="Clients" value={stats.clients} extra="Configured inbound clients" />
+          <KpiCard title={t('admin.status.kpi.clients')} value={stats.clients} extra={t('admin.status.kpi.clientsHint')} />
         </Col>
         <Col xs={24} md={12} lg={6}>
           <KpiCard
-            title="Needs attention"
+            title={t('admin.status.kpi.attention')}
             value={stats.attention}
             extra={
               stats.attention > 0
-                ? `${stats.offline} offline · ${stats.unknown} unknown · ${stats.disabled} disabled`
-                : 'All enabled nodes are online'
+                ? t('admin.status.kpi.attentionDetail', { disabled: stats.disabled, offline: stats.offline, unknown: stats.unknown })
+                : t('admin.status.kpi.attentionClear')
             }
           />
         </Col>
       </Row>
 
       <Card
-        title="Node health"
-        extra={<Link to="/admin/nodes">Manage nodes</Link>}
+        title={t('admin.status.nodeHealth')}
+        extra={<Link to="/admin/nodes">{t('admin.status.manageNodes')}</Link>}
         styles={{ body: { padding: nodes.length > 0 || loading ? 0 : 24 } }}
       >
         {nodes.length > 0 || loading ? (
@@ -193,20 +194,20 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Typography.Text strong>{node.name}</Typography.Text>
-                    <Tag color={statusColor(nodeTone(node))}>{nodeLabel(node)}</Tag>
+                    <Tag color={statusColor(nodeTone(node))}>{nodeLabel(node, t)}</Tag>
                   </Space>
-                  <Typography.Text type="secondary">{nodeDetail(node)}</Typography.Text>
-                  <Typography.Text>CPU / Mem: {nodeMetrics(node)}</Typography.Text>
+                  <Typography.Text type="secondary">{nodeDetail(node, t)}</Typography.Text>
+                  <Typography.Text>{t('admin.status.column.cpuMem')}: {nodeMetrics(node)}</Typography.Text>
                   <Typography.Text>Xray: {node.xray_version || '—'}</Typography.Text>
-                  <Typography.Text>Last seen: {formatDateTime(node.last_seen_at)}</Typography.Text>
+                  <Typography.Text>{t('admin.status.column.lastSeen')}: {formatDateTime(node.last_seen_at)}</Typography.Text>
                 </Space>
               </Card>
             )}
           />
         ) : (
           <EmptyState
-            title="No nodes"
-            description="Create a node before checking fleet health."
+            title={t('admin.status.empty')}
+            description={t('admin.status.emptyDescription')}
           />
         )}
       </Card>

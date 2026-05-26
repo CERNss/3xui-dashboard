@@ -5,11 +5,11 @@ import { queryKeys } from '../keys'
 
 const keys = queryKeys('admin', 'stats')
 
-export function useAdminStats() {
+export function useAdminStats(options?: { reportErrors?: boolean }) {
   const result = useQuery({
     queryKey: keys.op('get'),
     queryFn: adminStatsApi.get,
   })
-  useQueryErrorReporter(result.error, result.isError)
+  useQueryErrorReporter(result.error, result.isError && options?.reportErrors !== false)
   return result
 }

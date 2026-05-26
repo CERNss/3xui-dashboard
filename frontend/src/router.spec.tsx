@@ -5,6 +5,7 @@ import { AppRouter } from './router'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
+import '@/i18n'
 
 vi.mock('@/hooks/queries/branding', () => ({
   useBranding: () => ({
@@ -13,6 +14,16 @@ vi.mock('@/hooks/queries/branding', () => ({
       subtitle: 'Central panel',
       description: 'Fleet control',
       footer: 'Footer text',
+    },
+  }),
+}))
+
+vi.mock('@/hooks/queries/admin/stats', () => ({
+  useAdminStats: () => ({
+    data: {
+      users: {
+        total_balance_cents: 0,
+      },
     },
   }),
 }))
@@ -31,7 +42,7 @@ vi.mock('./views/admin/Inbounds', () => ({ default: () => <h1>Inbounds</h1> }))
 vi.mock('./views/admin/Nodes', () => ({ default: () => <h1>Nodes</h1> }))
 vi.mock('./views/admin/OpsMonitor', () => ({ default: () => <h1>Ops Monitor</h1> }))
 vi.mock('./views/admin/Orders', () => ({ default: () => <h1>Orders</h1> }))
-vi.mock('./views/admin/Overview', () => ({ default: ({ defaultTab }: { defaultTab?: string }) => <h1>{defaultTab === 'stats' ? 'Admin Stats' : 'Admin Status'}</h1> }))
+vi.mock('./views/admin/Overview', () => ({ default: () => <h1>Admin Status</h1> }))
 vi.mock('./views/admin/Plans', () => ({ default: () => <h1>Plans</h1> }))
 vi.mock('./views/admin/ProvisioningPools', () => ({ default: () => <h1>Provisioning Pools</h1> }))
 vi.mock('./views/admin/Settings', () => ({ default: () => <h1>Settings</h1> }))
@@ -66,7 +77,6 @@ beforeEach(() => {
 describe('AppRouter', () => {
   it.each([
     ['/admin/status', 'Admin Status'],
-    ['/admin/stats', 'Admin Stats'],
     ['/admin/ops-monitor', 'Ops Monitor'],
     ['/admin/nodes', 'Nodes'],
     ['/admin/inbounds', 'Inbounds'],
@@ -82,8 +92,17 @@ describe('AppRouter', () => {
 
     renderRouter(path)
 
-    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+    expect(await screen.findAllByRole('heading', { name: title })).not.toHaveLength(0)
     expect(screen.queryByText('Page not found')).not.toBeInTheDocument()
+  })
+
+  it('redirects legacy /admin/stats to the system status stats tab', async () => {
+    useAdminAuthStore.getState().setSession('admin-token', 'root')
+
+    renderRouter('/admin/stats')
+
+    expect(await screen.findAllByRole('heading', { name: 'Admin Status' })).not.toHaveLength(0)
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/admin/status?tab=stats'))
   })
 
   it.each([

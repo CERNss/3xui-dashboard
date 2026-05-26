@@ -96,11 +96,11 @@ export function Login() {
   }
 
   return (
-    <main className="auth-surface">
-      <Card style={{ width: 'min(100%, 420px)' }}>
+    <section className="auth-surface auth-login-surface">
+      <Card className="auth-login-card" styles={{ body: { padding: 32 } }}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <div>
-            <Typography.Title level={2} style={{ marginBottom: 4 }}>
+          <div className="auth-form-heading">
+            <Typography.Title level={2} style={{ marginBottom: 6 }}>
               {t('auth.welcomeBack', { defaultValue: 'Welcome back' })}
             </Typography.Title>
             <Typography.Text type="secondary">
@@ -158,7 +158,7 @@ export function Login() {
           ) : null}
         </Space>
       </Card>
-    </main>
+    </section>
   )
 }
 

@@ -277,17 +277,17 @@ export function OIDCCallback() {
 
   if (loading) {
     return (
-      <main className="auth-surface">
+      <section className="auth-surface">
         <Card>
           <Spin /> <Typography.Text>{t('auth.oidcReturning', { defaultValue: 'Completing OIDC login...' })}</Typography.Text>
         </Card>
-      </main>
+      </section>
     )
   }
 
   if (pending) {
     return (
-      <main className="auth-surface">
+      <section className="auth-surface">
         <Card style={{ width: 'min(100%, 560px)' }}>
           <Space direction="vertical" size="large" style={{ width: '100%' }}>
             <Space align="start">
@@ -411,7 +411,7 @@ export function OIDCCallback() {
             />
           </Space>
         </Card>
-      </main>
+      </section>
     )
   }
 
@@ -447,7 +447,7 @@ function OidcErrorResult({ error, onRestart }: { error: TypedOidcError | null; o
   )
 
   return (
-    <main className="auth-surface">
+    <section className="auth-surface">
       <Result
         status="error"
         title={t('auth.oidcReturningTitleFailed', { defaultValue: 'OIDC login failed' })}
@@ -467,7 +467,7 @@ function OidcErrorResult({ error, onRestart }: { error: TypedOidcError | null; o
           items={[{ key: 'details', label: oidcLabels.details, children: <pre>{error.body}</pre> }]}
         />
       ) : null}
-    </main>
+    </section>
   )
 }
 

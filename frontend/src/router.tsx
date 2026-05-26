@@ -44,8 +44,8 @@ export function AppRouter() {
       <Route element={<ProtectedRoute area="admin" />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate replace to="/admin/status" />} />
-          <Route path="status" element={<AdminOverview defaultTab="status" />} />
-          <Route path="stats" element={<AdminOverview defaultTab="stats" />} />
+          <Route path="status" element={<AdminOverview />} />
+          <Route path="stats" element={<Navigate replace to="/admin/status?tab=stats" />} />
           <Route path="ops-monitor" element={<AdminOpsMonitor />} />
           <Route path="nodes" element={<AdminNodes />} />
           <Route path="inbounds" element={<AdminInbounds />} />

@@ -4,6 +4,9 @@ import { Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminAuthApi } from '@/api/admin/auth'
 import { portalAuthApi } from '@/api/portal/auth'
+import { i18n } from '@/i18n'
+import { AuthLayout } from '@/components/layout'
+import { useAppStore } from '@/stores/app'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Login from './Login'
 
@@ -35,6 +38,18 @@ vi.mock('@/stores/adminAuth', () => ({
   useAdminAuthStore: (selector: (state: typeof adminState) => unknown) => selector(adminState),
 }))
 
+vi.mock('@/hooks/queries/branding', () => ({
+  useBranding: () => ({
+    data: {
+      icon_url: '',
+      title: '3xui Central',
+      subtitle: 'Central panel',
+      description: 'Fleet control',
+      footer: '',
+    },
+  }),
+}))
+
 const loginMock = vi.mocked(adminAuthApi.login)
 const providersMock = vi.mocked(portalAuthApi.oidcProviders)
 const oidcStartMock = vi.mocked(portalAuthApi.oidcStart)
@@ -54,10 +69,28 @@ function renderLogin(initialEntry = '/login') {
   )
 }
 
+function renderLoginShell(initialEntry = '/login') {
+  return renderWithProviders(
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <AuthLayout>
+            <Login />
+          </AuthLayout>
+        }
+      />
+    </Routes>,
+    { initialEntries: [initialEntry] },
+  )
+}
+
 beforeEach(() => {
   adminState.token = null
   adminState.username = null
   adminState.isAuthenticated = false
+  useAppStore.getState().setLocale('en-US')
+  void i18n.changeLanguage('en')
   loginMock.mockReset()
   providersMock.mockReset()
   providersMock.mockResolvedValue([])
@@ -104,6 +137,18 @@ describe('Login', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Acme SSO' }))
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/authorize')
+  })
+
+  it('switches visible translations when locale changes', async () => {
+    await i18n.changeLanguage('en')
+    useAppStore.getState().setLocale('en-US')
+    renderLoginShell()
+
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('switch', { name: /Language/i }))
+
+    expect(await screen.findByRole('heading', { name: '欢迎回来' })).toBeInTheDocument()
   })
 
   it('uses oidcStart when provider metadata has no login URL', async () => {

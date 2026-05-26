@@ -37,7 +37,6 @@ export function adminSections(t: TFunction): NavSection[] {
       items: [
         { key: '/admin/ops-monitor', to: '/admin/ops-monitor', label: t('nav.opsMonitor'), icon: <BarChartOutlined /> },
         { key: '/admin/status', to: '/admin/status', label: t('nav.status'), icon: <DashboardOutlined /> },
-        { key: '/admin/stats', to: '/admin/stats', label: t('nav.stats', { defaultValue: 'Stats' }), icon: <BarChartOutlined /> },
       ],
     },
     {

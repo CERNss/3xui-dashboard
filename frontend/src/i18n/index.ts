@@ -8,10 +8,16 @@ const LOCALE_KEY = 'dashboard.locale'
 
 export type Locale = 'en' | 'zh'
 
+function normalizeLocale(value: string | null | undefined): Locale | null {
+  if (value === 'zh' || value === 'zh-CN') return 'zh'
+  if (value === 'en' || value === 'en-US') return 'en'
+  return null
+}
+
 function initialLocale(): Locale {
   if (typeof window !== 'undefined') {
-    const stored = window.localStorage.getItem(LOCALE_KEY)
-    if (stored === 'en' || stored === 'zh') return stored
+    const stored = normalizeLocale(window.localStorage.getItem(LOCALE_KEY))
+    if (stored) return stored
 
     return window.navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
   }

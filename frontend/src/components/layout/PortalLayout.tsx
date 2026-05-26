@@ -1,4 +1,4 @@
-import { Layout, Menu, Space, Typography } from 'antd'
+import { Layout, Menu, Space, Typography, theme } from 'antd'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -19,6 +19,7 @@ export function PortalLayout() {
   const clearAuth = usePortalAuthStore((state) => state.clear)
   const user = usePortalAuthStore((state) => state.user)
   const { data: branding } = useBranding()
+  const { token } = theme.useToken()
   const items = useMemo(() => portalItems(t), [t])
   const selected = selectedKey(location.pathname, items)
 
@@ -78,8 +79,8 @@ export function PortalLayout() {
         <Header
           style={{
             alignItems: 'center',
-            background: '#fff',
-            borderBottom: '1px solid #eaecef',
+            background: token.colorBgContainer,
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
             display: 'flex',
             justifyContent: 'space-between',
             paddingInline: 16,
@@ -95,7 +96,7 @@ export function PortalLayout() {
             />
           </Space>
         </Header>
-        <Content style={{ margin: 0, minHeight: 0, padding: wide ? 24 : '24px 16px 88px' }}>
+        <Content style={{ background: token.colorBgLayout, margin: 0, minHeight: 0, padding: wide ? 24 : '24px 16px 88px' }}>
           <Outlet />
         </Content>
       </Layout>
@@ -104,8 +105,8 @@ export function PortalLayout() {
           aria-label="Portal navigation"
           data-testid="portal-bottom-nav"
           style={{
-            background: '#fff',
-            borderTop: '1px solid #eaecef',
+            background: token.colorBgContainer,
+            borderTop: `1px solid ${token.colorBorderSecondary}`,
             bottom: 0,
             left: 0,
             position: 'fixed',

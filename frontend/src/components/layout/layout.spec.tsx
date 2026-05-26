@@ -5,7 +5,15 @@ import { AdminLayout, AuthLayout, PortalLayout } from './index'
 
 const translations: Record<string, string> = {
   'account.openMenu': 'Open account menu',
+  'account.profile': 'Profile',
+  'account.adminRole': 'Admin',
+  'admin.notifications': 'Notifications',
+  'admin.topbarWelcome': 'Welcome back. Here is your account overview.',
+  'a11y.openNav': 'Open navigation',
   'app.title': '3x-ui Dashboard',
+  'language.chinese': 'Chinese',
+  'language.english': 'English',
+  'language.label': 'Language',
   'brand.centralPanel': 'central panel',
   'brand.footer': 'Footer',
   'brand.slogan': 'Fleet control',
@@ -13,6 +21,7 @@ const translations: Record<string, string> = {
   'nav.audit': 'Audit log',
   'nav.inbounds': 'Inbounds',
   'nav.nodes': 'Nodes',
+  'nav.logout': 'Log out',
   'nav.opsMonitor': 'ops',
   'nav.orders': 'Orders',
   'nav.ordersAdmin': 'Orders',
@@ -26,6 +35,7 @@ const translations: Record<string, string> = {
   'nav.subscription': 'My subscription',
   'nav.usage': 'Usage',
   'nav.users': 'Users',
+  'nav.webhooks': 'Webhooks',
   'section.nodes': 'Node ops',
   'section.overview': 'Overview',
   'section.system': 'System',
@@ -36,6 +46,7 @@ const translations: Record<string, string> = {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { changeLanguage: vi.fn() },
     t: (key: string) => translations[key] ?? key,
   }),
 }))
@@ -92,7 +103,10 @@ describe('layout components', () => {
     expect(screen.getByText('Users & billing')).toBeInTheDocument()
     expect(screen.getByText('System')).toBeInTheDocument()
     expect(screen.getByText('Users view')).toBeInTheDocument()
-    expect(screen.getByText('Users').closest('.ant-menu-item')).toHaveClass('ant-menu-item-selected')
+    expect(screen.getByRole('heading', { name: 'Users' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Users' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stats' })).not.toBeInTheDocument()
   })
 
   it('renders PortalLayout with exactly five bottom nav items on narrow screens', () => {

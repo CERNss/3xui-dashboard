@@ -127,6 +127,7 @@ function successMessage(url?: string): string {
 
 function currentLocale(): 'en' | 'zh' {
   const stored = globalThis.localStorage?.getItem('dashboard.locale')
-  if (stored === 'en' || stored === 'zh') return stored
+  if (stored === 'en' || stored === 'en-US') return 'en'
+  if (stored === 'zh' || stored === 'zh-CN') return 'zh'
   return globalThis.navigator?.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }

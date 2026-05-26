@@ -12,6 +12,22 @@ import {
   Skeleton,
 } from './index'
 
+const changeLanguageMock = vi.hoisted(() => vi.fn())
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    i18n: {
+      changeLanguage: changeLanguageMock,
+    },
+    t: (key: string) =>
+      ({
+        'language.chinese': 'Chinese',
+        'language.english': 'English',
+        'language.label': 'Language',
+      })[key] ?? key,
+  }),
+}))
+
 describe('common components', () => {
   it('renders EmptyState and fires the action callback', async () => {
     const onAction = vi.fn()
@@ -56,11 +72,21 @@ describe('common components', () => {
     expect(screen.getByText('Open account')).toBeInTheDocument()
   })
 
-  it('renders LocaleSwitcher with segmented options', () => {
+  it('renders LocaleSwitcher trigger', () => {
     render(<LocaleSwitcher />)
 
     expect(screen.getByText('EN')).toBeInTheDocument()
-    expect(screen.getByText('中文')).toBeInTheDocument()
+    expect(screen.getByText('中')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: /Language/i })).toBeInTheDocument()
+  })
+
+  it('changes i18n language when LocaleSwitcher changes', async () => {
+    changeLanguageMock.mockResolvedValue(undefined)
+    render(<LocaleSwitcher />)
+
+    await userEvent.click(screen.getByRole('switch', { name: /Language/i }))
+
+    expect(changeLanguageMock).toHaveBeenCalledWith('zh')
   })
 
   it('renders ResponsiveListTable root marker and desktop table by default', () => {

@@ -1,5 +1,7 @@
 import { Alert, Card, Col, List, Progress, Row, Space, Tag, Typography } from 'antd'
+import type { TFunction } from 'i18next'
 import { forwardRef, useEffect, useImperativeHandle, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { AdminStats, TrafficRanking } from '@/api/admin/stats'
 import { usePlansList } from '@/hooks/queries/admin/plans'
@@ -8,7 +10,7 @@ import { formatBytes, formatDateTime, formatYuan } from './format'
 import { KpiCard } from './KpiCard'
 import type { OverviewPanelHandle } from './StatusPanel'
 
-function assertStatsPayload(value: AdminStats | undefined): AdminStats | null {
+function assertStatsPayload(value: AdminStats | undefined, t: TFunction): AdminStats | null {
   if (!value) return null
   if (
     !value.users ||
@@ -20,22 +22,22 @@ function assertStatsPayload(value: AdminStats | undefined): AdminStats | null {
     !value.audit ||
     !Array.isArray(value.recent_orders)
   ) {
-    throw new Error('Stats payload is incomplete')
+    throw new Error(t('admin.stats.invalidPayload'))
   }
 
   return value
 }
 
-function monthDelta(stats: AdminStats) {
+function monthDelta(stats: AdminStats, t: TFunction) {
   const current = stats.users.month_new
   const previous = stats.users.prev_month_new
   if (current === 0 && previous === 0) return null
-  if (previous === 0) return '+100% vs last month'
+  if (previous === 0) return t('admin.stats.kpiSubtitle.monthDelta', { percent: 100, sign: '+' })
 
   const change = ((current - previous) / previous) * 100
   const rounded = Math.round(change * 10) / 10
   const sign = rounded > 0 ? '+' : rounded < 0 ? '-' : ''
-  return `${sign}${Math.abs(rounded)}% vs last month`
+  return t('admin.stats.kpiSubtitle.monthDelta', { percent: Math.abs(rounded), sign })
 }
 
 function rankingShare(row: TrafficRanking, rows: TrafficRanking[]) {
@@ -44,13 +46,32 @@ function rankingShare(row: TrafficRanking, rows: TrafficRanking[]) {
   return Math.max(2, Math.round((row.bytes / max) * 100))
 }
 
-function RankingCard({ title, subtitle, rows }: { title: string; subtitle: string; rows: TrafficRanking[] }) {
+function orderStatusColor(status: string) {
+  if (status === 'completed' || status === 'paid') return 'green'
+  if (status === 'failed') return 'red'
+  return 'default'
+}
+
+function orderStatusLabel(status: string, t: TFunction) {
+  const label = t(`admin.stats.orderStatus.${status}`, { defaultValue: '' })
+  return label || status
+}
+
+function orderUserLabel(order: { user_email?: string; user_id: number }, t: TFunction) {
+  return order.user_email || t('admin.stats.unknownUser', { id: order.user_id })
+}
+
+function orderPlanLabel(order: { plan_name?: string; plan_id: number }, t: TFunction) {
+  return order.plan_name || t('admin.stats.unknownPlan', { id: order.plan_id })
+}
+
+function RankingCard({ title, subtitle, rows, t }: { title: string; subtitle: string; rows: TrafficRanking[]; t: TFunction }) {
   return (
-    <Card title={title} extra={<Tag>Today</Tag>}>
+    <Card title={title} extra={<Tag>{t('admin.stats.todayWindow')}</Tag>}>
       <Typography.Paragraph type="secondary">{subtitle}</Typography.Paragraph>
       <List
         dataSource={rows}
-        locale={{ emptyText: 'No traffic data' }}
+        locale={{ emptyText: t('admin.stats.noTraffic') }}
         renderItem={(row) => (
           <List.Item>
             <Space direction="vertical" size={6} style={{ width: '100%' }}>
@@ -72,6 +93,7 @@ interface StatsPanelProps {
 }
 
 export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(function StatsPanel({ onFetchingChange }, ref) {
+  const { t } = useTranslation()
   const statsQuery = useAdminStats()
   const plansQuery = usePlansList()
   const fetching = statsQuery.isFetching || plansQuery.isFetching
@@ -94,13 +116,13 @@ export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(funct
 
   const payloadError = useMemo(() => {
     try {
-      assertStatsPayload(statsQuery.data)
+      assertStatsPayload(statsQuery.data, t)
       return null
     } catch (error) {
-      return error instanceof Error ? error : new Error('Stats payload is incomplete')
+      return error instanceof Error ? error : new Error(t('admin.stats.invalidPayload'))
     }
-  }, [statsQuery.data])
-  const stats = payloadError ? null : assertStatsPayload(statsQuery.data)
+  }, [statsQuery.data, t])
+  const stats = payloadError ? null : assertStatsPayload(statsQuery.data, t)
   const plans = plansQuery.data ?? []
   const auditTotal = stats ? stats.audit.info + stats.audit.warn + stats.audit.err : 0
 
@@ -110,7 +132,7 @@ export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(funct
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
-      {statsQuery.error ? <Alert type="error" showIcon message="Stats load failed" /> : null}
+      {statsQuery.error ? <Alert type="error" showIcon message={t('admin.stats.loadFailed')} /> : null}
 
       {!stats && statsQuery.isLoading ? (
         <Row gutter={[16, 16]}>
@@ -126,23 +148,23 @@ export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(funct
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={12} lg={6}>
-              <KpiCard title="Month new users" value={stats.users.month_new} extra={monthDelta(stats)} />
+              <KpiCard title={t('admin.stats.kpi.monthNewUsers')} value={stats.users.month_new} extra={monthDelta(stats, t)} />
             </Col>
             <Col xs={24} md={12} lg={6}>
-              <KpiCard title="Total users" value={stats.users.total} extra={`Active users: ${stats.users.active}`} />
+              <KpiCard title={t('admin.stats.kpi.totalUsers')} value={stats.users.total} extra={t('admin.stats.kpiSubtitle.activeUsers', { n: stats.users.active })} />
             </Col>
             <Col xs={24} md={12} lg={6}>
               <KpiCard
-                title="Month upload"
+                title={t('admin.stats.kpi.monthUpload')}
                 value={formatBytes(stats.traffic.month_up_bytes)}
-                extra={`Today: ${formatBytes(stats.traffic.today_up_bytes)}`}
+                extra={t('admin.stats.kpiSubtitle.todayDelta', { value: formatBytes(stats.traffic.today_up_bytes) })}
               />
             </Col>
             <Col xs={24} md={12} lg={6}>
               <KpiCard
-                title="Month download"
+                title={t('admin.stats.kpi.monthDownload')}
                 value={formatBytes(stats.traffic.month_down_bytes)}
-                extra={`Today: ${formatBytes(stats.traffic.today_down_bytes)}`}
+                extra={t('admin.stats.kpiSubtitle.todayDelta', { value: formatBytes(stats.traffic.today_down_bytes) })}
               />
             </Col>
           </Row>
@@ -150,26 +172,28 @@ export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(funct
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <RankingCard
-                title="Node traffic ranking"
-                subtitle="Largest node consumers in today's window."
+                title={t('admin.stats.nodeTrafficRanking')}
+                subtitle={t('admin.stats.nodeTrafficRankingSubtitle')}
                 rows={stats.top_nodes}
+                t={t}
               />
             </Col>
             <Col xs={24} lg={12}>
               <RankingCard
-                title="User traffic ranking"
-                subtitle="Largest user consumers in today's window."
+                title={t('admin.stats.userTrafficRanking')}
+                subtitle={t('admin.stats.userTrafficRankingSubtitle')}
                 rows={stats.top_users}
+                t={t}
               />
             </Col>
           </Row>
 
-          <Card title="System log" extra={<Link to="/admin/audit-log">View all</Link>}>
-            <Typography.Paragraph type="secondary">Audit severity counts from recent system activity.</Typography.Paragraph>
+          <Card title={t('admin.stats.systemLog')} extra={<Link to="/admin/audit-log">{t('admin.stats.systemLogViewAll')}</Link>}>
+            <Typography.Paragraph type="secondary">{t('admin.stats.systemLogSubtitle')}</Typography.Paragraph>
             <Row gutter={[12, 12]}>
               <Col xs={24} sm={8}>
                 <Card size="small">
-                  <Typography.Text type="secondary">Info</Typography.Text>
+                  <Typography.Text type="secondary">{t('admin.stats.systemLogInfo')}</Typography.Text>
                   <Typography.Title level={3} style={{ margin: 0 }}>
                     {stats.audit.info}
                   </Typography.Title>
@@ -177,7 +201,7 @@ export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(funct
               </Col>
               <Col xs={24} sm={8}>
                 <Card size="small">
-                  <Typography.Text type="secondary">Warn</Typography.Text>
+                  <Typography.Text type="secondary">{t('admin.stats.systemLogWarn')}</Typography.Text>
                   <Typography.Title level={3} style={{ margin: 0 }}>
                     {stats.audit.warn}
                   </Typography.Title>
@@ -185,69 +209,62 @@ export const StatsPanel = forwardRef<OverviewPanelHandle, StatsPanelProps>(funct
               </Col>
               <Col xs={24} sm={8}>
                 <Card size="small">
-                  <Typography.Text type="secondary">Error</Typography.Text>
+                  <Typography.Text type="secondary">{t('admin.stats.systemLogErr')}</Typography.Text>
                   <Typography.Title level={3} style={{ margin: 0 }}>
                     {stats.audit.err}
                   </Typography.Title>
                 </Card>
               </Col>
             </Row>
-            <Typography.Text type="secondary">Total {auditTotal} entries</Typography.Text>
+            <Typography.Text type="secondary">{t('admin.stats.systemLogTotal', { n: auditTotal })}</Typography.Text>
           </Card>
 
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={8}>
-              <Card title="Plans">
+              <Card title={t('admin.stats.plans')}>
                 <Typography.Paragraph type="secondary">
-                  {stats.plans.enabled} enabled · {stats.plans.disabled} disabled
+                  {t('admin.stats.plansEnabledSummary', { disabled: stats.plans.disabled, enabled: stats.plans.enabled })}
                 </Typography.Paragraph>
                 <List
                   loading={plansQuery.isLoading}
                   dataSource={plans}
-                  locale={{ emptyText: plansQuery.error ? 'Plans unavailable' : 'No plans' }}
+                  locale={{ emptyText: plansQuery.error ? t('admin.stats.plansLoadFailed') : t('admin.stats.empty') }}
                   renderItem={(plan) => (
                     <List.Item>
                       <List.Item.Meta
                         title={plan.name}
-                        description={`${plan.duration_days} days · ${
+                        description={t('admin.stats.planTrafficLine', {
+                          days: plan.duration_days,
+                          traffic:
                           plan.traffic_limit_bytes === 0
-                            ? 'Unlimited'
-                            : `${Math.round(plan.traffic_limit_bytes / 1024 / 1024 / 1024)} GB`
-                        }`}
+                            ? t('admin.stats.unlimited')
+                            : `${Math.round(plan.traffic_limit_bytes / 1024 / 1024 / 1024)} GB`,
+                        })}
                       />
                       <Typography.Text strong>{formatYuan(plan.price_cents)}</Typography.Text>
                     </List.Item>
                   )}
                 />
-                {plansQuery.error ? <Alert type="warning" showIcon message="Plans load failed" /> : null}
+                {plansQuery.error ? <Alert type="warning" showIcon message={t('admin.stats.plansLoadFailed')} /> : null}
               </Card>
             </Col>
             <Col xs={24} lg={16}>
-              <Card title="Recent orders">
+              <Card title={t('admin.stats.recentOrders')}>
                 <List
                   dataSource={stats.recent_orders}
-                  locale={{ emptyText: 'No recent orders' }}
+                  locale={{ emptyText: t('admin.stats.emptyOrders') }}
                   renderItem={(order) => (
                     <List.Item>
                       <List.Item.Meta
-                        title={`${order.user_email || `User #${order.user_id}`} -> ${
-                          order.plan_name || `Plan #${order.plan_id}`
-                        }`}
+                        title={t('admin.stats.orderLine', {
+                          plan: orderPlanLabel(order, t),
+                          user: orderUserLabel(order, t),
+                        })}
                         description={formatDateTime(order.created_at)}
                       />
                       <Space>
                         <Typography.Text strong>{formatYuan(order.price_cents)}</Typography.Text>
-                        <Tag
-                          color={
-                            order.status === 'completed' || order.status === 'paid'
-                              ? 'green'
-                              : order.status === 'failed'
-                                ? 'red'
-                                : 'default'
-                          }
-                        >
-                          {order.status}
-                        </Tag>
+                        <Tag color={orderStatusColor(order.status)}>{orderStatusLabel(order.status, t)}</Tag>
                       </Space>
                     </List.Item>
                   )}

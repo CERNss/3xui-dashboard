@@ -1,5 +1,7 @@
 import { Tabs } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { PageHeader, RefreshButton } from '@/components/common'
 import { StatsPanel } from './overview/StatsPanel'
 import { type OverviewPanelHandle, StatusPanel } from './overview/StatusPanel'
@@ -10,31 +12,27 @@ interface OverviewProps {
   defaultTab?: OverviewTab
 }
 
-const tabCopy: Record<OverviewTab, { title: string; subtitle: string }> = {
-  status: {
-    title: 'Status',
-    subtitle: 'Monitor fleet health, inbounds, clients, and node probes.',
-  },
-  stats: {
-    title: 'Stats',
-    subtitle: 'Review operational KPIs, traffic rankings, audit activity, and recent orders.',
-  },
+function tabFromSearch(value: string | null): OverviewTab | null {
+  return value === 'stats' || value === 'status' ? value : null
 }
 
 export default function Overview({ defaultTab = 'status' }: OverviewProps) {
-  const [activeTab, setActiveTab] = useState<OverviewTab>(defaultTab)
-  const [mountedTabs, setMountedTabs] = useState<Set<OverviewTab>>(() => new Set([defaultTab]))
+  const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialTab = tabFromSearch(searchParams.get('tab')) ?? defaultTab
+  const [activeTab, setActiveTab] = useState<OverviewTab>(initialTab)
+  const [mountedTabs, setMountedTabs] = useState<Set<OverviewTab>>(() => new Set([initialTab]))
   const [fetchingByTab, setFetchingByTab] = useState<Record<OverviewTab, boolean>>({ status: false, stats: false })
   const statusRef = useRef<OverviewPanelHandle>(null)
   const statsRef = useRef<OverviewPanelHandle>(null)
 
   useEffect(() => {
-    setActiveTab(defaultTab)
-    setMountedTabs((current) => new Set(current).add(defaultTab))
-  }, [defaultTab])
+    const next = tabFromSearch(searchParams.get('tab')) ?? defaultTab
+    setActiveTab(next)
+    setMountedTabs((current) => new Set(current).add(next))
+  }, [defaultTab, searchParams])
 
   const activeRef = activeTab === 'status' ? statusRef : statsRef
-  const activeCopy = tabCopy[activeTab]
 
   const setStatusFetching = useCallback((fetching: boolean) => {
     setFetchingByTab((current) => (current.status === fetching ? current : { ...current, status: fetching }))
@@ -48,16 +46,22 @@ export default function Overview({ defaultTab = 'status' }: OverviewProps) {
     const next = tab as OverviewTab
     setActiveTab(next)
     setMountedTabs((current) => new Set(current).add(next))
+    if (next === 'status') {
+      setSearchParams({}, { replace: true })
+    } else {
+      setSearchParams({ tab: next }, { replace: true })
+    }
   }
 
   return (
     <div>
       <PageHeader
-        title={activeCopy.title}
-        subtitle={activeCopy.subtitle}
+        title={t('admin.status.title')}
+        subtitle={t('admin.overview.subtitle')}
         actions={
           <RefreshButton
             loading={fetchingByTab[activeTab]}
+            label={t('admin.status.reload')}
             onClick={() => activeRef.current?.reload()}
           />
         }
@@ -67,14 +71,14 @@ export default function Overview({ defaultTab = 'status' }: OverviewProps) {
         activeKey={activeTab}
         onChange={activateTab}
         items={[
-          { key: 'status', label: 'Status' },
-          { key: 'stats', label: 'Stats' },
+          { key: 'status', label: t('admin.status.tab') },
+          { key: 'stats', label: t('admin.stats.tab') },
         ]}
       />
 
       <section data-overview-content>
         {mountedTabs.has('status') ? (
-          <div role="tabpanel" aria-label="Status panel" hidden={activeTab !== 'status'} style={{ display: activeTab === 'status' ? undefined : 'none' }}>
+          <div role="tabpanel" aria-label={t('admin.status.panelLabel')} hidden={activeTab !== 'status'} style={{ display: activeTab === 'status' ? undefined : 'none' }}>
             <StatusPanel
               ref={statusRef}
               onFetchingChange={setStatusFetching}
@@ -82,7 +86,7 @@ export default function Overview({ defaultTab = 'status' }: OverviewProps) {
           </div>
         ) : null}
         {mountedTabs.has('stats') ? (
-          <div role="tabpanel" aria-label="Stats panel" hidden={activeTab !== 'stats'} style={{ display: activeTab === 'stats' ? undefined : 'none' }}>
+          <div role="tabpanel" aria-label={t('admin.stats.panelLabel')} hidden={activeTab !== 'stats'} style={{ display: activeTab === 'stats' ? undefined : 'none' }}>
             <StatsPanel
               ref={statsRef}
               onFetchingChange={setStatsFetching}

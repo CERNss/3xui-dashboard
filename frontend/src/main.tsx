@@ -7,6 +7,7 @@ import { createAppQueryClient } from './lib/queryClient'
 import { AppRouter } from './router'
 import { useThemeStore } from './stores/theme'
 import { darkTheme, lightTheme } from './theme'
+import './i18n'
 import './style.css'
 
 const queryClient = createAppQueryClient()

@@ -1,5 +1,6 @@
-import { Card, Space, Typography } from 'antd'
-import type { ReactNode } from 'react'
+import { GlobalOutlined } from '@ant-design/icons'
+import { Card, Space, Typography, theme } from 'antd'
+import type { CSSProperties, ReactNode } from 'react'
 import { Outlet } from 'react-router-dom'
 import { LocaleSwitcher } from '@/components/common'
 import { useBranding } from '@/hooks/queries/branding'
@@ -12,44 +13,54 @@ export interface AuthLayoutProps {
 
 export function AuthLayout({ cardSubtitle, cardTitle, children }: AuthLayoutProps) {
   const { data: branding } = useBranding()
+  const { token } = theme.useToken()
+  const title = branding?.title ?? '3XUI Dashboard'
+  const subtitle = branding?.description ?? branding?.subtitle
+  const style = {
+    '--auth-layout-bg': token.colorBgLayout,
+    '--auth-container-bg': token.colorBgContainer,
+    '--auth-border-color': token.colorBorder,
+    '--auth-brand-color': token.colorPrimary,
+    '--auth-text-color': token.colorText,
+    '--auth-text-secondary': token.colorTextSecondary,
+  } as CSSProperties
 
   return (
-    <main
-      data-testid="auth-layout"
-      style={{
-        alignItems: 'center',
-        background: '#f7f8f9',
-        display: 'flex',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        padding: 24,
-      }}
-    >
-      <div style={{ position: 'absolute', right: 24, top: 24 }}>
+    <main className="auth-layout" data-testid="auth-layout" style={style}>
+      <div className="auth-locale">
         <LocaleSwitcher />
       </div>
-      <Space direction="vertical" size={24} style={{ maxWidth: 480, width: '100%' }}>
-        <Space direction="vertical" size={8} style={{ textAlign: 'center', width: '100%' }}>
-          <Typography.Title level={2} style={{ margin: 0 }}>
-            {branding?.title ?? '3XUI Dashboard'}
+      <div className="auth-layout-inner">
+        <Space className="auth-brand" direction="vertical" size={10}>
+          {branding?.icon_url ? (
+            <img alt="" className="auth-brand-icon" src={branding.icon_url} />
+          ) : (
+            <span aria-hidden="true" className="auth-brand-mark">
+              <GlobalOutlined />
+            </span>
+          )}
+          <Typography.Title className="auth-brand-title" level={2}>
+            {title}
           </Typography.Title>
-          <Typography.Text type="secondary">{branding?.description ?? branding?.subtitle}</Typography.Text>
+          {subtitle ? <Typography.Text className="auth-brand-subtitle">{subtitle}</Typography.Text> : null}
         </Space>
-        <Card>
-          {cardTitle || cardSubtitle ? (
-            <Space direction="vertical" size={4} style={{ marginBottom: 24, textAlign: 'center', width: '100%' }}>
+        {cardTitle || cardSubtitle ? (
+          <Card className="auth-login-card">
+            <Space className="auth-login-heading" direction="vertical" size={4}>
               {cardTitle ? <Typography.Title level={3}>{cardTitle}</Typography.Title> : null}
               {cardSubtitle ? <Typography.Text type="secondary">{cardSubtitle}</Typography.Text> : null}
             </Space>
-          ) : null}
-          {children ?? <Outlet />}
-        </Card>
+            {children ?? <Outlet />}
+          </Card>
+        ) : (
+          children ?? <Outlet />
+        )}
         {branding?.footer ? (
-          <Typography.Text style={{ display: 'block', textAlign: 'center' }} type="secondary">
+          <Typography.Text className="auth-footer" type="secondary">
             {branding.footer}
           </Typography.Text>
         ) : null}
-      </Space>
+      </div>
     </main>
   )
 }

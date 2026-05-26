@@ -1,5 +1,13 @@
-import { MenuFoldOutlined } from '@ant-design/icons'
-import { Button, Drawer, Layout, Menu, Space, Switch, Typography } from 'antd'
+import {
+  BellOutlined,
+  DownOutlined,
+  GlobalOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  MoonOutlined,
+  SunOutlined,
+} from '@ant-design/icons'
+import { Button, Drawer, Layout, Tooltip, Typography, theme } from 'antd'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -9,7 +17,7 @@ import { useBranding } from '@/hooks/queries/branding'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { useThemeStore } from '@/stores/theme'
 import { MD_BREAKPOINT } from '@/theme'
-import { adminSections, flattenSections, menuItemsFromSections, selectedKey } from './nav'
+import { adminSections, flattenSections, selectedKey } from './nav'
 
 const { Header, Sider, Content } = Layout
 
@@ -19,14 +27,18 @@ export function AdminLayout() {
   const location = useLocation()
   const wide = useMinWidth(MD_BREAKPOINT)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const clearAuth = useAdminAuthStore((state) => state.clear)
   const username = useAdminAuthStore((state) => state.username)
   const themeMode = useThemeStore((state) => state.resolvedTheme)
   const toggleTheme = useThemeStore((state) => state.toggle)
   const { data: branding } = useBranding()
+  const { token } = theme.useToken()
   const sections = useMemo(() => adminSections(t), [t])
   const links = useMemo(() => flattenSections(sections), [sections])
   const selected = selectedKey(location.pathname, links)
+  const activeLink = links.find((item) => item.key === selected)
+  const accountLabel = username || 'admin'
 
   function selectRoute(key: string) {
     navigate(key)
@@ -38,85 +50,196 @@ export function AdminLayout() {
     navigate('/login', { replace: true })
   }
 
-  const menu = (
-    <Menu
-      mode="inline"
-      items={menuItemsFromSections(sections)}
-      selectedKeys={selected ? [selected] : []}
-      onClick={({ key }) => selectRoute(String(key))}
+  const sidebar = (
+    <AdminSidebar
+      collapsed={collapsed}
+      onCollapseToggle={() => setCollapsed((value) => !value)}
+      onNavigate={selectRoute}
+      onThemeToggle={toggleTheme}
+      selectedKey={selected}
+      sections={sections}
+      themeMode={themeMode}
+      title={branding?.title ?? t('app.title')}
     />
   )
 
   return (
     <Layout data-testid="admin-layout" style={{ minHeight: '100vh' }}>
       {wide ? (
-        <Sider width={264} theme="light">
-          <BrandBlock title={branding?.title} fallback={t('app.title')} />
-          {menu}
+        <Sider
+          className="admin-shell-sider"
+          collapsed={collapsed}
+          collapsedWidth={80}
+          theme="dark"
+          trigger={null}
+          width={252}
+        >
+          {sidebar}
         </Sider>
       ) : null}
       <Layout>
-        <Header
-          style={{
-            alignItems: 'center',
-            background: '#fff',
-            borderBottom: '1px solid #eaecef',
-            display: 'flex',
-            gap: 12,
-            justifyContent: 'space-between',
-            paddingInline: 16,
-          }}
-        >
-          <Space>
+        <Header className="admin-topbar">
+          <div className="admin-topbar-heading">
             {!wide ? (
-              <Button aria-label="Open navigation" icon={<MenuFoldOutlined />} onClick={() => setDrawerOpen(true)} />
+              <Button
+                aria-label={t('a11y.openNav')}
+                className="admin-topbar-menu"
+                icon={<MenuFoldOutlined />}
+                onClick={() => setDrawerOpen(true)}
+                type="text"
+              />
             ) : null}
-            {!wide ? <BrandInline title={branding?.title ?? t('app.title')} /> : null}
-          </Space>
-          <Space>
-            <LocaleSwitcher />
-            <Switch
-              checked={themeMode === 'dark'}
-              checkedChildren={t('theme.dark')}
-              unCheckedChildren={t('theme.light')}
-              onChange={toggleTheme}
-            />
+            <div className="admin-topbar-copy">
+              <Typography.Title className="admin-topbar-title" level={1}>
+                {activeLink?.label ?? t('nav.dashboard')}
+              </Typography.Title>
+              <Typography.Text className="admin-topbar-subtitle">
+                {t('admin.topbarWelcome')}
+              </Typography.Text>
+            </div>
+          </div>
+          <div className="admin-topbar-tools">
+            <Tooltip title={t('admin.notifications')}>
+              <button aria-label={t('admin.notifications')} className="admin-topbar-icon-button" type="button">
+                <BellOutlined />
+              </button>
+            </Tooltip>
+            <LocaleSwitcher variant="chip" />
             <AccountMenu
               items={[{ label: t('account.profile'), to: '/admin/settings?tab=securityAuth' }]}
               logoutLabel={t('nav.logout')}
               onLogout={logout}
             >
-              <Button type="text">{username || 'admin'}</Button>
+              <button aria-label={t('account.openMenu')} className="admin-topbar-account" type="button">
+                <span aria-hidden="true" className="admin-topbar-avatar">
+                  {initialsForAccount(accountLabel)}
+                </span>
+                <span className="admin-topbar-account-copy">
+                  <span className="admin-topbar-account-name">{displayAccountName(accountLabel)}</span>
+                  <span className="admin-topbar-account-role">{t('account.adminRole')}</span>
+                </span>
+                <DownOutlined aria-hidden="true" className="admin-topbar-account-chevron" />
+              </button>
             </AccountMenu>
-          </Space>
+          </div>
         </Header>
-        <Content style={{ margin: 0, minHeight: 0, padding: 24 }}>
+        <Content style={{ background: token.colorBgLayout, margin: 0, minHeight: 0, padding: 24 }}>
           <Outlet />
         </Content>
       </Layout>
       <Drawer
-        title={branding?.title ?? t('app.title')}
+        className="admin-shell-drawer"
+        closable={false}
         placement="left"
         open={!wide && drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        styles={{ body: { padding: 0 } }}
+        styles={{ body: { padding: 0 }, content: { background: themeMode === 'dark' ? '#081321' : '#f8fafc' } }}
+        width={252}
       >
-        {menu}
+        {sidebar}
       </Drawer>
     </Layout>
   )
 }
 
-function BrandBlock({ title, fallback }: { title?: string; fallback: string }) {
-  return (
-    <div style={{ padding: 20 }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {title || fallback}
-      </Typography.Title>
-    </div>
-  )
+function displayAccountName(account: string) {
+  const localPart = account.split('@')[0] || account
+  return localPart.length > 12 ? `${localPart.slice(0, 12)}...` : localPart
 }
 
-function BrandInline({ title }: { title: string }) {
-  return <Typography.Text strong>{title}</Typography.Text>
+function initialsForAccount(account: string) {
+  const source = displayAccountName(account).replace(/[^a-zA-Z0-9]/g, '')
+  return (source.slice(0, 2) || 'AD').toUpperCase()
+}
+
+interface AdminSidebarProps {
+  collapsed: boolean
+  onCollapseToggle: () => void
+  onNavigate: (key: string) => void
+  onThemeToggle: () => void
+  selectedKey?: string
+  sections: ReturnType<typeof adminSections>
+  themeMode: 'light' | 'dark'
+  title: string
+}
+
+function AdminSidebar({
+  collapsed,
+  onCollapseToggle,
+  onNavigate,
+  onThemeToggle,
+  selectedKey,
+  sections,
+  themeMode,
+  title,
+}: AdminSidebarProps) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="admin-sidebar" data-collapsed={collapsed ? 'true' : 'false'}>
+      <div className="admin-sidebar-brand">
+        <span className="admin-sidebar-logo" aria-hidden="true">
+          <GlobalOutlined />
+        </span>
+        {!collapsed ? (
+          <div className="admin-sidebar-brand-copy">
+            <Typography.Title className="admin-sidebar-title" level={4}>
+              {title}
+            </Typography.Title>
+          </div>
+        ) : null}
+      </div>
+
+      <nav aria-label={t('nav.admin')} className="admin-sidebar-nav">
+        {sections.map((section) => (
+          <div className="admin-sidebar-section" key={section.key}>
+            {!collapsed ? <div className="admin-sidebar-section-label">{section.label}</div> : null}
+            <div className="admin-sidebar-items">
+              {section.items.map((item) => {
+                const active = selectedKey === item.key
+                const button = (
+                  <button
+                    aria-current={active ? 'page' : undefined}
+                    className="admin-sidebar-item"
+                    data-active={active ? 'true' : 'false'}
+                    key={item.key}
+                    onClick={() => onNavigate(item.key)}
+                    type="button"
+                  >
+                    <span aria-hidden="true" className="admin-sidebar-item-icon">
+                      {item.icon}
+                    </span>
+                    {!collapsed ? <span className="admin-sidebar-item-label">{item.label}</span> : null}
+                  </button>
+                )
+
+                return collapsed ? (
+                  <Tooltip key={item.key} placement="right" title={item.label}>
+                    {button}
+                  </Tooltip>
+                ) : (
+                  button
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      <div className="admin-sidebar-footer">
+        <button className="admin-sidebar-action" onClick={onThemeToggle} type="button">
+          <span aria-hidden="true" className="admin-sidebar-item-icon">
+            {themeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+          </span>
+          {!collapsed ? <span>{themeMode === 'dark' ? t('theme.light') : t('theme.dark')}</span> : null}
+        </button>
+        <button className="admin-sidebar-action" onClick={onCollapseToggle} type="button">
+          <span aria-hidden="true" className="admin-sidebar-item-icon">
+            {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          </span>
+          {!collapsed ? <span>{collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}</span> : null}
+        </button>
+      </div>
+    </div>
+  )
 }

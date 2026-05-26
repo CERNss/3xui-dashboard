@@ -6,6 +6,7 @@ import type { FleetResult } from '@/api/admin/inbounds'
 import type { AdminPlan } from '@/api/admin/plans'
 import type { AdminStats } from '@/api/admin/stats'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
+import '@/i18n'
 import Overview from './Overview'
 
 const nodesRefetch = vi.fn()
@@ -125,8 +126,10 @@ function makeStats(overrides: Partial<AdminStats> = {}): AdminStats {
   }
 }
 
-function renderOverview(defaultTab: 'status' | 'stats' = 'status') {
-  return renderWithProviders(<Overview defaultTab={defaultTab} />)
+function renderOverview(tab: 'status' | 'stats' = 'status') {
+  return renderWithProviders(<Overview />, {
+    initialPath: tab === 'stats' ? '/admin/status?tab=stats' : '/admin/status',
+  })
 }
 
 beforeEach(() => {
@@ -239,7 +242,7 @@ describe('Overview', () => {
   it('defaults /admin/status to the Status tab with KPI strip and node health table', () => {
     renderOverview('status')
 
-    expect(screen.getByRole('heading', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'System status' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Status', selected: true })).toBeInTheDocument()
     expect(screen.getByText('Nodes')).toBeInTheDocument()
     expect(screen.getByText('Inbounds')).toBeInTheDocument()
@@ -250,21 +253,21 @@ describe('Overview', () => {
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
   })
 
-  it('defaults /admin/stats to the Stats tab with rankings, audit strip, recent orders, and plans', () => {
+  it('opens the Stats tab from /admin/status?tab=stats with rankings, audit strip, recent orders, and plans', () => {
     renderOverview('stats')
 
-    expect(screen.getByRole('heading', { name: 'Stats' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'System status' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Stats', selected: true })).toBeInTheDocument()
-    expect(screen.getByText('Month new users')).toBeInTheDocument()
+    expect(screen.getByText('New users this month')).toBeInTheDocument()
     expect(screen.getByText('+100% vs last month')).toBeInTheDocument()
     expect(screen.getByText('Node traffic ranking')).toBeInTheDocument()
     expect(screen.getByText('UK-HY2')).toBeInTheDocument()
     expect(screen.getByText('User traffic ranking')).toBeInTheDocument()
     expect(screen.getByText('alice@example.com')).toBeInTheDocument()
     expect(screen.getByText('System log')).toBeInTheDocument()
-    expect(screen.getByText('Total 146 entries')).toBeInTheDocument()
+    expect(screen.getByText('146 entries')).toBeInTheDocument()
     expect(screen.getByText('Recent orders')).toBeInTheDocument()
-    expect(screen.getByText('alice@example.com -> Pro 30d')).toBeInTheDocument()
+    expect(screen.getByText('alice@example.com · Pro 30d')).toBeInTheDocument()
     expect(screen.getByText('Pro 30d')).toBeInTheDocument()
   })
 
@@ -283,7 +286,7 @@ describe('Overview', () => {
 
     renderOverview('stats')
 
-    expect(screen.getByText('Month new users')).toBeInTheDocument()
+    expect(screen.getByText('New users this month')).toBeInTheDocument()
     expect(screen.queryByText(/vs last month/)).not.toBeInTheDocument()
   })
 
@@ -292,7 +295,7 @@ describe('Overview', () => {
 
     renderOverview('stats')
 
-    expect(screen.getAllByText('No traffic data')).toHaveLength(2)
+    expect(screen.getAllByText('No traffic data yet')).toHaveLength(2)
   })
 
   it('renders stats loading skeleton cards before aggregate data is available', () => {
@@ -302,7 +305,7 @@ describe('Overview', () => {
     renderOverview('stats')
 
     expect(document.querySelectorAll('.ant-card-loading')).toHaveLength(4)
-    expect(screen.queryByText('Month new users')).not.toBeInTheDocument()
+    expect(screen.queryByText('New users this month')).not.toBeInTheDocument()
   })
 
   it('shows a stats query error without hiding existing aggregate stats', () => {
@@ -310,8 +313,8 @@ describe('Overview', () => {
 
     renderOverview('stats')
 
-    expect(screen.getByText('Stats load failed')).toBeInTheDocument()
-    expect(screen.getByText('Month new users')).toBeInTheDocument()
+    expect(screen.getByText('Failed to load')).toBeInTheDocument()
+    expect(screen.getByText('New users this month')).toBeInTheDocument()
   })
 
   it('keeps inactive panels mounted with display none after first activation', async () => {
@@ -355,8 +358,8 @@ describe('Overview', () => {
 
     renderOverview('stats')
 
-    expect(await screen.findByText('Stats payload is incomplete')).toBeInTheDocument()
-    expect(screen.queryByText('Month new users')).not.toBeInTheDocument()
+    expect(await screen.findByText('Stats response is incomplete; restart or update the test backend')).toBeInTheDocument()
+    expect(screen.queryByText('New users this month')).not.toBeInTheDocument()
   })
 
   it('renders core stats when the plans side fetch fails', async () => {
@@ -365,8 +368,8 @@ describe('Overview', () => {
 
     renderOverview('stats')
 
-    expect(screen.getByText('Month new users')).toBeInTheDocument()
+    expect(screen.getByText('New users this month')).toBeInTheDocument()
     expect(screen.getByText('Node traffic ranking')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Plans load failed')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('Failed to load plans').length).toBeGreaterThan(0))
   })
 })
