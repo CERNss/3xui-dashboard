@@ -5,7 +5,10 @@
 // have to know about any of that.
 package runtime
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // ---------------------------------------------------------------------------
 // Wire types — these mirror the JSON the 3x-ui panel emits / accepts.
@@ -34,10 +37,59 @@ type Inbound struct {
 	Listen               string          `json:"listen"`
 	Port                 int             `json:"port"`
 	Protocol             string          `json:"protocol"`
-	Settings             string          `json:"settings"`        // stringified JSON
-	StreamSettings       string          `json:"streamSettings"`  // stringified JSON
+	Settings             string          `json:"settings"`       // stringified JSON
+	StreamSettings       string          `json:"streamSettings"` // stringified JSON
 	Tag                  string          `json:"tag"`
-	Sniffing             string          `json:"sniffing"`        // stringified JSON
+	Sniffing             string          `json:"sniffing"` // stringified JSON
+}
+
+// UnmarshalJSON accepts the two 3x-ui shapes seen in the wild:
+// settings/streamSettings/sniffing may arrive either as a JSON string or as
+// the object itself. The dashboard keeps the canonical in-memory shape as a
+// stringified JSON blob so editors and mutators can round-trip one format.
+func (i *Inbound) UnmarshalJSON(data []byte) error {
+	type inboundAlias Inbound
+	var raw struct {
+		*inboundAlias
+		Settings       json.RawMessage `json:"settings"`
+		StreamSettings json.RawMessage `json:"streamSettings"`
+		Sniffing       json.RawMessage `json:"sniffing"`
+	}
+	raw.inboundAlias = (*inboundAlias)(i)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	var err error
+	if i.Settings, err = stringifyJSONField(raw.Settings); err != nil {
+		return err
+	}
+	if i.StreamSettings, err = stringifyJSONField(raw.StreamSettings); err != nil {
+		return err
+	}
+	if i.Sniffing, err = stringifyJSONField(raw.Sniffing); err != nil {
+		return err
+	}
+	return nil
+}
+
+func stringifyJSONField(raw json.RawMessage) (string, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "", nil
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return "", err
+		}
+		return s, nil
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // IsWireguard reports whether this inbound carries a WG peer
@@ -67,9 +119,9 @@ type InboundSettings struct {
 //   - Trojan / Shadowsocks → Password (random hex)
 //   - Hysteria             → Auth (random URL-safe string)
 type Client struct {
-	ID         string `json:"id,omitempty"`         // VLESS/VMess UUID
-	Password   string `json:"password,omitempty"`   // Trojan / Shadowsocks
-	Auth       string `json:"auth,omitempty"`       // Hysteria
+	ID         string `json:"id,omitempty"`       // VLESS/VMess UUID
+	Password   string `json:"password,omitempty"` // Trojan / Shadowsocks
+	Auth       string `json:"auth,omitempty"`     // Hysteria
 	Security   string `json:"security,omitempty"`
 	Flow       string `json:"flow,omitempty"`
 	Email      string `json:"email"`

@@ -21,13 +21,13 @@ function uuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-function confirmPurchase(title: string, content: string, okText: string): Promise<boolean> {
+function confirmPurchase(title: string, content: string, okText: string, cancelText: string): Promise<boolean> {
   return new Promise((resolve) => {
     Modal.confirm({
       title,
       content,
       okText,
-      cancelText: 'Cancel',
+      cancelText,
       onCancel: () => resolve(false),
       onOk: () => resolve(true),
     })
@@ -61,9 +61,9 @@ export default function Plans() {
   const error = plansQuery.error ?? profileQuery.error ?? methodsQuery.error ?? purchase.error ?? purchaseViaPayment.error
 
   const methodLabels: Record<PaymentMethod, string> = {
-    alipay: t('portal.plans.method.alipay', { defaultValue: 'Alipay' }),
-    balance: t('portal.plans.method.balance', { defaultValue: 'Balance' }),
-    stripe: t('portal.plans.method.stripe', { defaultValue: 'Stripe' }),
+    alipay: t('portal.plans.method.alipay'),
+    balance: t('portal.plans.method.balance'),
+    stripe: t('portal.plans.method.stripe'),
   }
 
   const canAfford = (plan: Plan) => (profileQuery.data?.balance_cents ?? 0) >= plan.price_cents
@@ -73,11 +73,12 @@ export default function Plans() {
     const methodLabel = paymentMethodLabel(effectiveMethod, methodLabels)
     const amount = formatYuan(plan.price_cents)
     const ok = await confirmPurchase(
-      t('portal.plans.confirmTitle', { defaultValue: 'Buy "{name}"', name: plan.name }),
+      t('portal.plans.confirmTitle', { name: plan.name }),
       effectiveMethod === 'balance'
-        ? t('portal.plans.confirmBalanceMsg', { defaultValue: 'Pay {amount} from balance.', amount })
-        : t('portal.plans.confirmPayMsg', { defaultValue: 'Pay {amount} with {method}.', amount, method: methodLabel }),
-      t('portal.plans.confirmPayBtn', { defaultValue: 'Pay {amount} with {method}', amount, method: methodLabel }),
+        ? t('portal.plans.confirmBalanceMsg', { amount })
+        : t('portal.plans.confirmPayMsg', { amount, method: methodLabel }),
+      t('portal.plans.confirmPayBtn', { amount, method: methodLabel }),
+      t('common.cancel'),
     )
     if (!ok) return
 
@@ -96,21 +97,21 @@ export default function Plans() {
           window.location.assign(order.payment_target_url)
           return
         }
-        setFlash({ type: 'error', text: t('portal.plans.stripeNoUrl', { defaultValue: 'Stripe did not return a payment URL' }) })
+        setFlash({ type: 'error', text: t('portal.plans.stripeNoUrl') })
         return
       }
 
       const order = await purchase.mutateAsync(input)
       setFlash({
         type: 'success',
-        text: t('portal.plans.orderCreated', { defaultValue: 'Order #{id} created', id: order.id }),
+        text: t('portal.plans.orderCreated', { id: order.id }),
       })
       await profileQuery.refetch()
       window.setTimeout(() => navigate('/portal/orders'), 800)
     } catch (err) {
       setFlash({
         type: 'error',
-        text: formatError(err, t('portal.plans.purchaseFailed', { defaultValue: 'Purchase failed' })),
+        text: formatError(err, t('portal.plans.purchaseFailed')),
       })
     } finally {
       setBuyingPlanId(null)
@@ -120,7 +121,7 @@ export default function Plans() {
   const handleAlipaySuccess = (order: Order) => {
     setFlash({
       type: 'success',
-      text: t('portal.plans.orderPaid', { defaultValue: 'Order #{id} paid', id: order.id }),
+      text: t('portal.plans.orderPaid', { id: order.id }),
     })
     void profileQuery.refetch()
     window.setTimeout(() => {
@@ -132,13 +133,13 @@ export default function Plans() {
   return (
     <div>
       <PageHeader
-        title={t('portal.plans.title', { defaultValue: 'Plans' })}
-        subtitle={t('portal.plans.subtitle', { defaultValue: 'Buy a plan and provision service instantly' })}
+        title={t('portal.plans.title')}
+        subtitle={t('portal.plans.subtitle')}
         actions={
           profileQuery.data ? (
             <Space direction="vertical" size={0} style={{ textAlign: 'right' }}>
               <Typography.Text type="secondary">
-                {t('portal.plans.currentBalance', { defaultValue: 'Current balance' })}
+                {t('portal.plans.currentBalance')}
               </Typography.Text>
               <Typography.Text strong>{formatYuan(profileQuery.data.balance_cents)}</Typography.Text>
             </Space>
@@ -147,16 +148,16 @@ export default function Plans() {
       />
 
       {error ? (
-        <Alert message={formatError(error, t('portal.plans.loadFailed', { defaultValue: 'Load failed' }))} showIcon style={{ marginBottom: 16 }} type="error" />
+        <Alert message={formatError(error, t('portal.plans.loadFailed'))} showIcon style={{ marginBottom: 16 }} type="error" />
       ) : null}
       {flash ? <Alert message={flash.text} showIcon style={{ marginBottom: 16 }} type={flash.type} /> : null}
 
       {methods.length > 1 ? (
         <Card size="small" style={{ marginBottom: 16 }}>
           <Space direction="vertical" size={8}>
-            <Typography.Text strong>{t('portal.plans.methodPickerTitle', { defaultValue: 'Payment method' })}</Typography.Text>
+            <Typography.Text strong>{t('portal.plans.methodPickerTitle')}</Typography.Text>
             <Typography.Text type="secondary">
-              {t('portal.plans.methodPickerHint', { defaultValue: 'Choose how to pay for this order' })}
+              {t('portal.plans.methodPickerHint')}
             </Typography.Text>
             <Radio.Group
               optionType="button"
@@ -186,8 +187,8 @@ export default function Plans() {
                   onClick={() => void buy(plan)}
                 >
                   {effectiveMethod === 'balance' && !canAfford(plan)
-                    ? t('portal.plans.balanceInsufficient', { defaultValue: 'Insufficient balance' })
-                    : t('portal.plans.buyNow', { defaultValue: 'Buy now' })}
+                    ? t('portal.plans.balanceInsufficient')
+                    : t('portal.plans.buyNow')}
                 </Button>,
               ]}
             >
@@ -203,15 +204,15 @@ export default function Plans() {
                   <Typography.Text>
                     <CheckOutlined />{' '}
                     {plan.traffic_limit_bytes === 0
-                      ? t('portal.plans.unlimitedTraffic', { defaultValue: 'Unlimited traffic' })
-                      : `${formatTraffic(plan.traffic_limit_bytes)} ${t('portal.plans.trafficLabel', { defaultValue: 'traffic' })}`}
+                      ? t('portal.plans.unlimitedTraffic')
+                      : `${formatTraffic(plan.traffic_limit_bytes)} ${t('portal.plans.trafficLabel')}`}
                   </Typography.Text>
                   <Typography.Text>
-                    <CheckOutlined /> {t('portal.plans.planDays', { defaultValue: '{days} days', days: plan.duration_days })}
+                    <CheckOutlined /> {t('portal.plans.planDays', { days: plan.duration_days })}
                   </Typography.Text>
                   {plan.ip_limit ? (
                     <Typography.Text>
-                      <CheckOutlined /> {t('portal.plans.ipLimitText', { defaultValue: 'Up to {n} IPs', n: plan.ip_limit })}
+                      <CheckOutlined /> {t('portal.plans.ipLimitText', { n: plan.ip_limit })}
                     </Typography.Text>
                   ) : null}
                 </Space>
@@ -221,7 +222,7 @@ export default function Plans() {
         </div>
       ) : (
         <Card>
-          <Typography.Text>{t('portal.plans.empty', { defaultValue: 'No plans available' })}</Typography.Text>
+          <Typography.Text>{t('portal.plans.empty')}</Typography.Text>
         </Card>
       )}
 

@@ -1,10 +1,12 @@
 import { Checkbox, Form, Space, Switch } from 'antd'
+import { useTranslation } from 'react-i18next'
 
 export function SniffingForm() {
+  const { t } = useTranslation()
   const enabled = Form.useWatch('sniffEnabled')
   return (
     <Space direction="vertical" size={12}>
-      <Form.Item name="sniffEnabled" label="Sniffing enabled" valuePropName="checked">
+      <Form.Item name="sniffEnabled" label={t('admin.inboundEditor.sniff.enabled')} valuePropName="checked">
         <Switch />
       </Form.Item>
       {enabled ? (
@@ -24,10 +26,10 @@ export function SniffingForm() {
             </Form.Item>
           </Space>
           <Space wrap>
-            <Form.Item name="sniffMetadataOnly" label="Metadata only" valuePropName="checked">
+            <Form.Item name="sniffMetadataOnly" label={t('admin.inboundEditor.sniff.metadataOnly')} valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item name="sniffRouteOnly" label="Route only" valuePropName="checked">
+            <Form.Item name="sniffRouteOnly" label={t('admin.inboundEditor.sniff.routeOnly')} valuePropName="checked">
               <Switch />
             </Form.Item>
           </Space>

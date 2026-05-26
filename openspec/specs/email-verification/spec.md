@@ -10,7 +10,7 @@ of the email they're registering with. This module owns:
 
 - The code lifecycle: generate, send, verify, consume.
 - The storage schema and rate-limit policy.
-- The HTTP surface (`POST /api/user/auth/send-code`) and the
+- The HTTP surface (`POST /api/user/auth/email-verification/start`) and the
   `register` extension that consumes the code.
 - The dev-mode fallback when SMTP is not configured.
 
@@ -51,22 +51,23 @@ Defined in `internal/service/verification/service.go`:
 | `codeLength` | 6 decimal digits | Standard usability; brute-forceable space is 1e6 but `maxAttempts=5` per row + 10-min TTL keeps it negligible. |
 | `codeTTL` | 10 minutes | Long enough to alt-tab to email + paste; short enough that a leaked code is short-lived. |
 | `resendCooldown` | 60 seconds | Per (email, purpose). Prevents email-flood abuse. |
-| `maxAttempts` | 5 | Per-row attempt cap. Burnt rows force a fresh `SendCode`. |
+| `maxAttempts` | 5 | Per-row attempt cap. Burnt rows force a fresh verification start. |
 
 ## Requirements
 
-### Requirement: SendCode delivers a fresh single-use code
+### Requirement: Email verification start delivers a fresh single-use code
 
-The system SHALL accept `POST /api/user/auth/send-code` with `{email}`,
-generate a fresh 6-digit code, store its hash, and dispatch the email.
+The system SHALL accept `POST /api/user/auth/email-verification/start`
+with `{email, purpose}`, generate a fresh 6-digit code, store its hash,
+and dispatch the email.
 
 #### Scenario: First-time send for an email
 
-- **WHEN** a client POSTs `{"email":"new@example.com"}` to `/api/user/auth/send-code`
+- **WHEN** a client POSTs `{"email":"new@example.com","purpose":"register"}` to `/api/user/auth/email-verification/start`
 - **THEN** the system SHALL generate a 6-digit code via `crypto/rand`
 - **AND** insert a row with `sha256(code)` as `code_hash`, `expires_at = now()+10m`, and `purpose='register'`
 - **AND** invoke `mailer.Send` with subject "【3xui Central】注册验证码" and a UTF-8 body containing the code + TTL
-- **AND** respond `204 No Content`
+- **AND** respond `200 OK` with resend timing metadata
 
 #### Scenario: Second send within cooldown
 
@@ -89,7 +90,7 @@ The system SHALL NOT store plaintext codes in the database.
 
 #### Scenario: Code stored as SHA-256 hex
 
-- **WHEN** SendCode persists a row
+- **WHEN** the verification start flow persists a row
 - **THEN** the `code_hash` column SHALL be `hex(sha256(code))`
 - **AND** the plaintext code SHALL exist only in the email body and the in-process variable during request handling
 
@@ -179,21 +180,22 @@ register so dev workflows are not blocked by missing mail infrastructure.
 - **WHEN** a client POSTs to `/api/user/auth/register` with `code` omitted
 - **THEN** the system SHALL skip Consume entirely
 - **AND** create the user as if registration were unprotected
-- **AND** the SendCode endpoint, if called, SHALL log the code to stderr via the mailer's no-op fallback (so manual e2e testing can still complete the flow)
+- **AND** the verification start endpoint, if called, SHALL log the code to stderr via the mailer's no-op fallback (so manual e2e testing can still complete the flow)
 
-#### Scenario: SendCode in dev mode
+#### Scenario: Verification start in dev mode
 
 - **GIVEN** `cfg.SMTP.Enabled() == false`
-- **WHEN** SendCode is called
+- **WHEN** the verification start flow is called
 - **THEN** the system SHALL still generate, store, and "send" the code
 - **AND** the mailer SHALL log at INFO level: subject, to, body (containing the code)
-- **AND** the endpoint SHALL respond `204` so the SPA's UX is unchanged
+- **AND** the endpoint SHALL respond `200` so the SPA's UX is unchanged
 
 ## Frontend behavior
 
-`frontend/src/views/Login.vue` in register mode:
+`frontend/src/views/Login.tsx` in register mode:
 
-- Calls `portalAuthApi.sendCode(email)` when user clicks "发送验证码"
+- Calls `portalAuthApi.startEmailVerification({ email, purpose: 'register' })`
+  when user clicks "发送验证码"
 - Starts a 60-second countdown after a successful send; the send button
   is disabled until the countdown expires.
 - Validates `code.length === 6` client-side before calling register.

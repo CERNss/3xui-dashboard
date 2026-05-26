@@ -74,6 +74,8 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 		model.SettingBrandSubtitle,
 		model.SettingBrandDescription,
 		model.SettingBrandFooter,
+		model.SettingBrandDocsURL,
+		model.SettingBrandHomepageContent,
 	} {
 		value, _, err := h.repo.Get(ctx, key)
 		if err != nil {
@@ -83,11 +85,13 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 		values[key] = value
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"icon_url":    values[model.SettingBrandIconURL],
-		"title":       firstNonEmpty(values[model.SettingBrandTitle], defaultBrandTitle),
-		"subtitle":    firstNonEmpty(values[model.SettingBrandSubtitle], defaultBrandSubtitle),
-		"description": firstNonEmpty(values[model.SettingBrandDescription], defaultBrandDescription),
-		"footer":      firstNonEmpty(values[model.SettingBrandFooter], defaultBrandFooter),
+		"icon_url":         values[model.SettingBrandIconURL],
+		"title":            firstNonEmpty(values[model.SettingBrandTitle], defaultBrandTitle),
+		"subtitle":         firstNonEmpty(values[model.SettingBrandSubtitle], defaultBrandSubtitle),
+		"description":      firstNonEmpty(values[model.SettingBrandDescription], defaultBrandDescription),
+		"footer":           firstNonEmpty(values[model.SettingBrandFooter], defaultBrandFooter),
+		"docs_url":         values[model.SettingBrandDocsURL],
+		"homepage_content": values[model.SettingBrandHomepageContent],
 	})
 }
 
@@ -116,6 +120,8 @@ func validateBrandText(key, value string) error {
 		limit = 120
 	case model.SettingBrandDescription, model.SettingBrandFooter:
 		limit = 240
+	case model.SettingBrandHomepageContent:
+		limit = 4000
 	default:
 		return nil
 	}
@@ -635,6 +641,24 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "登录面板下方展示的页脚文案。",
 	},
 	{
+		Key:           model.SettingBrandDocsURL,
+		Label:         "Documentation link",
+		LabelZh:       "文档链接",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional documentation URL for operators and users. Leave empty to hide the documentation link.",
+		DescriptionZh: "面向管理员和用户的文档链接；留空则隐藏文档链接。",
+	},
+	{
+		Key:           model.SettingBrandHomepageContent,
+		Label:         "Homepage content",
+		LabelZh:       "首页内容",
+		Type:          "string",
+		Group:         "other",
+		Description:   "Optional homepage copy. Supports Markdown/HTML when rendered by a trusted public page.",
+		DescriptionZh: "可选首页内容；由受信任的公开页面渲染时可支持 Markdown/HTML。",
+	},
+	{
 		Key:           model.SettingClashTemplateYAML,
 		Label:         "Clash template (YAML)",
 		LabelZh:       "Clash 模板（YAML）",
@@ -969,8 +993,12 @@ func validate(key, value string) error {
 				return nil
 			}
 			return errors.New("brand_icon_url must be empty, an /uploads/ URL, or an http(s) URL")
-		case model.SettingBrandTitle, model.SettingBrandSubtitle, model.SettingBrandDescription, model.SettingBrandFooter:
+		case model.SettingBrandTitle, model.SettingBrandSubtitle, model.SettingBrandDescription, model.SettingBrandFooter, model.SettingBrandHomepageContent:
 			if err := validateBrandText(key, value); err != nil {
+				return err
+			}
+		case model.SettingBrandDocsURL:
+			if err := validateOptionalURL(key, value); err != nil {
 				return err
 			}
 		case model.SettingNewUserPlanIDs:

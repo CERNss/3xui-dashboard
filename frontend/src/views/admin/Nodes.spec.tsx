@@ -311,6 +311,17 @@ describe('Nodes', () => {
     )
   })
 
+  it('treats hidden access URLs as panel roots in quick import', async () => {
+    const user = userEvent.setup()
+    renderNodes()
+
+    await user.click(screen.getByRole('button', { name: 'New Node' }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Quick panel URL'), 'https://node.example.com:10138/z5obK8SjreIGDvfTvD')
+
+    await waitFor(() => expect(within(dialog).getByLabelText('Base path')).toHaveValue('/z5obK8SjreIGDvfTvD/panel/'))
+  })
+
   it('shows import errors for invalid JSON and missing nodes array', async () => {
     renderNodes()
 

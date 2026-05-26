@@ -1,7 +1,8 @@
 import { Card, Empty, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { SettingItem } from '@/api/admin/settings'
-import { groupTitle } from './settingHelpers'
+import { groupTitleKey } from './settingHelpers'
 import { SettingRow } from './SettingRow'
 import type { SettingsSectionProps } from './types'
 
@@ -22,6 +23,7 @@ export function SettingsSection({
   onSave,
   onReset,
 }: GenericSettingsSectionProps) {
+  const { t } = useTranslation()
   const grouped = items.reduce<Record<string, SettingItem[]>>((buckets, item) => {
     const group = item.group || 'other'
     buckets[group] = buckets[group] ?? []
@@ -38,27 +40,30 @@ export function SettingsSection({
         <Typography.Text type="secondary">{description}</Typography.Text>
       </Card>
       {extra}
-      {Object.keys(grouped).length === 0 ? (
-        <Empty description="No settings in this section" />
-      ) : (
-        Object.entries(grouped).map(([group, rows]) => (
-          <Card key={group} title={groupTitle(group)}>
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              {rows.map((item) => (
-                <SettingRow
-                  key={item.key}
-                  item={item}
-                  drafts={drafts}
-                  saving={savingKey === item.key}
-                  onDraftChange={onDraftChange}
-                  onSave={onSave}
-                  onReset={onReset}
-                />
-              ))}
-            </Space>
-          </Card>
-        ))
-      )}
+      {Object.keys(grouped).length === 0 && !extra ? (
+        <Empty description={t('admin.settings.emptySection')} />
+      ) : Object.keys(grouped).length > 0 ? (
+        Object.entries(grouped).map(([group, rows]) => {
+          const titleKey = groupTitleKey(group)
+          return (
+            <Card key={group} title={titleKey ? t(titleKey) : group}>
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {rows.map((item) => (
+                  <SettingRow
+                    key={item.key}
+                    item={item}
+                    drafts={drafts}
+                    saving={savingKey === item.key}
+                    onDraftChange={onDraftChange}
+                    onSave={onSave}
+                    onReset={onReset}
+                  />
+                ))}
+              </Space>
+            </Card>
+          )
+        })
+      ) : null}
     </Space>
   )
 }

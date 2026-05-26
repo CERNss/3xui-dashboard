@@ -1,4 +1,5 @@
 export * from './AccountMenu'
+export * from './ConfigListPage'
 export * from './EmptyState'
 export * from './LocaleSwitcher'
 export * from './PageHeader'

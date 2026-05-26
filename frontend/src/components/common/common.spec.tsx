@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import {
   AccountMenu,
+  ConfigListPage,
   EmptyState,
   LocaleSwitcher,
   PageHeader,
@@ -101,5 +102,44 @@ describe('common components', () => {
 
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(screen.getByText('Node A')).toBeInTheDocument()
+  })
+
+  it('renders ConfigListPage shell with filters, stats, table, footer, and empty state', () => {
+    const { rerender } = render(
+      <ConfigListPage
+        title="Nodes"
+        subtitle="Manage nodes"
+        actions={<button type="button">New</button>}
+        filters={<label htmlFor="search">Search</label>}
+        stats={<span>2 online</span>}
+        footer={<span>Showing 2</span>}
+        rowKey="id"
+        columns={[{ dataIndex: 'name', title: 'Name' }]}
+        dataSource={[{ id: 1, name: 'Node A' }]}
+        emptyState={{ title: 'No nodes', description: 'Create one' }}
+        mobileCard={(record) => <span>{record.name}</span>}
+      />,
+    )
+
+    expect(document.querySelector('[data-component="config-list-page"]')).toBeInTheDocument()
+    expect(screen.getByText('Nodes')).toBeInTheDocument()
+    expect(screen.getByText('Search')).toBeInTheDocument()
+    expect(screen.getByText('2 online')).toBeInTheDocument()
+    expect(screen.getByText('Node A')).toBeInTheDocument()
+    expect(screen.getByText('Showing 2')).toBeInTheDocument()
+
+    rerender(
+      <ConfigListPage
+        title="Nodes"
+        rowKey="id"
+        columns={[{ dataIndex: 'name', title: 'Name' }]}
+        dataSource={[]}
+        emptyState={{ title: 'No nodes', description: 'Create one' }}
+        mobileCard={(record: { id: number; name: string }) => <span>{record.name}</span>}
+      />,
+    )
+
+    expect(screen.getByText('No nodes')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })

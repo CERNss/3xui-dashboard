@@ -12,17 +12,6 @@ export const SETTINGS_TABS: SettingsTab[] = [
   'notifications',
 ]
 
-export const tabLabels: Record<SettingsTab, string> = {
-  general: 'General',
-  subscription: 'Subscription',
-  alerts: 'Alerts',
-  dataCollection: 'Data collection',
-  securityAuth: 'Security & auth',
-  userDefaults: 'User defaults',
-  messages: 'Messages',
-  notifications: 'Notifications',
-}
-
 export const tabI18nKeys: Record<SettingsTab, string> = {
   general: 'admin.settings.generalTab',
   subscription: 'admin.settings.subscriptionTab',
@@ -35,13 +24,23 @@ export const tabI18nKeys: Record<SettingsTab, string> = {
 }
 
 export const BRAND_ICON_KEY = 'brand_icon_url'
+export const BRAND_DOCS_URL_KEY = 'brand_docs_url'
+export const BRAND_HOMEPAGE_CONTENT_KEY = 'brand_homepage_content'
 export const REGISTRATION_KEYS = new Set([
   'public_registration_enabled',
   'email_verification_required',
   'email_domain_allowlist',
 ])
 export const NEW_USER_KEYS = new Set(['new_user_initial_balance_cents', 'new_user_plan_ids'])
-export const BRAND_INFO_KEYS = new Set(['brand_title', 'brand_subtitle', 'brand_description', 'brand_footer'])
+export const BRAND_INFO_KEYS = new Set([
+  'site_name',
+  'brand_title',
+  'brand_subtitle',
+  'brand_description',
+  'brand_footer',
+  BRAND_DOCS_URL_KEY,
+  BRAND_HOMEPAGE_CONTENT_KEY,
+])
 export const OIDC_KEYS = new Set([
   'oidc_issuer',
   'oidc_client_id',
@@ -60,8 +59,12 @@ export function itemValue(item: SettingItem) {
   return item.value ?? ''
 }
 
-export function localizedLabel(item: SettingItem) {
-  return item.label
+export function localizedLabel(item: SettingItem, language?: string) {
+  return language?.startsWith('zh') && item.label_zh ? item.label_zh : item.label
+}
+
+export function localizedDescription(item: SettingItem, language?: string) {
+  return language?.startsWith('zh') && item.description_zh ? item.description_zh : item.description
 }
 
 export function filterSettings(items: SettingItem[], tab: SettingsTab) {
@@ -80,14 +83,14 @@ export function filterSettings(items: SettingItem[], tab: SettingsTab) {
   })
 }
 
-export function groupTitle(group: string) {
+export function groupTitleKey(group: string) {
   return {
-    data_collection: 'Data collection',
-    other: 'Other',
-    registration: 'Registration',
-    subscription: 'Subscription',
-    traffic: 'Traffic alerts',
-  }[group] ?? group
+    data_collection: 'admin.settings.groupDataCollection',
+    other: 'admin.settings.groupOther',
+    registration: 'admin.settings.groupRegistration',
+    subscription: 'admin.settings.groupSubscription',
+    traffic: 'admin.settings.groupTraffic',
+  }[group]
 }
 
 export function inputMin(key: string) {

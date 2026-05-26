@@ -203,6 +203,28 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*model.Node, 
 	return s.Get(ctx, id)
 }
 
+// UpsertByName creates or updates a node keyed by the case-insensitive
+// unique name constraint. Empty APIToken on update keeps the stored token;
+// creates still require a token through Create.
+func (s *Service) UpsertByName(ctx context.Context, in Input) (*model.Node, bool, error) {
+	if err := s.normalize(&in); err != nil {
+		return nil, false, err
+	}
+
+	var existing model.Node
+	err := s.db.WithContext(ctx).Where("LOWER(name) = LOWER(?)", in.Name).First(&existing).Error
+	if err == nil {
+		updated, err := s.Update(ctx, existing.ID, in)
+		return updated, false, err
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, fmt.Errorf("node.UpsertByName: %w", err)
+	}
+
+	created, err := s.Create(ctx, in)
+	return created, true, err
+}
+
 // Delete removes the node and any in-memory caches keyed off it.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	res := s.db.WithContext(ctx).Delete(&model.Node{}, id)

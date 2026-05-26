@@ -1,5 +1,9 @@
 import { portalClient } from '../client/portal'
-import type { EmailVerificationPurpose } from './profile'
+import type {
+  EmailVerificationConfirmResponse,
+  EmailVerificationStartResponse,
+  PublicEmailVerificationPurpose,
+} from './emailVerification'
 
 export interface UserTokenResponse {
   token: string
@@ -44,6 +48,17 @@ export interface OIDCCreateAccountInput {
   verificationToken: string
 }
 
+export interface PortalLoginInput {
+  email: string
+  password: string
+}
+
+export interface PortalRegisterInput {
+  email: string
+  password: string
+  code?: string
+}
+
 /** OIDC provider descriptor returned by /auth/oidc/providers. */
 export interface OIDCProvider {
   key?: string       // stable provider key for multi-provider installs
@@ -57,37 +72,19 @@ export interface RegistrationPolicy {
   email_verification_required: boolean
 }
 
-export interface EmailVerificationStartResponse {
-  status: string
-  expires_at?: string
-  resend_at?: string
-  cooldown_seconds?: number
-  resend_after_seconds?: number
-}
-
-export interface EmailVerificationConfirmResponse {
-  status: string
-  verification_token: string
-  expires_at?: string
-}
-
 export const portalAuthApi = {
-  login: (email: string, password: string) =>
+  login: ({ email, password }: PortalLoginInput) =>
     portalClient.post<UserTokenResponse>('/auth/login', { email, password }).then((r) => r.data),
 
   /** Register a portal account. `code` is the 6-digit verification code
-   *  delivered via sendCode; required when the backend has SMTP enabled. */
-  register: (email: string, password: string, code?: string) =>
+   *  delivered by the public email-verification start flow; required when
+   *  the backend has verification enabled. */
+  register: ({ email, password, code }: PortalRegisterInput) =>
     portalClient
       .post<UserTokenResponse>('/auth/register', { email, password, code })
       .then((r) => r.data),
 
-  /** Dispatch a fresh 6-digit code to `email` for the register flow.
-   *  Rate-limited 60s per email. Returns 204 on success. */
-  sendCode: (email: string) =>
-    portalClient.post<void>('/auth/send-code', { email }).then((r) => r.data),
-
-  startEmailVerification: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+  startEmailVerification: (input: { email: string; purpose: PublicEmailVerificationPurpose }) =>
     portalClient
       .post<EmailVerificationStartResponse>('/auth/email-verification/start', input)
       .then((r) => r.data),
@@ -104,7 +101,7 @@ export const portalAuthApi = {
 
   /** Start the OIDC dance. Returns the IDP's authorize URL; the
    *  caller is expected to navigate there via window.location.href. */
-  confirmEmailVerification: (input: { email: string; code: string; purpose: EmailVerificationPurpose }) =>
+  confirmEmailVerification: (input: { email: string; code: string; purpose: PublicEmailVerificationPurpose }) =>
     portalClient
       .post<EmailVerificationConfirmResponse>('/auth/email-verification/confirm', input)
       .then((r) => r.data),

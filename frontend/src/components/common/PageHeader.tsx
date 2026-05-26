@@ -1,5 +1,5 @@
 import { Space, Typography } from 'antd'
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 export interface PageHeaderProps {
   title: ReactNode
@@ -7,7 +7,34 @@ export interface PageHeaderProps {
   actions?: ReactNode
 }
 
+interface PageHeaderChromeContextValue {
+  suppressContentHeading?: boolean
+}
+
+const PageHeaderChromeContext = createContext<PageHeaderChromeContextValue>({})
+
+export function PageHeaderChromeProvider({
+  children,
+  suppressContentHeading,
+}: PageHeaderChromeContextValue & { children: ReactNode }) {
+  return (
+    <PageHeaderChromeContext.Provider value={{ suppressContentHeading }}>
+      {children}
+    </PageHeaderChromeContext.Provider>
+  )
+}
+
 export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
+  const { suppressContentHeading } = useContext(PageHeaderChromeContext)
+
+  if (suppressContentHeading) {
+    return actions ? (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <Space wrap>{actions}</Space>
+      </div>
+    ) : null
+  }
+
   return (
     <div
       style={{

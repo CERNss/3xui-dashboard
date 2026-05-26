@@ -3,8 +3,10 @@ import {
   portalAuthApi,
   type OIDCBindExistingInput,
   type OIDCCreateAccountInput,
+  type PortalLoginInput,
+  type PortalRegisterInput,
 } from '@/api/portal/auth'
-import type { EmailVerificationPurpose } from '@/api/portal/profile'
+import type { PublicEmailVerificationPurpose } from '@/api/portal/emailVerification'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
 import { queryKeys } from '../keys'
 
@@ -31,8 +33,7 @@ export function useOidcProviders() {
 export function usePortalLogin() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      portalAuthApi.login(email, password),
+    mutationFn: (input: PortalLoginInput) => portalAuthApi.login(input),
     onError: (error) => handleError(error),
   })
 }
@@ -40,16 +41,7 @@ export function usePortalLogin() {
 export function usePortalRegister() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: ({ email, password, code }: { email: string; password: string; code?: string }) =>
-      portalAuthApi.register(email, password, code),
-    onError: (error) => handleError(error),
-  })
-}
-
-export function useSendCode() {
-  const handleError = useMutationErrorHandler()
-  return useMutation({
-    mutationFn: (email: string) => portalAuthApi.sendCode(email),
+    mutationFn: (input: PortalRegisterInput) => portalAuthApi.register(input),
     onError: (error) => handleError(error),
   })
 }
@@ -57,7 +49,7 @@ export function useSendCode() {
 export function useStartAuthEmailVerification() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+    mutationFn: (input: { email: string; purpose: PublicEmailVerificationPurpose }) =>
       portalAuthApi.startEmailVerification(input),
     onError: (error) => handleError(error),
   })

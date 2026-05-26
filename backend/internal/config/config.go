@@ -17,20 +17,30 @@ import (
 
 // Config is the fully resolved runtime configuration.
 type Config struct {
-	Env    string // "dev" | "prod"
-	Server Server
-	DB     DB
-	Auth   Auth
-	Admin  Admin
-	OIDC   OIDC
-	SMTP   SMTP
+	Env       string // "dev" | "prod"
+	Server    Server
+	DB        DB
+	Auth      Auth
+	Admin     Admin
+	OIDC      OIDC
+	SMTP      SMTP
 	Alipay    Alipay
 	Stripe    Stripe
 	Notify    Notify
 	WireGuard WireGuard
+	Bootstrap Bootstrap
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
+}
+
+// Bootstrap carries optional startup seed data. These settings are intended
+// for local/dev and first-boot operator convenience; empty values are inert.
+type Bootstrap struct {
+	// NodesJSON is a JSON array (or single object) of nodes to upsert at boot.
+	// Each item may either provide scheme/host/port/base_path directly or an
+	// access_url such as https://node.example.com:2053/secret-panel-path.
+	NodesJSON string
 }
 
 // WireGuard holds the at-rest key encryption configuration for
@@ -103,9 +113,9 @@ type Server struct {
 }
 
 type DB struct {
-	URL          string // postgres://user:pass@host:5432/dbname?sslmode=disable
-	MaxOpenConns int
-	MaxIdleConns int
+	URL           string // postgres://user:pass@host:5432/dbname?sslmode=disable
+	MaxOpenConns  int
+	MaxIdleConns  int
 	MigrateOnBoot bool
 }
 
@@ -221,7 +231,7 @@ func Load(envFile string) (*Config, error) {
 	v.SetDefault("WRITE_TIMEOUT", "30s")
 	v.SetDefault("SHUTDOWN_TIMEOUT", "20s")
 	v.SetDefault("LOG_LEVEL", "info")
-	v.SetDefault("LOG_FORMAT", "")  // resolved from ENV below
+	v.SetDefault("LOG_FORMAT", "") // resolved from ENV below
 	v.SetDefault("DB_MAX_OPEN_CONNS", 25)
 	v.SetDefault("DB_MAX_IDLE_CONNS", 5)
 	v.SetDefault("DB_MIGRATE_ON_BOOT", true)
@@ -234,6 +244,7 @@ func Load(envFile string) (*Config, error) {
 	v.SetDefault("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
 	v.SetDefault("STRIPE_CURRENCY", "usd")
 	v.SetDefault("STRIPE_SESSION_EXPIRY_MINUTES", 30)
+	v.SetDefault("BOOTSTRAP_NODES_JSON", "")
 
 	if envFile != "" {
 		v.SetConfigFile(envFile)
@@ -312,6 +323,9 @@ func Load(envFile string) (*Config, error) {
 		},
 		WireGuard: WireGuard{
 			MasterKey: v.GetString("WG_MASTER_KEY"),
+		},
+		Bootstrap: Bootstrap{
+			NodesJSON: v.GetString("BOOTSTRAP_NODES_JSON"),
 		},
 		Notify: Notify{
 			Routes:       v.GetString("NOTIFY_ROUTES"),

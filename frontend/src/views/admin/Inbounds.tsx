@@ -8,9 +8,10 @@ import {
 import { Alert, Button, Card, Input, Modal, QRCode, Select, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Client, FleetInbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
-import { EmptyState, PageHeader, RefreshButton, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage, RefreshButton } from '@/components/common'
 import {
   useInboundsFleet,
   useRemoveInbound,
@@ -45,6 +46,7 @@ function transportText(row: FleetInbound) {
 }
 
 export default function Inbounds() {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [protocols, setProtocols] = useState<ProtocolFilter[]>([...PROTOCOL_OPTIONS])
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([])
@@ -62,6 +64,8 @@ export default function Inbounds() {
   const filtered = useMemo(() => filterInbounds(rows, query, protocols), [protocols, query, rows])
   const loading = fleetQuery.isLoading || nodesQuery.isLoading
   const error = fleetQuery.error ?? nodesQuery.error ?? setEnable.error ?? removeInbound.error ?? resetInboundTraffic.error
+  const nodeErrors = fleetQuery.data?.node_errors
+  const hasNodeErrors = Boolean(nodeErrors && Object.keys(nodeErrors).length)
 
   const stats = useMemo(() => {
     const inbounds = rows.map((row) => row.inbound)
@@ -94,9 +98,13 @@ export default function Inbounds() {
 
   const confirmDelete = (row: FleetInbound) => {
     Modal.confirm({
-      title: 'Delete inbound',
-      content: `Delete ${row.inbound.tag} on ${row.node_name}?`,
-      okText: 'Delete',
+      title: t('admin.inbounds.confirmDelete'),
+      content: t('admin.inbounds.confirmDeleteMsg', {
+        nodeName: row.node_name,
+        port: row.inbound.port,
+        tag: row.inbound.tag,
+      }),
+      okText: t('admin.inbounds.delete'),
       okButtonProps: { danger: true },
       onOk: () => removeInbound.mutateAsync({ nodeID: row.node_id, tag: row.inbound.tag }),
     })
@@ -104,9 +112,9 @@ export default function Inbounds() {
 
   const confirmReset = (row: FleetInbound) => {
     Modal.confirm({
-      title: 'Reset inbound traffic',
-      content: `Reset traffic for ${row.inbound.tag}?`,
-      okText: 'Reset',
+      title: t('admin.inbounds.confirmReset'),
+      content: t('admin.inbounds.confirmResetMsg', { tag: row.inbound.tag }),
+      okText: t('admin.inbounds.reset'),
       onOk: () => resetInboundTraffic.mutateAsync({ nodeID: row.node_id, tag: row.inbound.tag }),
     })
   }
@@ -119,7 +127,7 @@ export default function Inbounds() {
 
   const columns: ColumnsType<FleetInbound> = [
     {
-      title: 'Remark',
+      title: t('admin.inbounds.column.remark'),
       dataIndex: ['inbound', 'remark'],
       render: (_value, row) => (
         <Space direction="vertical" size={2}>
@@ -131,42 +139,42 @@ export default function Inbounds() {
       ),
     },
     {
-      title: 'Protocol',
+      title: t('admin.inbounds.column.protocol'),
       key: 'protocol',
       render: (_value, row) => <Tag>{transportText(row)}</Tag>,
     },
     {
-      title: 'Clients',
+      title: t('admin.inbounds.column.clients'),
       key: 'clients',
       align: 'right',
       render: (_value, row) => parseClients(row.inbound).length,
     },
     {
-      title: 'Traffic',
+      title: t('admin.inbounds.column.traffic'),
       key: 'traffic',
-      render: (_value, row) => `${formatBytes(row.inbound.up + row.inbound.down)} / ${formatLimit(row.inbound.total)}`,
+      render: (_value, row) => `${formatBytes(row.inbound.up + row.inbound.down)} / ${formatLimit(row.inbound.total, t('admin.stats.unlimited'))}`,
     },
     {
-      title: 'Enabled',
+      title: t('admin.inbounds.column.enable'),
       dataIndex: ['inbound', 'enable'],
       render: (_value, row) => (
         <Switch
           checked={row.inbound.enable}
-          aria-label={`${row.inbound.enable ? 'Disable' : 'Enable'} ${row.inbound.tag}`}
+          aria-label={`${row.inbound.enable ? t('admin.nodes.disable') : t('admin.nodes.enable')} ${row.inbound.tag}`}
           loading={setEnable.isPending}
           onChange={(enable) => setEnable.mutateAsync({ nodeID: row.node_id, tag: row.inbound.tag, enable })}
         />
       ),
     },
     {
-      title: 'Actions',
+      title: t('admin.users.column.actions'),
       key: 'actions',
       align: 'right',
       render: (_value, row) => (
         <Space>
-          <Button aria-label={`Edit ${row.inbound.tag}`} icon={<EditOutlined />} onClick={() => openEdit(row)} />
-          <Button aria-label={`Reset traffic ${row.inbound.tag}`} icon={<ReloadOutlined />} onClick={() => confirmReset(row)} />
-          <Button danger aria-label={`Delete ${row.inbound.tag}`} icon={<DeleteOutlined />} onClick={() => confirmDelete(row)} />
+          <Button aria-label={`${t('admin.inbounds.edit')} ${row.inbound.tag}`} icon={<EditOutlined />} onClick={() => openEdit(row)} />
+          <Button aria-label={`${t('admin.inbounds.resetInboundTraffic')} ${row.inbound.tag}`} icon={<ReloadOutlined />} onClick={() => confirmReset(row)} />
+          <Button danger aria-label={`${t('admin.inbounds.delete')} ${row.inbound.tag}`} icon={<DeleteOutlined />} onClick={() => confirmDelete(row)} />
         </Space>
       ),
     },
@@ -176,8 +184,8 @@ export default function Inbounds() {
     const clients = parseClients(row.inbound)
     return (
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        <Typography.Text type="secondary">Clients in {row.inbound.tag}</Typography.Text>
-        {clients.length === 0 ? <Typography.Text type="secondary">No clients configured.</Typography.Text> : null}
+        <Typography.Text type="secondary">{t('admin.inbounds.client.in')} {row.inbound.tag}</Typography.Text>
+        {clients.length === 0 ? <Typography.Text type="secondary">{t('admin.inbounds.client.emptyHint')}</Typography.Text> : null}
         {clients.map((client) => {
           const link = buildClientLink(row, client, nodes as Node[])
           return (
@@ -185,10 +193,10 @@ export default function Inbounds() {
               <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
                 <Space direction="vertical" size={2}>
                   <Typography.Text strong>{client.email}</Typography.Text>
-                  <Typography.Text type="secondary">{client.enable === false ? 'Disabled' : 'Enabled'} · {formatLimit(client.totalGB ?? 0)}</Typography.Text>
-                  {link ? <Typography.Text code>{link}</Typography.Text> : <Typography.Text type="secondary">Link not supported for this protocol.</Typography.Text>}
+                  <Typography.Text type="secondary">{client.enable === false ? t('admin.status.nodeState.disabled') : t('admin.nodes.enable')} · {formatLimit(client.totalGB ?? 0, t('admin.stats.unlimited'))}</Typography.Text>
+                  {link ? <Typography.Text code>{link}</Typography.Text> : <Typography.Text type="secondary">{t('admin.inbounds.protocolNotSupported')}</Typography.Text>}
                 </Space>
-                <Button aria-label={`Show QR ${client.email}`} icon={<QrcodeOutlined />} disabled={!link} onClick={() => showQr(row, client)}>
+                <Button aria-label={`${t('admin.inbounds.qrInbound')} ${client.email}`} icon={<QrcodeOutlined />} disabled={!link} onClick={() => showQr(row, client)}>
                   QR
                 </Button>
               </Space>
@@ -201,94 +209,100 @@ export default function Inbounds() {
 
   return (
     <div>
-      <PageHeader
-        title="Inbounds"
-        subtitle="Manage inbound listeners and client subscription links."
+      <ConfigListPage
+        title={t('admin.inbounds.title')}
+        subtitle={t('admin.inbounds.subtitle')}
         actions={
           <>
-            <Button type="primary" aria-label="New Inbound" icon={<PlusOutlined />} onClick={openCreate}>
-              New Inbound
+            <Button type="primary" aria-label={t('admin.inbounds.addInbound')} icon={<PlusOutlined />} onClick={openCreate}>
+              {t('admin.inbounds.addInbound')}
             </Button>
-            <RefreshButton loading={fleetQuery.isFetching || nodesQuery.isFetching} onClick={refresh} />
+            <RefreshButton loading={fleetQuery.isFetching || nodesQuery.isFetching} onClick={refresh} label={t('admin.inbounds.reload')} />
           </>
         }
-      />
-
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input.Search allowClear aria-label="Search inbounds" placeholder="Search inbounds" style={{ width: 260 }} onChange={(event) => setQuery(event.target.value)} />
-        <Select
-          mode="multiple"
-          aria-label="Filter protocols"
-          value={protocols}
-          style={{ minWidth: 320 }}
-          options={PROTOCOL_OPTIONS.map((protocol) => ({ label: protocol, value: protocol }))}
-          onChange={(value) => setProtocols(value)}
-        />
-        <Tag>{filtered.length} / {rows.length}</Tag>
-      </Space>
-
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Card size="small">Sent / Received: {formatBytes(stats.up)} / {formatBytes(stats.down)}</Card>
-        <Card size="small">Inbounds: {rows.length} ({stats.enabled} enabled)</Card>
-        <Card size="small">Clients: {stats.clients}</Card>
-      </Space>
-
-      {error ? <Alert type="error" showIcon message="Inbound operation failed" style={{ marginBottom: 16 }} /> : null}
-      {fleetQuery.data?.node_errors && Object.keys(fleetQuery.data.node_errors).length ? (
-        <Alert
-          type="warning"
-          showIcon
-          message="Node errors"
-          description={Object.entries(fleetQuery.data.node_errors).map(([id, message]) => `node ${id}: ${message}`).join('\n')}
-          style={{ marginBottom: 16 }}
-        />
-      ) : null}
-
-      {filtered.length > 0 || loading ? (
-        <ResponsiveListTable
-          rowKey={rowKey}
-          columns={columns}
-          dataSource={filtered}
-          loading={loading}
-          pagination={false}
-          expandable={{
-            expandedRowKeys,
-            onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
-            expandedRowRender,
-          }}
-          mobileCard={(row) => (
-            <Card size="small" style={{ width: '100%' }}>
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Typography.Text strong>{row.inbound.remark || row.inbound.tag}</Typography.Text>
-                  <Tag>{row.inbound.protocol}</Tag>
-                </Space>
-                <Typography.Text type="secondary">{row.node_name} #{row.node_id} · {row.inbound.port}</Typography.Text>
-                <Typography.Text>Clients: {parseClients(row.inbound).length}</Typography.Text>
-                <Typography.Text>Traffic: {formatBytes(row.inbound.up + row.inbound.down)} / {formatLimit(row.inbound.total)}</Typography.Text>
-                <Space wrap>
-                  <Switch
-                    checked={row.inbound.enable}
-                    aria-label={`${row.inbound.enable ? 'Disable' : 'Enable'} ${row.inbound.tag}`}
-                    onChange={(enable) => setEnable.mutateAsync({ nodeID: row.node_id, tag: row.inbound.tag, enable })}
-                  />
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
-                    Edit
-                  </Button>
-                  <Button size="small" icon={<ReloadOutlined />} onClick={() => confirmReset(row)}>
-                    Reset
-                  </Button>
-                  <Button size="small" danger icon={<DeleteOutlined />} onClick={() => confirmDelete(row)}>
-                    Delete
-                  </Button>
-                </Space>
+        filters={
+          <Space wrap>
+            <Input.Search allowClear aria-label={t('admin.inbounds.searchPlaceholder')} placeholder={t('admin.inbounds.searchPlaceholder')} style={{ width: 260 }} onChange={(event) => setQuery(event.target.value)} />
+            <Select
+              mode="multiple"
+              aria-label={t('admin.inbounds.filter.protocolLabel')}
+              value={protocols}
+              style={{ minWidth: 320 }}
+              options={PROTOCOL_OPTIONS.map((protocol) => ({ label: protocol, value: protocol }))}
+              onChange={(value) => setProtocols(value)}
+            />
+            <Tag>{filtered.length} / {rows.length}</Tag>
+          </Space>
+        }
+        stats={
+          <Space wrap>
+            <Card size="small">{t('admin.inbounds.kpi.sentReceived')}: {formatBytes(stats.up)} / {formatBytes(stats.down)}</Card>
+            <Card size="small">{t('admin.inbounds.kpi.inbounds')}: {rows.length} ({stats.enabled} {t('admin.inbounds.kpi.enabledSuffix')})</Card>
+            <Card size="small">{t('admin.inbounds.kpi.clients')}: {stats.clients}</Card>
+          </Space>
+        }
+        alerts={
+          error || hasNodeErrors ? (
+            <>
+            {error ? <Alert type="error" showIcon message={t('admin.inbounds.operationFailed')} /> : null}
+            {hasNodeErrors ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t('admin.inbounds.nodeErrorsTitle')}
+                description={Object.entries(nodeErrors ?? {}).map(([id, message]) => `${t('admin.opsMonitor.nodeId', { id })}: ${message}`).join('\n')}
+                style={{ marginTop: error ? 12 : 0 }}
+              />
+            ) : null}
+            </>
+          ) : null
+        }
+        rowKey={rowKey}
+        columns={columns}
+        dataSource={filtered}
+        loading={loading}
+        pagination={false}
+        expandable={{
+          expandedRowKeys,
+          onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
+          expandedRowRender,
+        }}
+        emptyState={{
+          title: t('admin.inbounds.empty'),
+          description: t('admin.inbounds.emptyDescription'),
+          actionLabel: t('admin.inbounds.addInbound'),
+          onAction: openCreate,
+        }}
+        mobileCard={(row) => (
+          <Card size="small" style={{ width: '100%' }}>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Typography.Text strong>{row.inbound.remark || row.inbound.tag}</Typography.Text>
+                <Tag>{row.inbound.protocol}</Tag>
               </Space>
-            </Card>
-          )}
-        />
-      ) : (
-        <EmptyState title="No inbounds" description="Create an inbound listener to start provisioning clients." actionLabel="New Inbound" onAction={openCreate} />
-      )}
+              <Typography.Text type="secondary">{row.node_name} #{row.node_id} · {row.inbound.port}</Typography.Text>
+              <Typography.Text>{t('admin.inbounds.column.clients')}: {parseClients(row.inbound).length}</Typography.Text>
+              <Typography.Text>{t('admin.inbounds.column.traffic')}: {formatBytes(row.inbound.up + row.inbound.down)} / {formatLimit(row.inbound.total, t('admin.stats.unlimited'))}</Typography.Text>
+              <Space wrap>
+                <Switch
+                  checked={row.inbound.enable}
+                  aria-label={`${row.inbound.enable ? t('admin.nodes.disable') : t('admin.nodes.enable')} ${row.inbound.tag}`}
+                  onChange={(enable) => setEnable.mutateAsync({ nodeID: row.node_id, tag: row.inbound.tag, enable })}
+                />
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
+                  {t('admin.inbounds.edit')}
+                </Button>
+                <Button size="small" icon={<ReloadOutlined />} onClick={() => confirmReset(row)}>
+                  {t('admin.inbounds.reset')}
+                </Button>
+                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => confirmDelete(row)}>
+                  {t('admin.inbounds.delete')}
+                </Button>
+              </Space>
+            </Space>
+          </Card>
+        )}
+      />
 
       <InboundEditor
         open={editor.open}

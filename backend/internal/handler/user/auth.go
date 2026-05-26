@@ -37,7 +37,6 @@ func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Ser
 func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/login", h.Login)
 	rg.POST("/auth/register", h.Register)
-	rg.POST("/auth/send-code", h.SendCode)
 	rg.POST("/auth/email-verification/start", h.EmailVerificationStart)
 	rg.POST("/auth/email-verification/confirm", h.EmailVerificationConfirm)
 	rg.GET("/auth/registration-policy", h.RegistrationPolicy)
@@ -153,10 +152,6 @@ type registerRequest struct {
 	Code     string `json:"code"` // 6-digit, required iff SMTP is enabled
 }
 
-type sendCodeRequest struct {
-	Email string `json:"email" binding:"required"`
-}
-
 type emailVerificationRequest struct {
 	Email   string `json:"email" binding:"required"`
 	Purpose string `json:"purpose" binding:"required"`
@@ -180,27 +175,6 @@ func (h *AuthHandler) RegistrationPolicy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"email_verification_required": required,
 	})
-}
-
-// SendCode dispatches a fresh 6-digit verification code to the given email.
-// Rate-limited per (email, purpose). Returns 204 on success.
-func (h *AuthHandler) SendCode(c *gin.Context) {
-	var req sendCodeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-	err := h.verify.SendCode(c.Request.Context(), req.Email, verification.PurposeRegister)
-	if err != nil {
-		switch {
-		case errors.Is(err, verification.ErrRateLimited):
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "请稍等再发，验证码 60 秒内只能发一次"})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-	c.Status(http.StatusNoContent)
 }
 
 func (h *AuthHandler) EmailVerificationStart(c *gin.Context) {
@@ -254,7 +228,7 @@ func (h *AuthHandler) EmailVerificationConfirm(c *gin.Context) {
 // Register creates a new portal account. Behaviour matches
 // usersvc.Register — gated by PUBLIC_REGISTRATION + EMAIL_DOMAIN_ALLOWLIST.
 // When SMTP is enabled, the request must include a valid 6-digit code that
-// was previously delivered via SendCode.
+// was previously delivered by the public email-verification start flow.
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

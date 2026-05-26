@@ -29,8 +29,9 @@ import type { MenuProps } from 'antd'
 import type { CheckboxProps } from 'antd/es/checkbox'
 import type { Key } from 'react'
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { adminUsersApi, type AdminUser, type UserStatus } from '@/api/admin/users'
-import { EmptyState, PageHeader, RefreshButton, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage, RefreshButton } from '@/components/common'
 import {
   useAdjustUserBalance,
   useCreateUser,
@@ -82,13 +83,13 @@ function userLabel(user: AdminUser) {
   return user.email || `#${user.id}`
 }
 
-function statusTag(status: UserStatus) {
-  return <Tag color={status === 'active' ? 'green' : 'red'}>{status === 'active' ? 'Active' : 'Suspended'}</Tag>
+function statusTag(status: UserStatus, label: string) {
+  return <Tag color={status === 'active' ? 'green' : 'red'}>{label}</Tag>
 }
 
-function verifiedTag(user: AdminUser) {
+function verifiedTag(user: AdminUser, verified: string, unverified: string) {
   if (!user.email) return null
-  return <Tag color={user.email_verified ? 'green' : 'gold'}>{user.email_verified ? 'Verified' : 'Unverified'}</Tag>
+  return <Tag color={user.email_verified ? 'green' : 'gold'}>{user.email_verified ? verified : unverified}</Tag>
 }
 
 function sortUsers(users: AdminUser[], sort: SortKey) {
@@ -111,11 +112,8 @@ function sortUsers(users: AdminUser[], sort: SortKey) {
   }
 }
 
-function flashText(action: string, ok: number, fail: number) {
-  return fail === 0 ? `${action} completed for ${ok} users.` : `${action} completed for ${ok} users; ${fail} failed.`
-}
-
 export default function Users() {
+  const { t } = useTranslation()
   const [createForm] = Form.useForm<CreateFormValues>()
   const [editForm] = Form.useForm<EditFormValues>()
   const [balanceForm] = Form.useForm<BalanceFormValues>()
@@ -190,6 +188,9 @@ export default function Users() {
   }, [filteredUsers])
 
   const selectedIds = selectedRowKeys.map(Number)
+  const userStatusLabel = (status: UserStatus) => t(`admin.users.status.${status}`)
+  const userStatusTag = (status: UserStatus) => statusTag(status, userStatusLabel(status))
+  const userVerifiedTag = (user: AdminUser) => verifiedTag(user, t('admin.users.verified'), t('admin.users.unverified'))
 
   const refresh = () => {
     void usersQuery.refetch()
@@ -239,7 +240,7 @@ export default function Users() {
       initial_balance_cents: Math.round((values.initial_balance_yuan ?? 0) * 100),
     })
     closeCreate()
-    setFlash({ type: 'success', text: `Created ${userLabel(created)}.` })
+    setFlash({ type: 'success', text: t('admin.users.create.success', { email: userLabel(created) }) })
   }
 
   const saveEdit = async () => {
@@ -254,7 +255,7 @@ export default function Users() {
     if (values.password) fields.password = values.password
     const updated = await updateUser.mutateAsync({ id: editing.id, fields })
     closeEdit()
-    setFlash({ type: 'success', text: `Updated ${userLabel(updated)}.` })
+    setFlash({ type: 'success', text: t('admin.users.edit.success', { email: userLabel(updated) }) })
   }
 
   const saveBalance = async () => {
@@ -267,56 +268,56 @@ export default function Users() {
       reason: values.reason.trim(),
     })
     closeBalance()
-    setFlash({ type: 'success', text: `Adjusted ${userLabel(balanceUser)} balance.` })
+    setFlash({ type: 'success', text: t('admin.users.balance.success', { email: userLabel(balanceUser) }) })
   }
 
   const toggleAutoRenew = async (user: AdminUser) => {
     await updateUser.mutateAsync({ id: user.id, fields: { auto_renew: !user.auto_renew } })
-    setFlash({ type: 'success', text: `Auto renew ${user.auto_renew ? 'disabled' : 'enabled'} for ${userLabel(user)}.` })
+    setFlash({ type: 'success', text: t(user.auto_renew ? 'admin.users.autoRenewOff' : 'admin.users.autoRenewOn') })
   }
 
   const toggleSuspend = async (user: AdminUser) => {
     if (user.status === 'suspended') {
       await unsuspendUser.mutateAsync(user.id)
-      setFlash({ type: 'success', text: `Unsuspended ${userLabel(user)}.` })
+      setFlash({ type: 'success', text: t('admin.users.unsuspend') })
     } else {
       await suspendUser.mutateAsync(user.id)
-      setFlash({ type: 'success', text: `Suspended ${userLabel(user)}.` })
+      setFlash({ type: 'success', text: t('admin.users.suspend') })
     }
   }
 
   const confirmDelete = (user: AdminUser) => {
     Modal.confirm({
-      title: 'Delete user',
-      content: `Delete ${userLabel(user)}? This cannot be undone.`,
-      okText: 'Delete',
+      title: t('admin.users.confirmDelete'),
+      content: t('admin.users.confirmDeleteMsg', { email: userLabel(user) }),
+      okText: t('admin.users.delete'),
       okButtonProps: { danger: true },
       onOk: async () => {
         await removeUser.mutateAsync(user.id)
-        setFlash({ type: 'success', text: `Deleted ${userLabel(user)}.` })
+        setFlash({ type: 'success', text: t('admin.users.delete') })
       },
     })
   }
 
-  const runBatch = async (label: string, runner: (id: number) => Promise<unknown>) => {
+  const runBatch = async (resultKey: string, runner: (id: number) => Promise<unknown>) => {
     if (selectedIds.length === 0) return
     const ids = [...selectedIds]
     const results = await Promise.allSettled(ids.map((id) => runner(id)))
     const ok = results.filter((result) => result.status === 'fulfilled').length
     const fail = results.length - ok
     setSelectedRowKeys([])
-    setFlash({ type: fail === 0 ? 'success' : 'error', text: flashText(label, ok, fail) })
+    setFlash({ type: fail === 0 ? 'success' : 'error', text: t(resultKey, { ok, fail }) })
     await usersQuery.refetch()
   }
 
   const batchDelete = () => {
     if (selectedIds.length === 0) return
     Modal.confirm({
-      title: 'Delete selected users',
-      content: `Delete ${selectedIds.length} selected users? This cannot be undone.`,
-      okText: 'Delete',
+      title: t('admin.users.batch.deleteTitle'),
+      content: t('admin.users.batch.deleteMsg', { n: selectedIds.length }),
+      okText: t('admin.users.delete'),
       okButtonProps: { danger: true },
-      onOk: () => runBatch('Delete', (id) => removeUser.mutateAsync(id)),
+      onOk: () => runBatch('admin.users.batch.deleteResult', (id) => removeUser.mutateAsync(id)),
     })
   }
 
@@ -336,29 +337,29 @@ export default function Users() {
     anchor.click()
     document.body.removeChild(anchor)
     URL.revokeObjectURL(url)
-    setFlash({ type: 'success', text: `Exported ${filteredUsers.length} users.` })
+    setFlash({ type: 'success', text: t('admin.users.more.csvExported', { n: filteredUsers.length }) })
   }
 
   const moreItems: MenuProps['items'] = [
-    { key: 'csv', icon: <DownloadOutlined />, label: 'Export CSV', onClick: exportCsv },
+    { key: 'csv', icon: <DownloadOutlined />, label: t('admin.users.more.exportCsv'), onClick: exportCsv },
     {
       key: 'purge',
-      label: 'Purge client cache',
-      onClick: () => setFlash({ type: 'error', text: 'Client cache purge is not implemented yet.' }),
+      label: t('admin.users.more.purgeCache'),
+      onClick: () => setFlash({ type: 'error', text: t('admin.users.more.notImplemented') }),
     },
   ]
 
   const columns: ColumnsType<AdminUser> = [
     {
-      title: 'User',
+      title: t('admin.users.column.user'),
       dataIndex: 'email',
       sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
       render: (_value, user) => (
         <Space direction="vertical" size={2}>
           <Space wrap>
             <Typography.Text strong>{user.email || '—'}</Typography.Text>
-            {verifiedTag(user)}
-            {user.oidc_subject ? <Tag color="blue">OIDC</Tag> : <Tag>Email</Tag>}
+            {userVerifiedTag(user)}
+            {user.oidc_subject ? <Tag color="blue">OIDC</Tag> : <Tag>{t('admin.users.auth.email')}</Tag>}
           </Space>
           <Typography.Text type="secondary">{user.sub_id.slice(0, 12)}...</Typography.Text>
         </Space>
@@ -371,17 +372,17 @@ export default function Users() {
       render: (id: number) => <Typography.Text code>#{id}</Typography.Text>,
     },
     {
-      title: 'Status',
+      title: t('admin.users.column.status'),
       dataIndex: 'status',
       filters: [
-        { text: 'Active', value: 'active' },
-        { text: 'Suspended', value: 'suspended' },
+        { text: t('admin.users.status.active'), value: 'active' },
+        { text: t('admin.users.status.suspended'), value: 'suspended' },
       ],
       onFilter: (value, user) => user.status === value,
-      render: statusTag,
+      render: userStatusTag,
     },
     {
-      title: 'Balance',
+      title: t('admin.users.column.balance'),
       dataIndex: 'balance_cents',
       align: 'right',
       sorter: (a, b) => a.balance_cents - b.balance_cents,
@@ -389,49 +390,49 @@ export default function Users() {
         <Space>
           <Typography.Text strong>{formatYuan(user.balance_cents)}</Typography.Text>
           <Button size="small" onClick={() => openBalance(user)}>
-            Adjust
+            {t('admin.users.balance.adjustShort')}
           </Button>
         </Space>
       ),
     },
     {
-      title: 'Auto renew',
+      title: t('admin.users.column.autoRenew'),
       dataIndex: 'auto_renew',
       render: (_value, user) => (
         <Switch
           checked={user.auto_renew}
-          aria-label={`${user.auto_renew ? 'Disable' : 'Enable'} auto renew for ${userLabel(user)}`}
+          aria-label={`${user.auto_renew ? t('admin.users.autoRenewOff') : t('admin.users.autoRenewOn')} ${userLabel(user)}`}
           loading={updateUser.isPending}
           onChange={() => toggleAutoRenew(user)}
         />
       ),
     },
     {
-      title: 'Registered',
+      title: t('admin.users.column.registered'),
       dataIndex: 'created_at',
       sorter: (a, b) => a.created_at.localeCompare(b.created_at),
       render: formatDate,
     },
     {
-      title: 'Last active',
+      title: t('admin.users.column.lastActive'),
       dataIndex: 'last_active_at',
       render: formatDate,
     },
     {
-      title: 'Actions',
+      title: t('admin.users.column.actions'),
       key: 'actions',
       align: 'right',
       render: (_value, user) => (
         <Space>
-          <Button aria-label={`Edit ${userLabel(user)}`} icon={<EditOutlined />} onClick={() => openEdit(user)} />
+          <Button aria-label={`${t('admin.users.edit.open')} ${userLabel(user)}`} icon={<EditOutlined />} onClick={() => openEdit(user)} />
           <Button
-            aria-label={`${user.status === 'suspended' ? 'Unsuspend' : 'Suspend'} ${userLabel(user)}`}
+            aria-label={`${user.status === 'suspended' ? t('admin.users.unsuspend') : t('admin.users.suspend')} ${userLabel(user)}`}
             icon={user.status === 'suspended' ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
             onClick={() => toggleSuspend(user)}
           />
           <Button
             danger
-            aria-label={`Delete ${userLabel(user)}`}
+            aria-label={`${t('admin.users.delete')} ${userLabel(user)}`}
             icon={<DeleteOutlined />}
             onClick={() => confirmDelete(user)}
           />
@@ -442,244 +443,245 @@ export default function Users() {
 
   return (
     <section>
-      <PageHeader
-        title="Users"
-        subtitle="Create accounts, review balances, and manage account status."
+      <ConfigListPage
+        title={t('admin.users.title')}
+        subtitle={t('admin.users.subtitle')}
         actions={
           <>
-            <Button type="primary" aria-label="New User" icon={<PlusOutlined />} onClick={openCreate}>
-              New User
+            <Button type="primary" aria-label={t('admin.users.addUser')} icon={<PlusOutlined />} onClick={openCreate}>
+              {t('admin.users.addUser')}
             </Button>
-            <RefreshButton loading={usersQuery.isFetching} onClick={refresh} />
+            <RefreshButton loading={usersQuery.isFetching} onClick={refresh} label={t('admin.users.reload')} />
           </>
         }
+        filters={
+          <Card size="small">
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Input.Search
+                allowClear
+                value={query}
+                placeholder={t('admin.users.searchPlaceholder')}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <Space wrap>
+                <Segmented
+                  aria-label={t('admin.users.filterStatus')}
+                  value={statusFilter}
+                  onChange={(value) => setStatusFilter(value as StatusFilter)}
+                  options={[
+                    { label: t('admin.users.filterAll'), value: 'all' },
+                    { label: t('admin.users.status.active'), value: 'active' },
+                    { label: t('admin.users.status.suspended'), value: 'suspended' },
+                  ]}
+                />
+                <Segmented
+                  aria-label={t('admin.users.filterVerified')}
+                  value={verifiedFilter}
+                  onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
+                  options={[
+                    { label: t('admin.users.filterVerifiedAll'), value: 'all' },
+                    { label: t('admin.users.verified'), value: 'verified' },
+                    { label: t('admin.users.unverified'), value: 'unverified' },
+                  ]}
+                />
+                <Segmented
+                  aria-label={t('admin.users.filterRegisterMethod')}
+                  value={registerFilter}
+                  onChange={(value) => setRegisterFilter(value as RegisterFilter)}
+                  options={[
+                    { label: t('admin.users.filterRegisterAll'), value: 'all' },
+                    { label: t('admin.users.filterRegisterEmail'), value: 'email' },
+                    { label: 'OIDC', value: 'oidc' },
+                  ]}
+                />
+                <Select
+                  aria-label={t('admin.users.sortLabel')}
+                  value={sort}
+                  onChange={(value) => setSort(value)}
+                  style={{ minWidth: 190 }}
+                  options={[
+                    { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
+                    { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
+                    { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
+                    { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
+                    { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
+                    { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
+                    { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
+                  ]}
+                />
+                <Switch
+                  checked={autoRefresh}
+                  aria-label={t('admin.users.autoRefresh')}
+                  checkedChildren={t('admin.users.autoRefreshShort')}
+                  unCheckedChildren={t('admin.users.manualRefreshShort')}
+                  onChange={setAutoRefresh}
+                />
+                <Dropdown menu={{ items: moreItems }}>
+                  <Button>{t('admin.users.more.label')}</Button>
+                </Dropdown>
+              </Space>
+            </Space>
+          </Card>
+        }
+        alerts={error || flash || selectedRowKeys.length > 0 ? (
+          <>
+            {error ? <Alert type="error" showIcon message={t('admin.users.loadFailed')} /> : null}
+            {flash ? (
+              <Alert
+                data-show={Boolean(flash)}
+                type={flash.type}
+                showIcon
+                message={flash.text}
+                style={{ marginTop: error ? 16 : 0, transition: 'opacity 0.2s ease, transform 0.2s ease' }}
+              />
+            ) : null}
+            {selectedRowKeys.length > 0 ? (
+              <div
+                data-show
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  marginTop: error || flash ? 16 : 0,
+                  padding: 12,
+                  border: '1px solid #d9d9d9',
+                  borderRadius: 8,
+                  transition: 'opacity 0.18s ease, transform 0.18s ease',
+                }}
+              >
+                <Typography.Text strong>{t('admin.users.batch.selectedCount', { n: selectedRowKeys.length })}</Typography.Text>
+                <Space wrap>
+                  <Button
+                    disabled={selectedRowKeys.length === 0}
+                    onClick={() => runBatch('admin.users.batch.suspendResult', (id) => suspendUser.mutateAsync(id))}
+                  >
+                    {t('admin.users.batch.suspend')}
+                  </Button>
+                  <Button
+                    disabled={selectedRowKeys.length === 0}
+                    onClick={() => runBatch('admin.users.batch.unsuspendResult', (id) => unsuspendUser.mutateAsync(id))}
+                  >
+                    {t('admin.users.batch.unsuspend')}
+                  </Button>
+                  <Button danger disabled={selectedRowKeys.length === 0} onClick={batchDelete}>
+                    {t('admin.users.batch.delete')}
+                  </Button>
+                  <Button onClick={() => setSelectedRowKeys([])}>{t('admin.users.batch.clear')}</Button>
+                </Space>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+        rowKey="id"
+        columns={columns}
+        dataSource={filteredUsers}
+        loading={loading}
+        pagination={{ pageSize: PAGE_SIZE, showSizeChanger: false }}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+          getCheckboxProps: (user) =>
+            ({ 'aria-label': t('admin.users.batch.toggleRow', { email: userLabel(user) }) }) as Partial<
+              Omit<CheckboxProps, 'checked' | 'defaultChecked'>
+            >,
+        }}
+        emptyState={{
+          title: t('admin.users.empty'),
+          description: t('admin.users.emptyDescription'),
+          actionLabel: t('admin.users.addUser'),
+          onAction: openCreate,
+        }}
+        mobileCard={(user) => (
+          <Card size="small" style={{ width: '100%' }}>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Checkbox
+                  checked={selectedRowKeys.includes(user.id)}
+                  aria-label={t('admin.users.batch.toggleRow', { email: userLabel(user) })}
+                  onChange={(event) =>
+                    setSelectedRowKeys((current) =>
+                      event.target.checked ? [...current, user.id] : current.filter((id) => id !== user.id),
+                    )
+                  }
+                />
+                {userStatusTag(user.status)}
+              </Space>
+              <Space wrap>
+                <Typography.Text strong>{user.email || '—'}</Typography.Text>
+                {userVerifiedTag(user)}
+                {user.oidc_subject ? <Tag color="blue">OIDC</Tag> : <Tag>{t('admin.users.auth.email')}</Tag>}
+              </Space>
+              <Typography.Text type="secondary">#{user.id} · {user.sub_id.slice(0, 12)}...</Typography.Text>
+              <Typography.Text>{t('admin.users.column.balance')}: {formatYuan(user.balance_cents)}</Typography.Text>
+              <Typography.Text>{t('admin.users.column.autoRenew')}: {user.auto_renew ? t('admin.users.on') : t('admin.users.off')}</Typography.Text>
+              <Typography.Text>{t('admin.users.column.registered')}: {formatDate(user.created_at)}</Typography.Text>
+              <Typography.Text>{t('admin.users.column.lastActive')}: {formatDate(user.last_active_at)}</Typography.Text>
+              <Space wrap>
+                <Button size="small" onClick={() => openBalance(user)}>
+                  {t('admin.users.balance.adjustShort')}
+                </Button>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(user)}>
+                  {t('admin.users.edit.open')}
+                </Button>
+                <Button size="small" onClick={() => toggleSuspend(user)}>
+                  {user.status === 'suspended' ? t('admin.users.unsuspend') : t('admin.users.suspend')}
+                </Button>
+                <Button size="small" danger onClick={() => confirmDelete(user)}>
+                  {t('admin.users.delete')}
+                </Button>
+              </Space>
+            </Space>
+          </Card>
+        )}
       />
 
-      {error ? <Alert type="error" showIcon message="User operation failed" style={{ marginBottom: 16 }} /> : null}
-      {flash ? (
-        <Alert
-          data-show={Boolean(flash)}
-          type={flash.type}
-          showIcon
-          message={flash.text}
-          style={{ marginBottom: 16, transition: 'opacity 0.2s ease, transform 0.2s ease' }}
-        />
-      ) : null}
-
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Input.Search
-            allowClear
-            value={query}
-            placeholder="Search email, id, or subscription id"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <Space wrap>
-            <Segmented
-              aria-label="Status filter"
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-              options={[
-                { label: 'All', value: 'all' },
-                { label: 'Active', value: 'active' },
-                { label: 'Suspended', value: 'suspended' },
-              ]}
-            />
-            <Segmented
-              aria-label="Verified filter"
-              value={verifiedFilter}
-              onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
-              options={[
-                { label: 'Any verification', value: 'all' },
-                { label: 'Verified', value: 'verified' },
-                { label: 'Unverified', value: 'unverified' },
-              ]}
-            />
-            <Segmented
-              aria-label="Register method filter"
-              value={registerFilter}
-              onChange={(value) => setRegisterFilter(value as RegisterFilter)}
-              options={[
-                { label: 'Any method', value: 'all' },
-                { label: 'Email', value: 'email' },
-                { label: 'OIDC', value: 'oidc' },
-              ]}
-            />
-            <Select
-              aria-label="Sort users"
-              value={sort}
-              onChange={(value) => setSort(value)}
-              style={{ minWidth: 190 }}
-              options={[
-                { label: 'Newest first', value: 'created_at:desc' },
-                { label: 'Oldest first', value: 'created_at:asc' },
-                { label: 'Highest balance', value: 'balance:desc' },
-                { label: 'Lowest balance', value: 'balance:asc' },
-                { label: 'Highest id', value: 'id:desc' },
-                { label: 'Email A-Z', value: 'email:asc' },
-                { label: 'Email Z-A', value: 'email:desc' },
-              ]}
-            />
-            <Switch
-              checked={autoRefresh}
-              aria-label="Auto refresh"
-              checkedChildren="Auto"
-              unCheckedChildren="Manual"
-              onChange={setAutoRefresh}
-            />
-            <Dropdown menu={{ items: moreItems }}>
-              <Button>More</Button>
-            </Dropdown>
-          </Space>
-        </Space>
-      </Card>
-
-      <div
-        data-show={selectedRowKeys.length > 0}
-        style={{
-          display: selectedRowKeys.length > 0 ? 'flex' : 'none',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 16,
-          padding: 12,
-          border: '1px solid #d9d9d9',
-          borderRadius: 8,
-          transition: 'opacity 0.18s ease, transform 0.18s ease',
-        }}
-      >
-        <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
-        <Space wrap>
-          <Button
-            disabled={selectedRowKeys.length === 0}
-            onClick={() => runBatch('Suspend', (id) => suspendUser.mutateAsync(id))}
-          >
-            Suspend selected
-          </Button>
-          <Button
-            disabled={selectedRowKeys.length === 0}
-            onClick={() => runBatch('Unsuspend', (id) => unsuspendUser.mutateAsync(id))}
-          >
-            Unsuspend selected
-          </Button>
-          <Button danger disabled={selectedRowKeys.length === 0} onClick={batchDelete}>
-            Delete selected
-          </Button>
-          <Button onClick={() => setSelectedRowKeys([])}>Clear</Button>
-        </Space>
-      </div>
-
-      {filteredUsers.length > 0 || loading ? (
-        <ResponsiveListTable<AdminUser>
-          rowKey="id"
-          columns={columns}
-          dataSource={filteredUsers}
-          loading={loading}
-          pagination={{ pageSize: PAGE_SIZE, showSizeChanger: false }}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-            getCheckboxProps: (user) =>
-              ({ 'aria-label': `Select ${userLabel(user)}` }) as Partial<
-                Omit<CheckboxProps, 'checked' | 'defaultChecked'>
-              >,
-          }}
-          locale={{
-            emptyText: users.length === 0 ? 'No users yet.' : 'No users match the current filters.',
-          }}
-          mobileCard={(user) => (
-            <Card size="small" style={{ width: '100%' }}>
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Checkbox
-                    checked={selectedRowKeys.includes(user.id)}
-                    aria-label={`Select ${userLabel(user)}`}
-                    onChange={(event) =>
-                      setSelectedRowKeys((current) =>
-                        event.target.checked ? [...current, user.id] : current.filter((id) => id !== user.id),
-                      )
-                    }
-                  />
-                  {statusTag(user.status)}
-                </Space>
-                <Space wrap>
-                  <Typography.Text strong>{user.email || '—'}</Typography.Text>
-                  {verifiedTag(user)}
-                  {user.oidc_subject ? <Tag color="blue">OIDC</Tag> : <Tag>Email</Tag>}
-                </Space>
-                <Typography.Text type="secondary">#{user.id} · {user.sub_id.slice(0, 12)}...</Typography.Text>
-                <Typography.Text>Balance: {formatYuan(user.balance_cents)}</Typography.Text>
-                <Typography.Text>Auto renew: {user.auto_renew ? 'On' : 'Off'}</Typography.Text>
-                <Typography.Text>Registered: {formatDate(user.created_at)}</Typography.Text>
-                <Typography.Text>Last active: {formatDate(user.last_active_at)}</Typography.Text>
-                <Space wrap>
-                  <Button size="small" onClick={() => openBalance(user)}>
-                    Adjust
-                  </Button>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(user)}>
-                    Edit
-                  </Button>
-                  <Button size="small" onClick={() => toggleSuspend(user)}>
-                    {user.status === 'suspended' ? 'Unsuspend' : 'Suspend'}
-                  </Button>
-                  <Button size="small" danger onClick={() => confirmDelete(user)}>
-                    Delete
-                  </Button>
-                </Space>
-              </Space>
-            </Card>
-          )}
-        />
-      ) : (
-        <EmptyState title="No users" description="Create a user to start managing accounts." actionLabel="New User" onAction={openCreate} />
-      )}
-
-      <Modal title="New User" open={createOpen} onCancel={closeCreate} onOk={saveCreate} confirmLoading={createUser.isPending} destroyOnHidden>
+      <Modal title={t('admin.users.create.title')} open={createOpen} onCancel={closeCreate} onOk={saveCreate} confirmLoading={createUser.isPending} destroyOnHidden>
         <Form form={createForm} layout="vertical" preserve={false}>
-          <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Valid email is required' }]}>
+          <Form.Item name="email" label={t('admin.users.create.emailLabel')} rules={[{ required: true, type: 'email', message: t('admin.users.create.emailRequired') }]}>
             <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item name="password" label="Password" rules={[{ required: true, min: 8, message: 'Password must be at least 8 characters' }]}>
+          <Form.Item name="password" label={t('admin.users.create.passwordLabel')} rules={[{ required: true, min: 8, message: t('admin.users.create.passwordMin') }]}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="initial_balance_yuan" label="Initial balance" rules={[{ type: 'number', min: 0, message: 'Initial balance must be zero or greater' }]}>
+          <Form.Item name="initial_balance_yuan" label={t('admin.users.create.initialBalanceLabel')} rules={[{ type: 'number', min: 0, message: t('admin.users.create.initialBalanceLabel') }]}>
             <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title={editing ? `Edit user #${editing.id}` : 'Edit user'} open={Boolean(editing)} onCancel={closeEdit} onOk={saveEdit} confirmLoading={updateUser.isPending} destroyOnHidden>
+      <Modal title={editing ? `${t('admin.users.edit.title')} #${editing.id}` : t('admin.users.edit.title')} open={Boolean(editing)} onCancel={closeEdit} onOk={saveEdit} confirmLoading={updateUser.isPending} destroyOnHidden>
         <Form form={editForm} layout="vertical" preserve={false}>
-          <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Valid email is required' }]}>
+          <Form.Item name="email" label={t('admin.users.edit.emailLabel')} rules={[{ required: true, type: 'email', message: t('admin.users.edit.emailRequired') }]}>
             <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item name="email_verified" label="Email verified" valuePropName="checked">
+          <Form.Item name="email_verified" label={t('admin.users.edit.verifiedLabel')} valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="password" label="Password" rules={[{ min: 8, message: 'Password must be at least 8 characters' }]}>
-            <Input.Password autoComplete="new-password" placeholder="Leave blank to keep current password" />
+          <Form.Item name="password" label={t('admin.users.edit.passwordLabel')} rules={[{ min: 8, message: t('admin.users.edit.passwordMin') }]}>
+            <Input.Password autoComplete="new-password" placeholder={t('admin.users.edit.passwordPlaceholder')} />
           </Form.Item>
-          <Form.Item name="balance_yuan" label="Balance" rules={[{ required: true, type: 'number', min: 0, message: 'Balance must be zero or greater' }]}>
+          <Form.Item name="balance_yuan" label={t('admin.users.edit.balanceLabel')} rules={[{ required: true, type: 'number', min: 0, message: t('admin.users.edit.balanceInvalid') }]}>
             <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title={balanceUser ? `Adjust ${userLabel(balanceUser)}` : 'Adjust balance'} open={Boolean(balanceUser)} onCancel={closeBalance} onOk={saveBalance} confirmLoading={adjustBalance.isPending} destroyOnHidden>
+      <Modal title={balanceUser ? `${t('admin.users.balance.adjust')} ${userLabel(balanceUser)}` : t('admin.users.balance.title')} open={Boolean(balanceUser)} onCancel={closeBalance} onOk={saveBalance} confirmLoading={adjustBalance.isPending} destroyOnHidden>
         <Form form={balanceForm} layout="vertical" preserve={false}>
           <Form.Item
             name="delta_yuan"
-            label="Amount"
+            label={t('admin.users.balance.amountLabel')}
             rules={[
-              { required: true, type: 'number', message: 'Amount is required' },
+              { required: true, type: 'number', message: t('admin.users.balance.amountRequired') },
               {
                 validator: (_, value) =>
-                  value === 0 ? Promise.reject(new Error('Amount must be non-zero')) : Promise.resolve(),
+                  value === 0 ? Promise.reject(new Error(t('admin.users.balance.deltaMustNonZero'))) : Promise.resolve(),
               },
             ]}
           >
             <InputNumber step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="reason" label="Reason" rules={[{ required: true, whitespace: true, message: 'Reason is required' }]}>
+          <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')} rules={[{ required: true, whitespace: true, message: t('admin.users.balance.reasonRequired') }]}>
             <Input />
           </Form.Item>
         </Form>

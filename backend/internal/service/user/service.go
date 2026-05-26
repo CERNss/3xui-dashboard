@@ -82,9 +82,9 @@ func New(users *repository.UserRepo, settings *repository.SettingRepo, bus *even
 
 // RegisterInput is what the user portal POSTs.
 //
-// Code is the 6-digit email verification code received via SendCode. It is
-// required when SMTP is configured (production); ignored in dev where the
-// operator typically runs without SMTP and codes show up in stderr.
+// Code is the 6-digit email verification code received through the public
+// email-verification start flow. It is required when SMTP is configured
+// (production); ignored in dev where operators commonly run without SMTP.
 type RegisterInput struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

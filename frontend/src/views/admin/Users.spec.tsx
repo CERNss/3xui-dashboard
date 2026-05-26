@@ -201,7 +201,7 @@ describe('Users', () => {
     renderUsers()
     await screen.findByRole('row', { name: /alice@example.com/i })
 
-    expect(screen.getByText('Suspend selected').closest('button')).toBeDisabled()
+    expect(screen.queryByText('Suspend selected')).not.toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: 'Select alice@example.com' }))
     await user.click(screen.getByRole('checkbox', { name: 'Select bob@example.com' }))
 

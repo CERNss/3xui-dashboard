@@ -94,6 +94,27 @@ func TestLoad_FullEnvLoadsCleanly(t *testing.T) {
 		if cfg.Server.LogFormat != "text" {
 			t.Errorf("dev should default LogFormat to text, got %q", cfg.Server.LogFormat)
 		}
+		if cfg.Bootstrap.NodesJSON != "" {
+			t.Errorf("Bootstrap.NodesJSON = %q, want empty default", cfg.Bootstrap.NodesJSON)
+		}
+	})
+}
+
+func TestLoad_BootstrapNodesJSON(t *testing.T) {
+	withEnv(t, map[string]string{
+		"DATABASE_URL":         "postgres://x@x/x",
+		"JWT_SECRET":           "secret",
+		"ADMIN_USERNAME":       "admin",
+		"ADMIN_PASSWORD":       "pw",
+		"BOOTSTRAP_NODES_JSON": `[{"name":"edge","access_url":"https://node.example.com/panel","api_token":"tok"}]`,
+	}, func() {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Bootstrap.NodesJSON == "" {
+			t.Fatal("Bootstrap.NodesJSON should load from env")
+		}
 	})
 }
 

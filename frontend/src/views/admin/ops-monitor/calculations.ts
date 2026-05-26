@@ -20,8 +20,8 @@ export function avg(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-export function formatPercent(value: number | null) {
-  if (value === null || Number.isNaN(value)) return 'Unavailable'
+export function formatPercent(value: number | null, fallback: string) {
+  if (value === null || Number.isNaN(value)) return fallback
   return `${value.toFixed(1)}%`
 }
 

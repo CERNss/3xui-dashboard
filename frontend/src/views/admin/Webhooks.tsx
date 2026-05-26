@@ -24,8 +24,9 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { adminWebhooksApi, type Webhook, type WebhookDelivery, type WebhookInput, type WebhookMethod } from '@/api/admin/webhooks'
-import { EmptyState, PageHeader, RefreshButton, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage, RefreshButton } from '@/components/common'
 import {
   useCreateWebhook,
   useRemoveWebhook,
@@ -92,6 +93,10 @@ function statusColor(status: string) {
   return 'gold'
 }
 
+function deliveryStatusLabel(status: string, t: ReturnType<typeof useTranslation>['t']) {
+  return t(`admin.webhooks.deliveryStatus.${status}`, { defaultValue: t('admin.webhooks.deliveryStatus.unknown', { status }) })
+}
+
 function DeliveryList({
   deliveries,
   loading,
@@ -103,8 +108,10 @@ function DeliveryList({
   replaying?: number
   onReplay: (delivery: WebhookDelivery) => void
 }) {
-  if (loading) return <Typography.Text type="secondary">Loading deliveries...</Typography.Text>
-  if (deliveries.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No deliveries yet" />
+  const { t } = useTranslation()
+
+  if (loading) return <Typography.Text type="secondary">{t('admin.webhooks.deliveriesLoading')}</Typography.Text>
+  if (deliveries.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('admin.webhooks.deliveriesEmpty')} />
 
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -113,23 +120,23 @@ function DeliveryList({
           <Space align="start" style={{ justifyContent: 'space-between', width: '100%' }}>
             <Space direction="vertical" size={2}>
               <Space wrap>
-                <Tag color={statusColor(delivery.status)}>{delivery.status}</Tag>
+                <Tag color={statusColor(delivery.status)}>{deliveryStatusLabel(delivery.status, t)}</Tag>
                 <Typography.Text code>{delivery.event_type}</Typography.Text>
                 <Typography.Text type="secondary">
-                  attempt {delivery.attempt} · HTTP {delivery.http_status || '-'}
+                  {t('admin.webhooks.deliveryMeta', { attempt: delivery.attempt, status: delivery.http_status || '-' })}
                 </Typography.Text>
               </Space>
               <Typography.Text type="secondary">{new Date(delivery.scheduled_at).toLocaleString()}</Typography.Text>
-              {delivery.error ? <Typography.Text type="danger">err: {delivery.error}</Typography.Text> : null}
+              {delivery.error ? <Typography.Text type="danger">{t('admin.webhooks.deliveryError', { error: delivery.error })}</Typography.Text> : null}
             </Space>
             <Button
-              aria-label="Replay"
+              aria-label={t('admin.webhooks.replay')}
               size="small"
               icon={<RetweetOutlined />}
               loading={replaying === delivery.id}
               onClick={() => onReplay(delivery)}
             >
-              Replay
+              {t('admin.webhooks.replay')}
             </Button>
           </Space>
         </Card>
@@ -139,6 +146,7 @@ function DeliveryList({
 }
 
 export default function Webhooks({ embedded = false }: WebhooksProps) {
+  const { t } = useTranslation()
   const [form] = Form.useForm<WebhookFormValues>()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editing, setEditing] = useState<Webhook | null>(null)
@@ -201,7 +209,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
       form.setFields([
         {
           name: 'headers_text',
-          errors: [err instanceof Error ? err.message : 'Invalid headers'],
+          errors: [err instanceof Error ? err.message : t('admin.webhooks.invalidHeaders')],
         },
       ])
       return
@@ -233,7 +241,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
       return next
     })
     await refreshDeliveries(webhook.id)
-    message.success('Test delivery queued')
+    message.success(t('admin.webhooks.testSent'))
   }
 
   const replay = async (webhookID: number, delivery: WebhookDelivery) => {
@@ -246,7 +254,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
         return next
       })
       await refreshDeliveries(webhookID)
-      message.success('Delivery replay queued')
+      message.success(t('admin.webhooks.replayQueued'))
     } finally {
       setReplayingID(undefined)
     }
@@ -254,9 +262,9 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
 
   const confirmDelete = (webhook: Webhook) => {
     Modal.confirm({
-      title: 'Delete webhook',
-      content: `Delete ${webhook.name}? Delivery history will remain as audit trail.`,
-      okText: 'Delete',
+      title: t('admin.webhooks.confirmDelete'),
+      content: t('admin.webhooks.confirmDeleteMsg', { name: webhook.name }),
+      okText: t('admin.webhooks.delete'),
       okButtonProps: { danger: true },
       onOk: () => removeWebhook.mutateAsync(webhook.id),
     })
@@ -276,7 +284,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
 
   const columns: ColumnsType<Webhook> = [
     {
-      title: 'Name',
+      title: t('admin.webhooks.column.name'),
       dataIndex: 'name',
       render: (_value, webhook) => (
         <Space direction="vertical" size={2}>
@@ -288,48 +296,50 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
       ),
     },
     {
-      title: 'Method',
+      title: t('admin.webhooks.column.method'),
       dataIndex: 'method',
       width: 100,
       render: (method: WebhookMethod) => <Tag color={methodColor(method)}>{method}</Tag>,
     },
     {
-      title: 'Events',
+      title: t('admin.webhooks.column.events'),
       dataIndex: 'events',
       render: (events: string[]) => <Typography.Text code>{events.join(', ') || '*'}</Typography.Text>,
     },
     {
-      title: 'Template',
+      title: t('admin.webhooks.column.template'),
       key: 'template',
       render: (_value, webhook) =>
-        webhook.body_template ? `${webhook.template_format} · ${webhook.body_template.length} chars` : `default (${webhook.template_format})`,
+        webhook.body_template
+          ? t('admin.webhooks.templateCustom', { format: webhook.template_format, n: webhook.body_template.length })
+          : t('admin.webhooks.templateDefault', { format: webhook.template_format }),
     },
     {
-      title: 'Status',
+      title: t('admin.webhooks.column.status'),
       dataIndex: 'enabled',
-      render: (enabled: boolean) => <Tag color={enabled ? 'green' : 'default'}>{enabled ? 'Enabled' : 'Disabled'}</Tag>,
+      render: (enabled: boolean) => <Tag color={enabled ? 'green' : 'default'}>{enabled ? t('admin.webhooks.enabled') : t('admin.webhooks.disabled')}</Tag>,
     },
     {
-      title: 'Actions',
+      title: t('admin.webhooks.column.actions'),
       key: 'actions',
       align: 'right',
       render: (_value, webhook) => (
         <Space wrap>
           <Button size="small" onClick={() => toggleDeliveries(webhook)}>
-            {expandedID === webhook.id ? 'Collapse' : 'Deliveries'}
+            {expandedID === webhook.id ? t('admin.webhooks.collapse') : t('admin.webhooks.deliveries')}
           </Button>
           <Button
-            aria-label="Test"
+            aria-label={t('admin.webhooks.test')}
             size="small"
             icon={<ExperimentOutlined />}
             loading={testWebhook.isPending}
             onClick={() => fireTest(webhook)}
           >
-            Test
+            {t('admin.webhooks.test')}
           </Button>
-          <Button aria-label={`Edit ${webhook.name}`} size="small" icon={<EditOutlined />} onClick={() => openEdit(webhook)} />
+          <Button aria-label={t('admin.webhooks.editNamed', { name: webhook.name })} size="small" icon={<EditOutlined />} onClick={() => openEdit(webhook)} />
           <Button
-            aria-label={`Delete ${webhook.name}`}
+            aria-label={t('admin.webhooks.deleteNamed', { name: webhook.name })}
             danger
             size="small"
             icon={<DeleteOutlined />}
@@ -342,113 +352,114 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
 
   return (
     <div>
-      {embedded ? (
-        <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              Webhooks
-            </Typography.Title>
-            <Typography.Text type="secondary">Send admin events to external systems.</Typography.Text>
-          </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            New Webhook
-          </Button>
-        </div>
-      ) : (
-        <PageHeader
-          title="Webhooks"
-          subtitle="Send admin events to external systems."
-          actions={
+      <ConfigListPage
+        title={embedded ? undefined : t('admin.webhooks.title')}
+        subtitle={embedded ? undefined : t('admin.webhooks.subtitle')}
+        actions={
+          embedded ? undefined : (
             <>
-              <Button type="primary" aria-label="New Webhook" icon={<PlusOutlined />} onClick={openCreate}>
-                New Webhook
+              <Button type="primary" aria-label={t('admin.webhooks.createNew')} icon={<PlusOutlined />} onClick={openCreate}>
+                {t('admin.webhooks.createNew')}
               </Button>
               <RefreshButton loading={webhooksQuery.isFetching || deliveriesQuery.isFetching} onClick={refresh} />
             </>
-          }
-        />
-      )}
-
-      {error ? <Alert type="error" showIcon message="Webhook operation failed" style={{ marginBottom: 16 }} /> : null}
-
-      {webhooks.length > 0 || webhooksQuery.isLoading ? (
-        <ResponsiveListTable
-          rowKey="id"
-          columns={columns}
-          dataSource={webhooks}
-          expandable={{
-            expandedRowKeys: expandedID ? [expandedID] : [],
-            expandedRowRender: (webhook) => (
-              <DeliveryList
-                deliveries={expandedID === webhook.id ? visibleDeliveries : []}
-                loading={deliveriesQuery.isFetching && expandedID === webhook.id && !deliveryCache[webhook.id]}
-                replaying={replayingID}
-                onReplay={(delivery) => replay(webhook.id, delivery)}
-              />
-            ),
-            rowExpandable: (webhook) => expandedID === webhook.id,
-            showExpandColumn: false,
-          }}
-          loading={webhooksQuery.isLoading}
-          pagination={false}
-          mobileCard={(webhook) => (
-            <Card size="small" style={{ width: '100%' }}>
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Typography.Text strong>{webhook.name}</Typography.Text>
-                  <Tag color={webhook.enabled ? 'green' : 'default'}>{webhook.enabled ? 'Enabled' : 'Disabled'}</Tag>
-                </Space>
-                <Typography.Text code>{webhook.url}</Typography.Text>
-                <Descriptions size="small" column={1}>
-                  <Descriptions.Item label="Method">{webhook.method}</Descriptions.Item>
-                  <Descriptions.Item label="Events">{webhook.events.join(', ') || '*'}</Descriptions.Item>
-                </Descriptions>
-                <Space wrap>
-                  <Button size="small" onClick={() => toggleDeliveries(webhook)}>
-                    Deliveries
-                  </Button>
-                  <Button aria-label="Test" size="small" icon={<ExperimentOutlined />} onClick={() => fireTest(webhook)}>
-                    Test
-                  </Button>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(webhook)}>
-                    Edit
-                  </Button>
-                  <Button size="small" danger icon={<DeleteOutlined />} onClick={() => confirmDelete(webhook)}>
-                    Delete
-                  </Button>
-                </Space>
+          )
+        }
+        header={
+          embedded ? (
+            <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}>
+              <div>
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  {t('admin.webhooks.title')}
+                </Typography.Title>
+                <Typography.Text type="secondary">{t('admin.webhooks.subtitle')}</Typography.Text>
+              </div>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                {t('admin.webhooks.createNew')}
+              </Button>
+            </div>
+          ) : undefined
+        }
+        alerts={error ? <Alert type="error" showIcon message={t('admin.webhooks.operationFailed')} /> : null}
+        rowKey="id"
+        columns={columns}
+        dataSource={webhooks}
+        expandable={{
+          expandedRowKeys: expandedID ? [expandedID] : [],
+          expandedRowRender: (webhook) => (
+            <DeliveryList
+              deliveries={expandedID === webhook.id ? visibleDeliveries : []}
+              loading={deliveriesQuery.isFetching && expandedID === webhook.id && !deliveryCache[webhook.id]}
+              replaying={replayingID}
+              onReplay={(delivery) => replay(webhook.id, delivery)}
+            />
+          ),
+          rowExpandable: (webhook) => expandedID === webhook.id,
+          showExpandColumn: false,
+        }}
+        loading={webhooksQuery.isLoading}
+        pagination={false}
+        emptyState={{
+          title: t('admin.webhooks.empty'),
+          description: t('admin.webhooks.emptyDescription'),
+        }}
+        mobileCard={(webhook) => (
+          <Card size="small" style={{ width: '100%' }}>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Typography.Text strong>{webhook.name}</Typography.Text>
+                <Tag color={webhook.enabled ? 'green' : 'default'}>
+                  {webhook.enabled ? t('admin.webhooks.enabled') : t('admin.webhooks.disabled')}
+                </Tag>
               </Space>
-            </Card>
-          )}
-        />
-      ) : (
-        <EmptyState title="No webhooks" description="Create a webhook to send events to external receivers." />
-      )}
+              <Typography.Text code>{webhook.url}</Typography.Text>
+              <Descriptions size="small" column={1}>
+                <Descriptions.Item label={t('admin.webhooks.column.method')}>{webhook.method}</Descriptions.Item>
+                <Descriptions.Item label={t('admin.webhooks.column.events')}>{webhook.events.join(', ') || '*'}</Descriptions.Item>
+              </Descriptions>
+              <Space wrap>
+                <Button size="small" onClick={() => toggleDeliveries(webhook)}>
+                  {t('admin.webhooks.deliveries')}
+                </Button>
+                <Button aria-label={t('admin.webhooks.test')} size="small" icon={<ExperimentOutlined />} onClick={() => fireTest(webhook)}>
+                  {t('admin.webhooks.test')}
+                </Button>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(webhook)}>
+                  {t('admin.webhooks.edit')}
+                </Button>
+                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => confirmDelete(webhook)}>
+                  {t('admin.webhooks.delete')}
+                </Button>
+              </Space>
+            </Space>
+          </Card>
+        )}
+      />
 
       <Drawer
-        title={editing ? `Edit webhook #${editing.id}` : 'Create webhook'}
+        title={editing ? t('admin.webhooks.editTitle', { id: editing.id }) : t('admin.webhooks.createTitle')}
         open={drawerOpen}
         width={720}
         destroyOnClose
         onClose={closeDrawer}
         extra={
           <Space>
-            <Button onClick={closeDrawer}>Cancel</Button>
+            <Button onClick={closeDrawer}>{t('admin.webhooks.cancel')}</Button>
             <Button type="primary" loading={saving} onClick={submit}>
-              Save
+              {t('admin.webhooks.save')}
             </Button>
           </Space>
         }
       >
         <Form form={form} layout="vertical" initialValues={inputToForm(blankWebhookInput())}>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
+          <Form.Item name="name" label={t('admin.webhooks.name')} rules={[{ required: true, message: t('admin.webhooks.nameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="url" label="URL" rules={[{ required: true, type: 'url', message: 'Valid URL is required' }]}>
-            <Input />
+          <Form.Item name="url" label="URL" rules={[{ required: true, type: 'url', message: t('admin.webhooks.urlRequired') }]}>
+            <Input placeholder={t('admin.webhooks.urlPlaceholder')} />
           </Form.Item>
           <Space style={{ width: '100%' }} align="start">
-            <Form.Item name="method" label="Method" style={{ width: 180 }}>
+            <Form.Item name="method" label={t('admin.webhooks.column.method')} style={{ width: 180 }}>
               <Select
                 options={(['POST', 'GET', 'PUT', 'DELETE', 'PATCH'] as WebhookMethod[]).map((value) => ({
                   label: value,
@@ -456,29 +467,29 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
                 }))}
               />
             </Form.Item>
-            <Form.Item name="template_format" label="Body format" style={{ width: 180 }}>
+            <Form.Item name="template_format" label={t('admin.webhooks.bodyFormat')} style={{ width: 180 }}>
               <Select
                 options={['json', 'form', 'text', 'raw'].map((value) => ({
-                  label: value,
+                  label: t(`admin.webhooks.bodyFormatOpts.${value}`),
                   value,
                 }))}
               />
             </Form.Item>
           </Space>
-          <Form.Item name="events_text" label="Events">
-            <Input placeholder="*, user.created, order.paid" />
+          <Form.Item name="events_text" label={t('admin.webhooks.eventsLabel')} extra={t('admin.webhooks.eventsCommon')}>
+            <Input placeholder={t('admin.webhooks.eventsPlaceholder')} />
           </Form.Item>
-          <Form.Item name="body_template" label="Body template">
-            <Input.TextArea rows={6} />
+          <Form.Item name="body_template" label={t('admin.webhooks.body')} extra={t('admin.webhooks.bodyVars')}>
+            <Input.TextArea rows={6} placeholder={t('admin.webhooks.bodyPlaceholder')} />
           </Form.Item>
-          <Form.Item name="headers_text" label="Headers">
-            <Input.TextArea rows={4} placeholder="Authorization: Bearer token" />
+          <Form.Item name="headers_text" label={t('admin.webhooks.headersLabel')}>
+            <Input.TextArea rows={4} placeholder={t('admin.webhooks.headersPlaceholder')} />
           </Form.Item>
           <Space size={24}>
-            <Form.Item name="enabled" label="Enabled" valuePropName="checked">
+            <Form.Item name="enabled" label={t('admin.webhooks.enabledCheckbox')} valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item name="allow_private" label="Allow private addresses" valuePropName="checked">
+            <Form.Item name="allow_private" label={t('admin.webhooks.privateAllowed')} valuePropName="checked">
               <Switch />
             </Form.Item>
           </Space>

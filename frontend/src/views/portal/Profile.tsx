@@ -53,17 +53,6 @@ interface PasswordFormValues {
   confirm_password: string
 }
 
-const labels = {
-  codeSent: 'Verification code sent',
-  connect: 'Connect',
-  displayName: 'Display name',
-  displayNameSaved: 'Display name saved',
-  emailSaved: 'Email updated and verified',
-  sendVerificationCode: 'Send verification code',
-  updateEmail: 'Update email',
-  verifiedEmail: 'Verified email',
-}
-
 function safeIconUrl(raw?: string | null) {
   if (!raw) return undefined
   return /^(https?:|data:image\/)/i.test(raw) ? raw : undefined
@@ -126,14 +115,14 @@ export function Profile() {
 
   async function saveDisplayName(values: DisplayNameFormValues) {
     await updateProfile.mutateAsync({ display_name: values.display_name?.trim() || null })
-    messageApi.success(labels.displayNameSaved)
+    messageApi.success(t('portal.profile.displayNameSaved'))
   }
 
   async function sendEmailCode() {
     const email = emailForm.getFieldValue('email')
     await emailForm.validateFields(['email'])
     await startEmailVerification.mutateAsync({ email, purpose: 'change_email' })
-    messageApi.success(labels.codeSent)
+    messageApi.success(t('portal.profile.codeSent'))
   }
 
   async function submitEmail(values: EmailFormValues) {
@@ -144,7 +133,7 @@ export function Profile() {
     })
     await changeEmail.mutateAsync({ email: values.email, verificationToken: verified.verification_token })
     emailForm.resetFields(['code'])
-    messageApi.success(labels.emailSaved)
+    messageApi.success(t('portal.profile.emailSaved'))
   }
 
   async function submitPassword(values: PasswordFormValues) {
@@ -187,7 +176,7 @@ export function Profile() {
             title={
               <Space>
                 <UserOutlined />
-                {labels.displayName}
+                {t('portal.profile.displayName')}
               </Space>
             }
           >
@@ -199,7 +188,7 @@ export function Profile() {
             >
               <Form.Item
                 name="display_name"
-                label={labels.displayName}
+                label={t('portal.profile.displayName')}
               >
                 <Input autoComplete="nickname" maxLength={80} />
               </Form.Item>
@@ -213,7 +202,7 @@ export function Profile() {
             title={
               <Space>
                 <MailOutlined />
-                {labels.verifiedEmail}
+                {t('portal.profile.verifiedEmail')}
               </Space>
             }
           >
@@ -248,10 +237,10 @@ export function Profile() {
               </Row>
               <Space wrap>
                 <Button loading={startEmailVerification.isPending} onClick={() => void sendEmailCode()}>
-                  {labels.sendVerificationCode}
+                  {t('portal.profile.sendVerificationCode')}
                 </Button>
                 <Button type="primary" htmlType="submit" loading={changeEmail.isPending}>
-                  {labels.updateEmail}
+                  {t('portal.profile.updateEmail')}
                 </Button>
               </Space>
             </Form>
@@ -344,7 +333,7 @@ export function Profile() {
                         loading={startOidcLink.isPending}
                         onClick={() => void connectProvider(provider)}
                       >
-                        {labels.connect}
+                        {t('portal.profile.loginMethods.linkProvider', { provider: oidcProviderName(provider) })}
                       </Button>
                     ),
                   ]}

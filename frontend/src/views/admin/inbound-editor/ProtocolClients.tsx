@@ -1,6 +1,7 @@
 import { Button, Card, Form, Input, InputNumber, Space, Switch } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface FieldConfig {
   name: string
@@ -19,7 +20,8 @@ interface ProtocolClientsProps {
   children?: ReactNode
 }
 
-export function ProtocolClients({ title, name = 'clients', fields, addLabel = 'Add client', children }: ProtocolClientsProps) {
+export function ProtocolClients({ title, name = 'clients', fields, addLabel, children }: ProtocolClientsProps) {
+  const { t } = useTranslation()
   const initialValue = fields.reduce<Record<string, unknown>>((acc, field) => {
     acc[field.name] = field.defaultValue ?? (field.switch ? true : field.numeric ? 0 : '')
     return acc
@@ -34,15 +36,15 @@ export function ProtocolClients({ title, name = 'clients', fields, addLabel = 'A
             <Space style={{ justifyContent: 'space-between', width: '100%' }}>
               <strong>{title}</strong>
               <Button size="small" icon={<PlusOutlined />} onClick={() => add(initialValue)}>
-                {addLabel}
+                {addLabel ?? t('admin.inboundEditor.clients.addClient')}
               </Button>
             </Space>
-            {items.length === 0 ? <Card size="small">No clients configured.</Card> : null}
+            {items.length === 0 ? <Card size="small">{t('admin.inboundEditor.clients.empty')}</Card> : null}
             {items.map((item) => (
               <Card
                 key={item.key}
                 size="small"
-                title={`Client ${item.name + 1}`}
+                title={t('admin.inboundEditor.clients.clientTitle', { n: item.name + 1 })}
                 extra={<Button danger size="small" icon={<MinusCircleOutlined />} onClick={() => remove(item.name)} />}
               >
                 <Space align="start" wrap>

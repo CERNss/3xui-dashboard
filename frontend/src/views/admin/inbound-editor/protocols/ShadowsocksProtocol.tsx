@@ -1,19 +1,21 @@
 import { Form, Input, Select, Space } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
 export function ShadowsocksProtocol() {
+  const { t } = useTranslation()
   return (
     <ProtocolClients
-      title="Shadowsocks clients"
+      title={t('admin.inboundEditor.clients.shadowsocksTitle')}
       fields={[
-        { name: 'password', label: 'Password', placeholder: 'client password' },
+        { name: 'password', label: 'Password', placeholder: t('admin.inboundEditor.clients.passwordPlaceholder') },
         { name: 'email', label: 'Email', placeholder: 'alice@example.com' },
-        { name: 'expiryTime', label: 'Expiry time', numeric: true },
-        { name: 'enable', label: 'Enable', switch: true, defaultValue: true },
+        { name: 'expiryTime', label: t('admin.inboundEditor.basicExpiry'), numeric: true },
+        { name: 'enable', label: t('admin.inboundEditor.basicEnable'), switch: true, defaultValue: true },
       ]}
     >
       <Space align="start" wrap>
-        <Form.Item name="ssMethod" label="Method" rules={[{ required: true }]}>
+        <Form.Item name="ssMethod" label={t('admin.inboundEditor.ssMethod')} rules={[{ required: true }]}>
           <Select
             style={{ width: 260 }}
             options={[
@@ -26,18 +28,18 @@ export function ShadowsocksProtocol() {
             ].map((value) => ({ label: value, value }))}
           />
         </Form.Item>
-        <Form.Item name="ssNetwork" label="Network">
+        <Form.Item name="ssNetwork" label={t('admin.inboundEditor.ssNetwork')}>
           <Select
             style={{ width: 140 }}
             options={[
               { label: 'tcp+udp', value: 'tcp,udp' },
-              { label: 'tcp only', value: 'tcp' },
-              { label: 'udp only', value: 'udp' },
+              { label: t('admin.inboundEditor.networkTcpOnly'), value: 'tcp' },
+              { label: t('admin.inboundEditor.networkUdpOnly'), value: 'udp' },
             ]}
           />
         </Form.Item>
-        <Form.Item name="ssPassword" label="Global password">
-          <Input placeholder="optional global password" />
+        <Form.Item name="ssPassword" label={t('admin.inboundEditor.globalPassword')}>
+          <Input placeholder={t('admin.inboundEditor.globalPasswordPlaceholder')} />
         </Form.Item>
       </Space>
     </ProtocolClients>

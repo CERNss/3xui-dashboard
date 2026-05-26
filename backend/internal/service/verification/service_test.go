@@ -88,7 +88,7 @@ func firstActiveRow(t *testing.T, db *gorm.DB, email string) record {
 
 // readCode fishes the plaintext code out of a row by brute force —
 // only practical because the space is 10^6 and we control which code
-// was generated (we don't capture it cleanly through SendCode's
+// was generated (we don't capture it cleanly through Start's
 // public surface). Used only by Consume happy-path tests.
 //
 // Returns "" if no match is found in the iteration budget.
@@ -102,12 +102,12 @@ func readCode(codeHash string) string {
 	return ""
 }
 
-// ---- SendCode --------------------------------------------------------------
+// ---- Start --------------------------------------------------------------
 
-func TestSendCode_FirstCallSucceeds(t *testing.T) {
+func TestStart_FirstCallSucceeds(t *testing.T) {
 	db, svc := setupDB(t)
-	if err := svc.SendCode(context.Background(), testEmail, PurposeRegister); err != nil {
-		t.Fatalf("SendCode: %v", err)
+	if _, err := svc.Start(context.Background(), testEmail, PurposeRegister); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 
 	r := firstActiveRow(t, db, testEmail)
@@ -131,10 +131,10 @@ func TestSendCode_FirstCallSucceeds(t *testing.T) {
 	}
 }
 
-func TestSendCode_HashedAtRest(t *testing.T) {
+func TestStart_HashedAtRest(t *testing.T) {
 	db, svc := setupDB(t)
-	if err := svc.SendCode(context.Background(), testEmail, PurposeRegister); err != nil {
-		t.Fatalf("SendCode: %v", err)
+	if _, err := svc.Start(context.Background(), testEmail, PurposeRegister); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 	r := firstActiveRow(t, db, testEmail)
 
@@ -152,16 +152,16 @@ func TestSendCode_HashedAtRest(t *testing.T) {
 	}
 }
 
-func TestSendCode_RateLimitedWithin60s(t *testing.T) {
+func TestStart_RateLimitedWithin60s(t *testing.T) {
 	_, svc := setupDB(t)
 	ctx := context.Background()
-	if err := svc.SendCode(ctx, testEmail, PurposeRegister); err != nil {
-		t.Fatalf("first SendCode: %v", err)
+	if _, err := svc.Start(ctx, testEmail, PurposeRegister); err != nil {
+		t.Fatalf("first Start: %v", err)
 	}
 	// Second send within cooldown should be rejected.
-	err := svc.SendCode(ctx, testEmail, PurposeRegister)
+	_, err := svc.Start(ctx, testEmail, PurposeRegister)
 	if err != ErrRateLimited {
-		t.Fatalf("second SendCode within 60s: want ErrRateLimited, got %v", err)
+		t.Fatalf("second Start within 60s: want ErrRateLimited, got %v", err)
 	}
 }
 
@@ -170,8 +170,8 @@ func TestSendCode_RateLimitedWithin60s(t *testing.T) {
 func TestConsume_HappyPath(t *testing.T) {
 	db, svc := setupDB(t)
 	ctx := context.Background()
-	if err := svc.SendCode(ctx, testEmail, PurposeRegister); err != nil {
-		t.Fatalf("SendCode: %v", err)
+	if _, err := svc.Start(ctx, testEmail, PurposeRegister); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 	r := firstActiveRow(t, db, testEmail)
 	code := readCode(r.CodeHash)
@@ -208,8 +208,8 @@ func TestConsume_NoActiveCode(t *testing.T) {
 func TestConsume_MismatchIncrementsAttempts(t *testing.T) {
 	db, svc := setupDB(t)
 	ctx := context.Background()
-	if err := svc.SendCode(ctx, testEmail, PurposeRegister); err != nil {
-		t.Fatalf("SendCode: %v", err)
+	if _, err := svc.Start(ctx, testEmail, PurposeRegister); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 
 	r := firstActiveRow(t, db, testEmail)
@@ -239,8 +239,8 @@ func TestConsume_MismatchIncrementsAttempts(t *testing.T) {
 func TestConsume_BurntRowReturnsTooManyAttempts(t *testing.T) {
 	db, svc := setupDB(t)
 	ctx := context.Background()
-	if err := svc.SendCode(ctx, testEmail, PurposeRegister); err != nil {
-		t.Fatalf("SendCode: %v", err)
+	if _, err := svc.Start(ctx, testEmail, PurposeRegister); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 	r := firstActiveRow(t, db, testEmail)
 	correct := readCode(r.CodeHash)
@@ -262,8 +262,8 @@ func TestConsume_BurntRowReturnsTooManyAttempts(t *testing.T) {
 func TestConsume_ExpiredRowReturnsExpired(t *testing.T) {
 	db, svc := setupDB(t)
 	ctx := context.Background()
-	if err := svc.SendCode(ctx, testEmail, PurposeRegister); err != nil {
-		t.Fatalf("SendCode: %v", err)
+	if _, err := svc.Start(ctx, testEmail, PurposeRegister); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 	r := firstActiveRow(t, db, testEmail)
 	correct := readCode(r.CodeHash)

@@ -68,6 +68,12 @@ beforeEach(() => {
     item({ key: 'new_user_initial_balance_cents', label: 'New-user initial balance', group: 'registration', type: 'int', value: '100' }),
     item({ key: 'smtp_host', label: 'SMTP host', group: 'other', type: 'string', value: 'smtp.example.test' }),
     item({ key: 'brand_title', label: 'Brand title', group: 'other', type: 'string', value: 'Hidden brand row' }),
+    item({ key: 'brand_subtitle', label: 'Brand subtitle', group: 'other', type: 'string', value: 'Configuration platform' }),
+    item({ key: 'brand_docs_url', label: 'Documentation link', group: 'other', type: 'string', value: 'https://docs.example.test' }),
+    item({ key: 'brand_homepage_content', label: 'Homepage content', group: 'other', type: 'string', value: 'Welcome copy' }),
+    item({ key: 'brand_description', label: 'Brand description', group: 'other', type: 'string', value: 'Fleet control' }),
+    item({ key: 'brand_footer', label: 'Brand footer', group: 'other', type: 'string', value: 'Footer text' }),
+    item({ key: 'brand_icon_url', label: 'Brand icon URL', group: 'other', type: 'string', value: '' }),
   ]
   setMutateAsync.mockResolvedValue({})
   clearMutateAsync.mockResolvedValue({})
@@ -107,12 +113,12 @@ describe('Settings', () => {
     const user = userEvent.setup()
     renderSettings()
 
-    const input = screen.getByLabelText('Site name')
+    const input = screen.getByLabelText('SMTP host')
     await user.clear(input)
-    await user.type(input, 'Acme Central')
-    const siteCard = screen.getByText('Site name').closest('.ant-card')!
+    await user.type(input, 'smtp2.example.test')
+    const siteCard = screen.getByText('SMTP host').closest('.ant-card')!
     await user.click(within(siteCard as HTMLElement).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(setMutateAsync).toHaveBeenCalledWith({ key: 'site_name', value: 'Acme Central' }))
+    await waitFor(() => expect(setMutateAsync).toHaveBeenCalledWith({ key: 'smtp_host', value: 'smtp2.example.test' }))
 
     await user.click(screen.getByRole('tab', { name: 'Subscription' }))
     const subscriptionCard = screen.getByText('Subscription remark model').closest('.ant-card')!
@@ -124,9 +130,11 @@ describe('Settings', () => {
     const { container } = renderSettings()
 
     expect(screen.getByRole('heading', { name: 'Site settings' })).toBeInTheDocument()
-    expect(container.querySelector('[data-setting-key="site_name"]')).toBeInTheDocument()
-    expect(screen.getByLabelText('Site name')).toHaveValue('Acme')
-    expect(container.querySelector('[data-setting-key="brand_title"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="site_name"]')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Site name')).toHaveValue('Hidden brand row')
+    expect(screen.getByLabelText('Documentation link')).toHaveValue('https://docs.example.test')
+    expect(screen.getByLabelText('Homepage content')).toHaveValue('Welcome copy')
+    expect(container.querySelector('[data-setting-key="brand_title"]')).toBeInTheDocument()
     expect(container.querySelector('[data-setting-key="oidc_issuer"]')).not.toBeInTheDocument()
   })
 

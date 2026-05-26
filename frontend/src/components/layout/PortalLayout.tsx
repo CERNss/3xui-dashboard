@@ -102,7 +102,7 @@ export function PortalLayout() {
       </Layout>
       {!wide ? (
         <nav
-          aria-label="Portal navigation"
+          aria-label={t('portal.shell.navigation')}
           data-testid="portal-bottom-nav"
           style={{
             background: token.colorBgContainer,

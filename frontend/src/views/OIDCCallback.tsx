@@ -29,34 +29,6 @@ interface TypedOidcError {
   domain?: string
 }
 
-const oidcErrorMessages: Record<ErrorKind, string> = {
-  accountSuspended: 'This account is suspended.',
-  domainNotAllowed: 'This email domain is not allowed.',
-  emailConflict: 'This OIDC email is already linked to a different account.',
-  emailMismatch: 'The OIDC email does not match the currently bound account.',
-  emailUnverified: 'This OIDC provider did not return a verified email.',
-  invalidEntry: 'This callback URL is missing code or state.',
-  notConfigured: 'OIDC login is not configured.',
-  stateInvalid: 'This login link expired or failed the state check. Start again.',
-  unknown: 'OIDC login failed.',
-}
-
-const oidcLabels = {
-  backToProfile: 'Back to Profile',
-  bindHint: 'Enter the existing account password before linking this provider.',
-  createHint: 'Choose the local login email and verify it before creating the account.',
-  createNew: 'Create a new account',
-  details: 'Details',
-  displayName: 'Display name',
-  displayNameRequired: 'Display name is required',
-  passwordRequired: 'Password is required',
-  providerReturned: (provider: string, email: string) =>
-    `${provider} returned ${email}. Complete the account setup to continue.`,
-  signInFirst: 'Sign in first, then link from Profile',
-  tryAgain: 'Try again',
-  useDifferentAccount: 'Use a different OIDC account',
-}
-
 function safeLocalRedirect(value: string | null | undefined): string | null {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return null
   try {
@@ -279,7 +251,7 @@ export function OIDCCallback() {
     return (
       <section className="auth-surface">
         <Card>
-          <Spin /> <Typography.Text>{t('auth.oidcReturning', { defaultValue: 'Completing OIDC login...' })}</Typography.Text>
+          <Spin /> <Typography.Text>{t('auth.oidcReturning')}</Typography.Text>
         </Card>
       </section>
     )
@@ -294,20 +266,23 @@ export function OIDCCallback() {
               <Avatar src={pending.provider?.icon || undefined}>{pendingProviderName(pending).slice(0, 1)}</Avatar>
               <div>
                 <Typography.Title level={3} style={{ marginBottom: 4 }}>
-                  {t('auth.oidcDecisionTitle', { defaultValue: 'Finish account link' })}
+                  {t('auth.oidcDecisionTitle')}
                 </Typography.Title>
                 <Typography.Text type="secondary">
-                  {oidcLabels.providerReturned(pendingProviderName(pending), pendingProviderEmail(pending))}
+                  {t('auth.oidcCallback.providerReturned', {
+                    email: pendingProviderEmail(pending),
+                    provider: pendingProviderName(pending),
+                  })}
                 </Typography.Text>
               </div>
             </Space>
-            {error ? <Alert type="error" showIcon message={error.body || oidcErrorMessages[error.kind]} /> : null}
+            {error ? <Alert type="error" showIcon message={t(`auth.oidcCallback.${error.kind}`)} /> : null}
             <Tabs
               defaultActiveKey={pending.existing_user ? 'bind' : 'create'}
               items={[
                 {
                   key: 'bind',
-                  label: t('auth.oidcBindExisting', { defaultValue: 'Bind existing account' }),
+                  label: t('auth.oidcBindExisting'),
                   children: (
                     <Form<BindExistingValues>
                       form={bindForm}
@@ -316,24 +291,24 @@ export function OIDCCallback() {
                       onFinish={(values) => void bindExisting(values)}
                     >
                       <Typography.Paragraph type="secondary">
-                        {oidcLabels.bindHint}
+                        {t('auth.oidcCallback.bindHint')}
                       </Typography.Paragraph>
                       <Form.Item
                         name="password"
-                        label={t('auth.password', { defaultValue: 'Password' })}
-                        rules={[{ required: true, message: oidcLabels.passwordRequired }]}
+                        label={t('auth.password')}
+                        rules={[{ required: true, message: t('auth.oidcCallback.passwordRequired') }]}
                       >
                         <Input.Password autoComplete="current-password" />
                       </Form.Item>
                       <Button type="primary" htmlType="submit" loading={binding}>
-                        {t('auth.oidcBindExisting', { defaultValue: 'Bind existing account' })}
+                        {t('auth.oidcBindExisting')}
                       </Button>
                     </Form>
                   ),
                 },
                 {
                   key: 'create',
-                  label: oidcLabels.createNew,
+                  label: t('auth.oidcCallback.createNew'),
                   children: (
                     <Form<CreateAccountValues>
                       form={createForm}
@@ -343,21 +318,21 @@ export function OIDCCallback() {
                       onFinish={(values) => void createAccount(values)}
                     >
                       <Typography.Paragraph type="secondary">
-                        {oidcLabels.createHint}
+                        {t('auth.oidcCallback.createHint')}
                       </Typography.Paragraph>
                       <Form.Item
                         name="display_name"
-                        label={oidcLabels.displayName}
-                        rules={[{ required: true, whitespace: true, message: oidcLabels.displayNameRequired }]}
+                        label={t('auth.oidcCallback.displayName')}
+                        rules={[{ required: true, whitespace: true, message: t('auth.oidcCallback.displayNameRequired') }]}
                       >
                         <Input autoComplete="nickname" />
                       </Form.Item>
                       <Form.Item
                         name="email"
-                        label={t('auth.email', { defaultValue: 'Email' })}
+                        label={t('auth.email')}
                         rules={[
-                          { required: true, message: t('auth.enterValidEmail', { defaultValue: 'Enter a valid email first' }) },
-                          { type: 'email', message: t('auth.enterValidEmail', { defaultValue: 'Enter a valid email first' }) },
+                          { required: true, message: t('auth.enterValidEmail') },
+                          { type: 'email', message: t('auth.enterValidEmail') },
                         ]}
                       >
                         <Input autoComplete="email" />
@@ -365,24 +340,24 @@ export function OIDCCallback() {
                       <Divider style={{ margin: '8px 0' }} />
                       <Form.Item
                         name="password"
-                        label={t('auth.password', { defaultValue: 'Password' })}
+                        label={t('auth.password')}
                         rules={[
-                          { required: true, message: oidcLabels.passwordRequired },
-                          { min: 8, message: t('auth.passwordTooShort', { defaultValue: 'Password must be at least 8 characters' }) },
+                          { required: true, message: t('auth.oidcCallback.passwordRequired') },
+                          { min: 8, message: t('auth.passwordTooShort') },
                         ]}
                       >
                         <Input.Password autoComplete="new-password" />
                       </Form.Item>
                       <Form.Item
                         name="confirm_password"
-                        label={t('auth.confirmPassword', { defaultValue: 'Confirm password' })}
+                        label={t('auth.confirmPassword')}
                         dependencies={['password']}
                         rules={[
-                          { required: true, message: t('auth.confirmPassword', { defaultValue: 'Confirm password' }) },
+                          { required: true, message: t('auth.confirmPassword') },
                           ({ getFieldValue }) => ({
                             validator(_, value) {
                               if (!value || getFieldValue('password') === value) return Promise.resolve()
-                              return Promise.reject(new Error(t('auth.passwordsMustMatch', { defaultValue: 'Passwords do not match' })))
+                              return Promise.reject(new Error(t('auth.passwordsMustMatch')))
                             },
                           }),
                         ]}
@@ -391,17 +366,17 @@ export function OIDCCallback() {
                       </Form.Item>
                       <Form.Item
                         name="code"
-                        label={t('auth.verificationCode', { defaultValue: 'Email verification code' })}
-                        rules={[{ required: true, message: t('auth.codeMustBe6', { defaultValue: 'Enter the 6-digit code you received' }) }]}
+                        label={t('auth.verificationCode')}
+                        rules={[{ required: true, message: t('auth.codeMustBe6') }]}
                       >
                         <Input maxLength={6} autoComplete="one-time-code" />
                       </Form.Item>
                       <Space wrap>
                         <Button loading={sendingCode} onClick={() => void sendCreateCode()}>
-                          {t('auth.sendCode', { defaultValue: 'Send code' })}
+                          {t('auth.sendCode')}
                         </Button>
                         <Button type="primary" htmlType="submit" loading={creating}>
-                          {t('auth.createAccount', { defaultValue: 'Create account' })}
+                          {t('auth.createAccount')}
                         </Button>
                       </Space>
                     </Form>
@@ -421,27 +396,27 @@ export function OIDCCallback() {
 function OidcErrorResult({ error, onRestart }: { error: TypedOidcError | null; onRestart: () => void }) {
   const { t } = useTranslation()
   const kind = error?.kind ?? 'unknown'
-  const message = oidcErrorMessages[kind]
+  const message = t(`auth.oidcCallback.${kind}`)
 
   const extra = (
     <Space wrap>
       {kind !== 'notConfigured' && kind !== 'emailMismatch' && kind !== 'accountSuspended' ? (
         <Button type="primary" onClick={kind === 'stateInvalid' ? onRestart : undefined}>
           {kind === 'emailConflict'
-            ? oidcLabels.signInFirst
-            : oidcLabels.tryAgain}
+            ? t('auth.oidcCallback.signInFirst')
+            : t('auth.oidcCallback.tryAgain')}
         </Button>
       ) : null}
       {kind === 'emailConflict' ? (
-        <Button onClick={onRestart}>{oidcLabels.useDifferentAccount}</Button>
+        <Button onClick={onRestart}>{t('auth.oidcCallback.useDifferentAccount')}</Button>
       ) : null}
       {kind === 'emailMismatch' ? (
         <Button type="primary">
-          <Link to="/portal/profile">{oidcLabels.backToProfile}</Link>
+          <Link to="/portal/profile">{t('auth.oidcCallback.backToProfile')}</Link>
         </Button>
       ) : null}
       <Button>
-        <Link to="/login">{t('auth.returnToLogin', { defaultValue: 'Return to login' })}</Link>
+        <Link to="/login">{t('auth.returnToLogin')}</Link>
       </Button>
     </Space>
   )
@@ -450,7 +425,7 @@ function OidcErrorResult({ error, onRestart }: { error: TypedOidcError | null; o
     <section className="auth-surface">
       <Result
         status="error"
-        title={t('auth.oidcReturningTitleFailed', { defaultValue: 'OIDC login failed' })}
+        title={t('auth.oidcReturningTitleFailed')}
         subTitle={
           <Space direction="vertical">
             <span>{message}</span>
@@ -464,7 +439,7 @@ function OidcErrorResult({ error, onRestart }: { error: TypedOidcError | null; o
       {kind === 'unknown' && error?.body ? (
         <Collapse
           style={{ maxWidth: 720, margin: '0 auto' }}
-          items={[{ key: 'details', label: oidcLabels.details, children: <pre>{error.body}</pre> }]}
+          items={[{ key: 'details', label: t('auth.oidcCallback.details'), children: <pre>{error.body}</pre> }]}
         />
       ) : null}
     </section>

@@ -19,8 +19,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/cern/3xui-dashboard/internal/app"
+	"github.com/cern/3xui-dashboard/internal/bootstrap"
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/repository"
+	"github.com/cern/3xui-dashboard/internal/runtime"
+	nodesvc "github.com/cern/3xui-dashboard/internal/service/node"
 )
 
 func main() {
@@ -60,6 +63,12 @@ func run() error {
 		}
 	} else {
 		logger.Info("DB_MIGRATE_ON_BOOT=false; skipping schema migration")
+	}
+
+	rtManager := runtime.NewManager(&runtime.GormNodeLoader{DB: db}, logger)
+	nodeService := nodesvc.New(db, rtManager, nodesvc.NewMetricsStore(0), logger)
+	if err := bootstrap.Nodes(context.Background(), cfg, nodeService, logger); err != nil {
+		return err
 	}
 
 	a := app.Build(cfg, db, logger)

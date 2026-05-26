@@ -124,7 +124,7 @@ export function AlipayPayModal({ open, order, onOpenChange, onSuccess }: AlipayP
     }
   }, [clearTimers, markTerminal, open, order, pollOnce])
 
-  const title = t('alipay.title', { defaultValue: 'Alipay payment' })
+  const title = t('alipay.title')
 
   return (
     <Modal
@@ -139,21 +139,17 @@ export function AlipayPayModal({ open, order, onOpenChange, onSuccess }: AlipayP
       {order ? (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Typography.Text type="secondary">
-            {t('alipay.orderLine', {
-              defaultValue: '订单 #{id} · {amount}',
-              id: order.id,
-              amount: formatYuan(order.price_cents),
-            })}
+            {t('alipay.orderLine', { id: order.id, amount: formatYuan(order.price_cents) })}
           </Typography.Text>
 
           {state === 'waiting' ? (
             <>
               <div style={{ display: 'flex', justifyContent: 'center' }}>
                 {qrDataURL ? (
-                  <img alt="alipay qr" height={240} src={qrDataURL} width={240} />
+                  <img alt={t('alipay.qrAlt')} height={240} src={qrDataURL} width={240} />
                 ) : (
                   <div
-                    aria-label={t('alipay.qrGenerating', { defaultValue: 'Generating QR code...' })}
+                    aria-label={t('alipay.qrGenerating')}
                     style={{ alignItems: 'center', display: 'flex', height: 240, justifyContent: 'center', width: 240 }}
                   >
                     <Spin />
@@ -161,19 +157,16 @@ export function AlipayPayModal({ open, order, onOpenChange, onSuccess }: AlipayP
                 )}
               </div>
               <Typography.Text style={{ display: 'block', textAlign: 'center' }} type="secondary">
-                {t('alipay.scanHint', { defaultValue: 'Scan with the Alipay app to complete payment' })}
+                {t('alipay.scanHint')}
               </Typography.Text>
               {remainingSec > 0 ? (
                 <Typography.Text style={{ display: 'block', textAlign: 'center' }} type="secondary">
-                  {t('alipay.qrTimeout', {
-                    defaultValue: 'QR code expires in {time}',
-                    time: formatRemaining(remainingSec),
-                  })}
+                  {t('alipay.qrTimeout', { time: formatRemaining(remainingSec) })}
                 </Typography.Text>
               ) : null}
               {order.payment_target_url ? (
                 <Button block href={order.payment_target_url} type="primary">
-                  {t('alipay.apkOpen', { defaultValue: 'Open Alipay app' })}
+                  {t('alipay.apkOpen')}
                 </Button>
               ) : null}
             </>
@@ -182,9 +175,9 @@ export function AlipayPayModal({ open, order, onOpenChange, onSuccess }: AlipayP
           {state === 'success' ? (
             <Space align="center" direction="vertical" style={{ width: '100%' }}>
               <CheckCircleTwoTone twoToneColor="#52c41a" style={{ fontSize: 48 }} />
-              <Typography.Text strong>{t('alipay.success', { defaultValue: 'Payment successful' })}</Typography.Text>
+              <Typography.Text strong>{t('alipay.success')}</Typography.Text>
               <Typography.Text type="secondary">
-                {t('alipay.redirecting', { defaultValue: 'Service is active. Redirecting to orders...' })}
+                {t('alipay.redirecting')}
               </Typography.Text>
             </Space>
           ) : null}
@@ -192,28 +185,28 @@ export function AlipayPayModal({ open, order, onOpenChange, onSuccess }: AlipayP
           {state === 'failed' ? (
             <Space align="center" direction="vertical" style={{ width: '100%' }}>
               <CloseCircleTwoTone twoToneColor="#ff4d4f" style={{ fontSize: 48 }} />
-              <Typography.Text strong>{t('alipay.failed', { defaultValue: 'Payment failed' })}</Typography.Text>
+              <Typography.Text strong>{t('alipay.failed')}</Typography.Text>
               <Typography.Text type="secondary">
-                {t('alipay.failedHint', { defaultValue: 'Payment was not completed. Please place a new order.' })}
+                {t('alipay.failedHint')}
               </Typography.Text>
-              <Button onClick={close}>{t('alipay.close', { defaultValue: 'Close' })}</Button>
+              <Button onClick={close}>{t('alipay.close')}</Button>
             </Space>
           ) : null}
 
           {state === 'expired' ? (
             <Space align="center" direction="vertical" style={{ width: '100%' }}>
               <ExclamationCircleTwoTone twoToneColor="#faad14" style={{ fontSize: 48 }} />
-              <Typography.Text strong>{t('alipay.expired', { defaultValue: 'QR code expired' })}</Typography.Text>
+              <Typography.Text strong>{t('alipay.expired')}</Typography.Text>
               <Typography.Text type="secondary">
-                {t('alipay.expiredHint', { defaultValue: 'Close this window and start the purchase again.' })}
+                {t('alipay.expiredHint')}
               </Typography.Text>
-              <Button onClick={close}>{t('alipay.close', { defaultValue: 'Close' })}</Button>
+              <Button onClick={close}>{t('alipay.close')}</Button>
             </Space>
           ) : null}
         </Space>
       ) : (
         <Typography.Text type="secondary">
-          No pending order
+          {t('alipay.noPendingOrder')}
         </Typography.Text>
       )}
     </Modal>

@@ -11,7 +11,7 @@ import { Button, Drawer, Layout, Tooltip, Typography, theme } from 'antd'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { AccountMenu, LocaleSwitcher } from '@/components/common'
+import { AccountMenu, LocaleSwitcher, PageHeaderChromeProvider } from '@/components/common'
 import { useMinWidth } from '@/hooks/useBreakpoint'
 import { useBranding } from '@/hooks/queries/branding'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -124,7 +124,9 @@ export function AdminLayout() {
           </div>
         </Header>
         <Content style={{ background: token.colorBgLayout, margin: 0, minHeight: 0, padding: 24 }}>
-          <Outlet />
+          <PageHeaderChromeProvider suppressContentHeading>
+            <Outlet />
+          </PageHeaderChromeProvider>
         </Content>
       </Layout>
       <Drawer

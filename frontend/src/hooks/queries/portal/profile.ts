@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { portalProfileApi, type EmailVerificationPurpose } from '@/api/portal/profile'
+import type { AccountEmailVerificationPurpose } from '@/api/portal/emailVerification'
+import { portalProfileApi } from '@/api/portal/profile'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
 import { queryKeys } from '../keys'
 
@@ -36,7 +37,7 @@ export function useUpdateProfile() {
 export function useStartEmailVerification() {
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+    mutationFn: (input: { email: string; purpose: AccountEmailVerificationPurpose }) =>
       portalProfileApi.startEmailVerification(input),
     onError: (error) => handleError(error),
   })

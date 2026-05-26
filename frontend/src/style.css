@@ -111,6 +111,7 @@ body {
 .admin-sidebar-nav {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 12px 0 84px;
   scrollbar-width: thin;
@@ -150,6 +151,7 @@ body {
   background: transparent;
   border: 0;
   border-radius: 10px;
+  box-sizing: border-box;
   color: #334155;
   cursor: pointer;
   display: flex;
@@ -629,6 +631,292 @@ body {
   z-index: 1;
 }
 
+.config-list-page-filters,
+.config-list-page-stats,
+.config-list-page-alerts {
+  margin-bottom: 16px;
+}
+
+.config-list-page-footer {
+  margin-top: 16px;
+}
+
+.settings-page {
+  min-width: 0;
+}
+
+.settings-floating-tabs.ant-tabs {
+  --settings-tabs-accent: #22d3ee;
+  --settings-tabs-surface: rgba(8, 18, 33, 0.82);
+  --settings-tabs-border: rgba(120, 145, 178, 0.28);
+  --settings-tabs-text: #dbe7f1;
+  --settings-tabs-muted: rgba(219, 231, 241, 0.68);
+  --settings-tabs-active-bg: rgba(20, 184, 166, 0.22);
+  --settings-tabs-active-border: rgba(45, 212, 191, 0.34);
+  position: relative;
+}
+
+.settings-floating-tabs > .ant-tabs-nav {
+  backdrop-filter: blur(18px);
+  background:
+    linear-gradient(180deg, rgba(17, 28, 44, 0.9), rgba(8, 18, 33, 0.78)),
+    var(--settings-tabs-surface);
+  border: 1px solid var(--settings-tabs-border);
+  border-radius: 16px;
+  box-shadow:
+    0 24px 54px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  left: 50%;
+  margin: -4px 0 20px;
+  max-width: min(100%, 1160px);
+  min-height: 54px;
+  padding: 6px;
+  position: sticky;
+  top: 16px;
+  transform: translateX(-50%);
+  width: min(100%, 1160px);
+  z-index: 8;
+}
+
+.settings-floating-tabs > .ant-tabs-nav::before {
+  display: none;
+}
+
+.settings-floating-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+  flex: 1;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+
+.settings-floating-tabs > .ant-tabs-nav .ant-tabs-nav-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-floating-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.settings-floating-tabs .ant-tabs-tab {
+  border-radius: 11px;
+  color: var(--settings-tabs-text);
+  margin: 0;
+  min-height: 42px;
+  padding: 0 16px;
+  position: relative;
+  transition:
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-floating-tabs .ant-tabs-tab:hover {
+  background: rgba(96, 165, 250, 0.1);
+  color: #f7fbff;
+}
+
+.settings-floating-tabs .ant-tabs-tab.ant-tabs-tab-active {
+  background: var(--settings-tabs-active-bg);
+  box-shadow:
+    inset 0 0 0 1px var(--settings-tabs-active-border),
+    0 10px 28px rgba(20, 184, 166, 0.1);
+}
+
+.settings-floating-tabs .ant-tabs-tab.ant-tabs-tab-active::after {
+  background: var(--settings-tabs-accent);
+  border-radius: 999px;
+  bottom: 4px;
+  content: "";
+  height: 2px;
+  left: 12px;
+  position: absolute;
+  right: 12px;
+}
+
+.settings-floating-tabs .ant-tabs-tab-btn {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  outline: none;
+}
+
+.settings-floating-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #b8fff8;
+}
+
+.settings-floating-tabs .ant-tabs-ink-bar {
+  display: none;
+}
+
+.settings-tab-label {
+  align-items: center;
+  display: inline-flex;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.settings-tab-icon {
+  align-items: center;
+  color: var(--settings-tabs-muted);
+  display: inline-flex;
+  font-size: 14px;
+  height: 16px;
+  justify-content: center;
+  width: 16px;
+}
+
+.settings-floating-tabs .ant-tabs-tab.ant-tabs-tab-active .settings-tab-icon {
+  color: #b8fff8;
+}
+
+.settings-floating-tabs > .ant-tabs-content-holder {
+  margin-top: 2px;
+}
+
+.settings-brand-panel {
+  background: color-mix(in srgb, var(--app-bg) 18%, #ffffff);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.05);
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+}
+
+.settings-brand-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.settings-brand-heading .ant-typography {
+  margin-top: 0;
+}
+
+.settings-brand-grid {
+  display: grid;
+  gap: 20px 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-brand-field {
+  color: #0f172a;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-brand-field > span,
+.settings-brand-label.ant-typography {
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.settings-brand-field small,
+.settings-brand-hint.ant-typography {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.settings-brand-panel .ant-input,
+.settings-brand-panel .ant-input-affix-wrapper {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  min-height: 40px;
+}
+
+.settings-brand-panel textarea.ant-input {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.settings-brand-home-content.ant-input {
+  min-height: 140px;
+}
+
+.settings-brand-logo-row {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-brand-logo-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.settings-brand-logo-preview {
+  align-items: center;
+  background: color-mix(in srgb, #2563eb 10%, #ffffff);
+  border: 1px solid color-mix(in srgb, #2563eb 34%, #cbd5e1);
+  border-radius: 12px;
+  color: #1d4ed8;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 18px;
+  font-weight: 800;
+  height: 78px;
+  justify-content: center;
+  overflow: hidden;
+  width: 78px;
+}
+
+.settings-brand-logo-preview img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.settings-brand-file-input {
+  color: #475569;
+  max-width: min(100%, 260px);
+}
+
+.dark .settings-brand-panel {
+  background: #111c2c;
+  border-color: rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 48px rgba(7, 11, 25, 0.18);
+}
+
+.dark .settings-brand-field,
+.dark .settings-brand-field > span,
+.dark .settings-brand-label.ant-typography {
+  color: #edf5fb;
+}
+
+.dark .settings-brand-field small,
+.dark .settings-brand-hint.ant-typography {
+  color: rgba(219, 231, 241, 0.64);
+}
+
+.dark .settings-brand-panel .ant-input,
+.dark .settings-brand-panel .ant-input-affix-wrapper {
+  background: #162337;
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #f8fbff;
+}
+
+.dark .settings-brand-logo-preview {
+  background: color-mix(in srgb, #60a5fa 16%, #111c2c);
+  border-color: color-mix(in srgb, #60a5fa 42%, transparent);
+  color: #bfdbfe;
+}
+
+.dark .settings-brand-file-input {
+  color: rgba(219, 231, 241, 0.8);
+}
+
 .locale-switcher-button[aria-checked="false"] .locale-switcher-option:first-of-type,
 .locale-switcher-button[aria-checked="true"] .locale-switcher-option:last-of-type {
   color: white;
@@ -774,16 +1062,76 @@ body {
   z-index: 1;
 }
 
+.auth-theme {
+  bottom: 24px;
+  left: 24px;
+  position: absolute;
+  z-index: 2;
+}
+
+.auth-theme-button {
+  align-items: center;
+  background: color-mix(in srgb, var(--app-bg) 72%, white);
+  border: 1px solid color-mix(in srgb, #94a3b8 34%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 10px 28px rgba(30, 41, 59, 0.08);
+  color: color-mix(in srgb, var(--app-text) 88%, var(--auth-brand-color, #2563eb));
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 600;
+  gap: 8px;
+  height: 36px;
+  line-height: 1;
+  padding: 0 13px 0 11px;
+  transition:
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-theme-button:hover {
+  background: color-mix(in srgb, var(--app-bg) 48%, white);
+  border-color: color-mix(in srgb, var(--auth-brand-color, #2563eb) 58%, transparent);
+  color: var(--auth-brand-color, #1d4ed8);
+  transform: translateY(-1px);
+}
+
+.auth-theme-button:focus-visible {
+  outline: 2px solid oklch(0.68 0.17 260);
+  outline-offset: 3px;
+}
+
+.auth-theme-icon {
+  font-size: 15px;
+}
+
+.dark .auth-theme-button {
+  background: color-mix(in srgb, #0f172a 78%, transparent);
+  border-color: color-mix(in srgb, var(--auth-brand-color, #60a5fa) 24%, transparent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  color: #e8fbf8;
+}
+
+.dark .auth-theme-button:hover {
+  background: color-mix(in srgb, #122236 86%, var(--auth-brand-color, #60a5fa) 14%);
+  border-color: color-mix(in srgb, var(--auth-brand-color, #60a5fa) 58%, transparent);
+  color: #b7f6fb;
+}
+
 .auth-layout-inner {
   align-items: center;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  justify-content: center;
   margin: 0 auto;
   max-width: 520px;
   min-height: calc(100vh - 112px);
-  padding-top: clamp(64px, 12vh, 148px);
+  padding-top: 0;
   position: relative;
+  transform: translateY(-28px);
   width: 100%;
   z-index: 1;
 }
@@ -839,7 +1187,7 @@ body {
 }
 
 .auth-login-surface {
-  width: min(100%, 448px);
+  width: min(100%, 420px);
 }
 
 .auth-login-card.ant-card {
@@ -864,6 +1212,52 @@ body {
   margin-top: 0;
 }
 
+.auth-tabs.ant-tabs {
+  width: 100%;
+}
+
+.auth-tabs .ant-tabs-nav {
+  margin-bottom: 22px;
+}
+
+.auth-tabs .ant-tabs-tab {
+  justify-content: center;
+  min-width: 112px;
+}
+
+.auth-tabs .ant-tabs-tab-btn {
+  font-weight: 500;
+}
+
+.auth-login-card .ant-form-item {
+  margin-bottom: 20px;
+}
+
+.auth-login-card .ant-input-affix-wrapper {
+  min-height: 40px;
+}
+
+.auth-login-card .ant-btn-primary,
+.auth-login-card .auth-oidc-button {
+  min-height: 40px;
+}
+
+.auth-tab-note.ant-typography {
+  display: block;
+  margin: -2px 0 2px;
+  text-align: center;
+}
+
+.auth-code-item.ant-form-item {
+  margin-bottom: 8px;
+}
+
+.auth-code-hint.ant-typography {
+  display: block;
+  font-size: 12px;
+  margin: -2px 0 18px;
+}
+
 .auth-login-heading {
   margin-bottom: 24px;
   text-align: center;
@@ -876,6 +1270,36 @@ body {
 }
 
 @media (max-width: 640px) {
+  .settings-floating-tabs > .ant-tabs-nav {
+    border-radius: 14px;
+    left: 0;
+    max-width: 100%;
+    min-height: 50px;
+    padding: 5px;
+    top: 10px;
+    transform: none;
+    width: 100%;
+  }
+
+  .settings-floating-tabs .ant-tabs-tab {
+    min-height: 39px;
+    padding-inline: 12px;
+  }
+
+  .settings-floating-tabs .ant-tabs-tab-btn {
+    font-size: 12px;
+  }
+
+  .settings-brand-heading,
+  .settings-brand-logo-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-brand-grid {
+    grid-template-columns: 1fr;
+  }
+
   .auth-layout {
     padding: 56px 16px 32px;
   }
@@ -885,8 +1309,14 @@ body {
     top: 16px;
   }
 
+  .auth-theme {
+    bottom: 16px;
+    left: 16px;
+  }
+
   .auth-layout-inner {
     min-height: calc(100vh - 88px);
-    padding-top: 44px;
+    padding-top: 0;
+    transform: translateY(-14px);
   }
 }

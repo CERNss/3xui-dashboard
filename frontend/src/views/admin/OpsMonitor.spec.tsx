@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FleetResult } from '@/api/admin/inbounds'
 import type { Node, NodeMetricsResult } from '@/api/admin/nodes'
 import { nodesApi } from '@/api/admin/nodes'
+import { i18n } from '@/i18n'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import OpsMonitor from './OpsMonitor'
 
@@ -37,7 +38,7 @@ vi.mock('@/api/admin/nodes', async (importOriginal) => {
 })
 
 function renderOpsMonitor() {
-  return renderWithProviders(<OpsMonitor />)
+  return renderWithProviders(<OpsMonitor />, { locale: 'zh' })
 }
 
 function makeNode(partial: Partial<Node>): Node {
@@ -118,6 +119,7 @@ beforeEach(() => {
     if (id === 2) return Promise.reject(new Error('timeout'))
     return Promise.resolve(metrics(id))
   })
+  void i18n.changeLanguage('zh')
 })
 
 describe('OpsMonitor', () => {
@@ -127,24 +129,24 @@ describe('OpsMonitor', () => {
     await waitFor(() => expect(nodesApi.metrics).toHaveBeenCalledTimes(2))
     expect(nodesApi.metrics).toHaveBeenCalledWith(1, expect.objectContaining({ bucket: '10m' }))
     expect(nodesApi.metrics).toHaveBeenCalledWith(2, expect.objectContaining({ bucket: '10m' }))
-    expect(await screen.findByText('1 node metric request failed; healthy series are still shown.')).toBeInTheDocument()
+    expect(await screen.findByText('1 个节点指标加载失败')).toBeInTheDocument()
     expect(screen.getByText('Beta')).toBeInTheDocument()
   })
 
   it('renders KPI cards, resource SVG, and four chart component shapes without a chart library', async () => {
     renderOpsMonitor()
 
-    expect(screen.getAllByText('Needs attention').length).toBeGreaterThan(0)
-    expect(screen.getByText('Active inbounds')).toBeInTheDocument()
+    expect(screen.getAllByText('需要关注').length).toBeGreaterThan(0)
+    expect(screen.getByText('启用入站')).toBeInTheDocument()
     expect(screen.getByText('1/1')).toBeInTheDocument()
-    expect(screen.getByText('Clients')).toBeInTheDocument()
+    expect(screen.getByText('启用客户端')).toBeInTheDocument()
     expect(screen.getAllByText('1').length).toBeGreaterThan(0)
-    expect(await screen.findByRole('img', { name: 'Resource trend' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Fleet health score' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Concurrency queue bars' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Throughput line' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Duration distribution stack' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Error distribution dots' })).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: '资源趋势' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '集群健康' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '平台并发 / 排队' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '吞吐趋势' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '请求耗时分布' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '错误分布' })).toBeInTheDocument()
   })
 
   it('excludes disabled nodes from metrics fanout', async () => {
@@ -152,6 +154,6 @@ describe('OpsMonitor', () => {
 
     await waitFor(() => expect(nodesApi.metrics).toHaveBeenCalledTimes(2))
     expect(nodesApi.metrics).not.toHaveBeenCalledWith(3, expect.anything())
-    expect(screen.getByText('Disabled')).toBeInTheDocument()
+    expect(screen.getByText('停用')).toBeInTheDocument()
   })
 })

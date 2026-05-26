@@ -30,6 +30,8 @@ const (
 	SettingBrandSubtitle               = "brand_subtitle"
 	SettingBrandDescription            = "brand_description"
 	SettingBrandFooter                 = "brand_footer"
+	SettingBrandDocsURL                = "brand_docs_url"
+	SettingBrandHomepageContent        = "brand_homepage_content"
 	SettingNewUserInitialBalanceCents  = "new_user_initial_balance_cents"
 	SettingNewUserPlanIDs              = "new_user_plan_ids"
 	SettingOIDCIssuer                  = "oidc_issuer"

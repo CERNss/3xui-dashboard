@@ -1,24 +1,16 @@
-import { Button, Card, Empty, Modal, Segmented, Space, Tag, Typography, message } from 'antd'
+import { Button, Card, Modal, Segmented, Space, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { AdminOrder, OrderStatus } from '@/api/admin/orders'
 import type { AdminPlan } from '@/api/admin/plans'
 import type { AdminUser } from '@/api/admin/users'
-import { PageHeader, RefreshButton, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage, RefreshButton } from '@/components/common'
 import { useOrdersList, useRefundOrder } from '@/hooks/queries/admin/orders'
 import { usePlansList } from '@/hooks/queries/admin/plans'
 import { useUsersList } from '@/hooks/queries/admin/users'
 
 type StatusFilter = 'all' | OrderStatus
-
-const STATUS_FILTERS: Array<{ label: string; value: StatusFilter }> = [
-  { label: 'All', value: 'all' },
-  { label: 'Completed', value: 'completed' },
-  { label: 'Paid', value: 'paid' },
-  { label: 'Failed', value: 'failed' },
-  { label: 'Refunded', value: 'refunded' },
-  { label: 'Created', value: 'created' },
-]
 
 function formatMoney(cents: number) {
   return `¥${(cents / 100).toFixed(2)}`
@@ -32,7 +24,7 @@ function canRefund(status: OrderStatus) {
   return status === 'completed' || status === 'paid'
 }
 
-function statusTag(status: OrderStatus) {
+function statusTag(status: OrderStatus, label: string = status) {
   const colorByStatus: Record<OrderStatus, string> = {
     completed: 'green',
     paid: 'green',
@@ -41,7 +33,7 @@ function statusTag(status: OrderStatus) {
     created: 'default',
   }
 
-  return <Tag color={colorByStatus[status]}>{status}</Tag>
+  return <Tag color={colorByStatus[status]}>{label}</Tag>
 }
 
 function asMap<T extends { id: number }>(items: T[] = []) {
@@ -49,6 +41,7 @@ function asMap<T extends { id: number }>(items: T[] = []) {
 }
 
 export default function Orders() {
+  const { t } = useTranslation()
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
   const ordersQuery = useOrdersList({ limit: 200 })
@@ -77,8 +70,18 @@ export default function Orders() {
   const loading = ordersQuery.isLoading || plansQuery.isLoading || usersQuery.isLoading
   const refreshing = ordersQuery.isFetching || plansQuery.isFetching || usersQuery.isFetching
 
-  const planName = (id: number) => plansById.get(id)?.name ?? `Plan #${id}`
-  const userEmail = (id: number) => usersById.get(id)?.email ?? `User #${id}`
+  const planName = (id: number) => plansById.get(id)?.name ?? t('admin.stats.unknownPlan', { id })
+  const userEmail = (id: number) => usersById.get(id)?.email ?? t('admin.stats.unknownUser', { id })
+  const statusLabel = (status: OrderStatus) => t(`admin.orders.status.${status}`)
+  const statusTagLabel = (status: OrderStatus) => t('admin.orders.statusTag', { status: statusLabel(status) })
+  const statusFilters: Array<{ label: string; value: StatusFilter }> = [
+    { label: t('admin.orders.filterAll'), value: 'all' },
+    { label: statusLabel('completed'), value: 'completed' },
+    { label: t('admin.stats.orderStatus.paid'), value: 'paid' },
+    { label: statusLabel('failed'), value: 'failed' },
+    { label: statusLabel('refunded'), value: 'refunded' },
+    { label: statusLabel('created'), value: 'created' },
+  ]
 
   const refresh = () => {
     ordersQuery.refetch()
@@ -88,68 +91,73 @@ export default function Orders() {
 
   const confirmRefund = (order: AdminOrder) => {
     Modal.confirm({
-      title: `Refund order #${order.id}`,
-      content: `Refund ${formatMoney(order.price_cents)} for ${userEmail(order.user_id)} / ${planName(order.plan_id)}?`,
-      okText: 'Refund',
+      title: t('admin.orders.refundTitle'),
+      content: t('admin.orders.refundConfirmMsg', {
+        amount: formatMoney(order.price_cents),
+        email: userEmail(order.user_id),
+        id: order.id,
+        plan: planName(order.plan_id),
+      }),
+      okText: t('admin.orders.refund'),
       okButtonProps: { danger: true },
       onOk: async () => {
         await refundOrder.mutateAsync({ id: order.id, reason: 'admin manual refund' })
-        message.success(`Order #${order.id} refunded`)
+        message.success(t('admin.orders.status.refunded'))
       },
     })
   }
 
   const columns: ColumnsType<AdminOrder> = [
     {
-      title: 'Order',
+      title: t('admin.orders.column.orderId'),
       dataIndex: 'id',
       render: (id: number) => <Typography.Text code>#{id}</Typography.Text>,
     },
     {
-      title: 'User',
+      title: t('admin.orders.column.user'),
       dataIndex: 'user_id',
       render: (id: number) => (
         <Space direction="vertical" size={0}>
           <Typography.Text>{userEmail(id)}</Typography.Text>
-          <Typography.Text type="secondary">user #{id}</Typography.Text>
+          <Typography.Text type="secondary">{t('admin.stats.unknownUser', { id })}</Typography.Text>
         </Space>
       ),
     },
     {
-      title: 'Plan',
+      title: t('admin.orders.column.plan'),
       dataIndex: 'plan_id',
       render: (id: number) => planName(id),
     },
     {
-      title: 'Amount',
+      title: t('admin.orders.column.amount'),
       dataIndex: 'price_cents',
       align: 'right',
       render: formatMoney,
     },
     {
-      title: 'Status',
+      title: t('admin.orders.column.status'),
       dataIndex: 'status',
       render: (status: OrderStatus, order) => (
         <Space direction="vertical" size={2}>
-          {statusTag(status)}
+          {statusTag(status, statusTagLabel(status))}
           {order.error_message ? <Typography.Text type="danger">{order.error_message}</Typography.Text> : null}
         </Space>
       ),
     },
     {
-      title: 'Created',
+      title: t('admin.orders.column.created'),
       dataIndex: 'created_at',
       sorter: (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       defaultSortOrder: 'descend',
       render: formatDate,
     },
     {
-      title: 'Completed',
+      title: t('admin.orders.column.completed'),
       dataIndex: 'completed_at',
       render: formatDate,
     },
     {
-      title: 'Actions',
+      title: t('admin.users.column.actions'),
       key: 'actions',
       align: 'right',
       render: (_, order) =>
@@ -160,7 +168,7 @@ export default function Orders() {
             loading={refundOrder.isPending && refundOrder.variables?.id === order.id}
             onClick={() => confirmRefund(order)}
           >
-            Refund
+            {t('admin.orders.refund')}
           </Button>
         ) : null,
     },
@@ -168,59 +176,54 @@ export default function Orders() {
 
   return (
     <section>
-      <PageHeader
-        title="Orders"
-        subtitle="Review purchases, reconcile plan and user details, and process eligible refunds."
-        actions={<RefreshButton loading={refreshing} onClick={refresh} />}
-      />
-
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: 16 }}>
-        <Card size="small">
-          <Typography.Text type="secondary">Total orders</Typography.Text>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {stats.total}
-          </Typography.Title>
-        </Card>
-        <Card size="small">
-          <Typography.Text type="secondary">Completed or paid</Typography.Text>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {stats.completed}
-          </Typography.Title>
-        </Card>
-        <Card size="small">
-          <Typography.Text type="secondary">Revenue</Typography.Text>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {formatMoney(stats.revenue)}
-          </Typography.Title>
-        </Card>
-      </div>
-
-      <Segmented
-        options={STATUS_FILTERS}
-        value={statusFilter}
-        onChange={(value) => setStatusFilter(value as StatusFilter)}
-        style={{ marginBottom: 16 }}
-      />
-
-      <ResponsiveListTable<AdminOrder>
+      <ConfigListPage
+        title={t('admin.orders.title')}
+        subtitle={t('admin.orders.subtitle')}
+        actions={<RefreshButton loading={refreshing} onClick={refresh} label={t('admin.orders.reload')} />}
+        stats={
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+            <Card size="small">
+              <Typography.Text type="secondary">{t('admin.orders.kpiTotal')}</Typography.Text>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                {stats.total}
+              </Typography.Title>
+            </Card>
+            <Card size="small">
+              <Typography.Text type="secondary">{t('admin.orders.kpiCompleted')}</Typography.Text>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                {stats.completed}
+              </Typography.Title>
+            </Card>
+            <Card size="small">
+              <Typography.Text type="secondary">{t('admin.orders.kpiRevenue')}</Typography.Text>
+              <Typography.Title level={3} style={{ margin: 0 }}>
+                {formatMoney(stats.revenue)}
+              </Typography.Title>
+            </Card>
+          </div>
+        }
+        filters={
+          <Segmented
+            options={statusFilters}
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value as StatusFilter)}
+          />
+        }
         rowKey="id"
         columns={columns}
         dataSource={filteredOrders}
         loading={loading}
         pagination={{ pageSize: 20, showSizeChanger: false }}
-        locale={{
-          emptyText: (
-            <Empty
-              description={orders.length === 0 ? 'No orders yet.' : 'No orders match the selected status.'}
-            />
-          ),
+        emptyState={{
+          title: t('admin.orders.empty'),
+          description: orders.length === 0 ? t('admin.orders.emptyDescriptionTotal') : t('admin.orders.emptyDescriptionFiltered'),
         }}
         mobileCard={(order) => (
           <Card size="small" style={{ width: '100%' }}>
             <Space direction="vertical" size={4}>
               <Space wrap>
                 <Typography.Text code>#{order.id}</Typography.Text>
-                {statusTag(order.status)}
+                {statusTag(order.status, statusTagLabel(order.status))}
               </Space>
               <Typography.Text strong>{planName(order.plan_id)}</Typography.Text>
               <Typography.Text>{userEmail(order.user_id)}</Typography.Text>
@@ -233,7 +236,7 @@ export default function Orders() {
                   loading={refundOrder.isPending && refundOrder.variables?.id === order.id}
                   onClick={() => confirmRefund(order)}
                 >
-                  Refund
+                  {t('admin.orders.refund')}
                 </Button>
               ) : null}
             </Space>

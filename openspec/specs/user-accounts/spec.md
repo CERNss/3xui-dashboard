@@ -29,7 +29,7 @@ verification code obtained via the `email-verification` flow.
 #### Scenario: Successful registration with verification code (SMTP enabled)
 
 - **GIVEN** `cfg.SMTP.Enabled() == true`
-- **AND** the user has previously called `POST /api/user/auth/send-code` and received an email containing a 6-digit code
+- **AND** the user has previously called `POST /api/user/auth/email-verification/start` with `purpose='register'` and received an email containing a 6-digit code
 - **WHEN** the user POSTs `{email, password, code}` to `/api/user/auth/register` and the code matches the latest unconsumed unexpired row
 - **AND** registration is permitted by public-registration and domain controls
 - **THEN** the verification code SHALL be consumed

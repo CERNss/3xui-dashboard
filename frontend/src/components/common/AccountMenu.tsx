@@ -2,6 +2,7 @@ import { ExportOutlined, LogoutOutlined } from '@ant-design/icons'
 import { Button, Dropdown } from 'antd'
 import type { MenuProps } from 'antd'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 export interface AccountMenuItem {
@@ -20,7 +21,8 @@ export interface AccountMenuProps {
   onLogout?: () => void
 }
 
-export function AccountMenu({ items = [], children, logoutLabel = 'Logout', onLogout }: AccountMenuProps) {
+export function AccountMenu({ items = [], children, logoutLabel, onLogout }: AccountMenuProps) {
+  const { t } = useTranslation()
   const menuItems: MenuProps['items'] = [
     ...items.map((item, index) => {
       const key = item.key ?? item.to ?? item.href ?? String(index)
@@ -47,14 +49,14 @@ export function AccountMenu({ items = [], children, logoutLabel = 'Logout', onLo
     {
       key: 'logout',
       icon: <LogoutOutlined />,
-      label: logoutLabel,
+      label: logoutLabel ?? t('nav.logout'),
       onClick: onLogout
     }
   ]
 
   return (
     <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-      {children ?? <Button type="text">Account</Button>}
+      {children ?? <Button type="text">{t('account.profile')}</Button>}
     </Dropdown>
   )
 }

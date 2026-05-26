@@ -169,6 +169,47 @@ func TestTagCache_PopulatesFromList(t *testing.T) {
 	}
 }
 
+func TestListInbounds_AcceptsStructuredJSONFields(t *testing.T) {
+	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/panel/api/inbounds/list" {
+			t.Errorf("unexpected path %s", req.URL.Path)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"msg": "ok",
+			"obj": [{
+				"id": 8,
+				"tag": "vless-json",
+				"port": 443,
+				"protocol": "vless",
+				"settings": {"clients":[{"email":"alice@example.com","enable":true}],"decryption":"none"},
+				"streamSettings": {"network":"tcp","security":"none"},
+				"sniffing": {"enabled":true}
+			}]
+		}`))
+	}))
+
+	inbounds, err := r.ListInbounds(context.Background())
+	if err != nil {
+		t.Fatalf("ListInbounds: %v", err)
+	}
+	if len(inbounds) != 1 {
+		t.Fatalf("len(inbounds) = %d, want 1", len(inbounds))
+	}
+	got := inbounds[0]
+	if !strings.Contains(got.Settings, `"alice@example.com"`) {
+		t.Errorf("Settings = %q", got.Settings)
+	}
+	if got.StreamSettings != `{"network":"tcp","security":"none"}` {
+		t.Errorf("StreamSettings = %q", got.StreamSettings)
+	}
+	if got.Sniffing != `{"enabled":true}` {
+		t.Errorf("Sniffing = %q", got.Sniffing)
+	}
+}
+
 func TestTagCache_RefreshOnMiss(t *testing.T) {
 	var listCalls atomic.Int32
 	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

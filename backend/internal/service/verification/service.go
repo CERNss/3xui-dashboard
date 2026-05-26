@@ -99,8 +99,8 @@ type Service struct {
 
 // New constructs a Service. msgs delivers the email via the unified
 // user-message surface — when SMTP is disabled the underlying send
-// is a no-op and SendCode still records the row, so the operator
-// can read the generated code from dashboard logs.
+// is a no-op and Start still records the row, so the operator can read
+// the generated code from dashboard logs.
 func New(db *gorm.DB, msgs *messages.Service, logger *slog.Logger) *Service {
 	return &Service{
 		db:       db,
@@ -108,14 +108,6 @@ func New(db *gorm.DB, msgs *messages.Service, logger *slog.Logger) *Service {
 		logger:   logger,
 		tokens:   map[string]tokenRecord{},
 	}
-}
-
-// SendCode generates a new code, stores its hash, and dispatches the
-// email. Rate-limited by resendCooldown per (email, purpose). If SMTP
-// is disabled, the mailer logs the code so dev can read it from stderr.
-func (s *Service) SendCode(ctx context.Context, email string, purpose Purpose) error {
-	_, err := s.Start(ctx, email, purpose)
-	return err
 }
 
 // Start generates and sends a verification code, returning timing

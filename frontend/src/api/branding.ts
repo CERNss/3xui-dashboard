@@ -6,6 +6,8 @@ export interface Branding {
   subtitle: string
   description: string
   footer: string
+  docs_url: string
+  homepage_content: string
 }
 
 export const brandingApi = {

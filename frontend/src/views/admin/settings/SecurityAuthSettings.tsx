@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { SettingsSection } from './SettingsSection'
 import type { SettingsSectionProps } from './types'
 
 export function SecurityAuthSettings(props: SettingsSectionProps) {
-  return <SettingsSection {...props} title="Security & auth" description="Registration and OIDC settings." />
+  const { t } = useTranslation()
+  return <SettingsSection {...props} title={t('admin.settings.securityAuthTitle')} description={t('admin.settings.securityAuthDesc')} />
 }

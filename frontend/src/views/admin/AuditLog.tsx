@@ -1,8 +1,9 @@
-import { Card, Empty, Input, Select, Space, Tag, Typography } from 'antd'
+import { Card, Input, Select, Space, Tag, Typography } from 'antd'
 import type { ColumnsType, TableProps } from 'antd/es/table'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { AdminAction, ListAuditParams } from '@/api/admin/audit'
-import { PageHeader, RefreshButton, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage, RefreshButton } from '@/components/common'
 import { useAuditLog } from '@/hooks/queries/admin/audit'
 
 type SortKey = 'created_at' | 'admin_username' | 'method' | 'status_code'
@@ -44,6 +45,7 @@ function compareRows(a: AdminAction, b: AdminAction, key: SortKey) {
 }
 
 export default function AuditLog() {
+  const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [resource, setResource] = useState('')
   const [method, setMethod] = useState<string | undefined>()
@@ -75,26 +77,26 @@ export default function AuditLog() {
   const columns: ColumnsType<AdminAction> = useMemo(
     () => [
       {
-        title: 'Time',
+        title: t('admin.auditLog.column.time'),
         dataIndex: 'created_at',
         sorter: (a, b) => compareRows(a, b, 'created_at'),
         defaultSortOrder: 'descend',
         render: formatDate,
       },
       {
-        title: 'Admin',
+        title: t('admin.auditLog.column.admin'),
         dataIndex: 'admin_username',
         sorter: (a, b) => compareRows(a, b, 'admin_username'),
-        render: (value: string) => value || 'Unknown admin',
+        render: (value: string) => value || t('admin.auditLog.unknownAdmin'),
       },
       {
-        title: 'Method',
+        title: t('admin.auditLog.column.method'),
         dataIndex: 'method',
         sorter: (a, b) => compareRows(a, b, 'method'),
         render: methodTag,
       },
       {
-        title: 'Path',
+        title: t('admin.auditLog.column.path'),
         dataIndex: 'path',
         render: (path: string, row) => (
           <Typography.Text code>
@@ -104,7 +106,7 @@ export default function AuditLog() {
         ),
       },
       {
-        title: 'Target',
+        title: t('admin.auditLog.column.target'),
         key: 'target',
         render: (_, row) =>
           row.target_resource ? (
@@ -117,7 +119,7 @@ export default function AuditLog() {
           ),
       },
       {
-        title: 'Status',
+        title: t('admin.auditLog.column.status'),
         dataIndex: 'status_code',
         sorter: (a, b) => compareRows(a, b, 'status_code'),
         render: (code: number, row) => (
@@ -128,71 +130,65 @@ export default function AuditLog() {
         ),
       },
       {
-        title: 'IP',
+        title: t('admin.auditLog.column.ip'),
         dataIndex: 'ip',
         render: (ip: string) => ip || '-',
       },
     ],
-    [],
+    [t],
   )
 
   const onTableChange: TableProps<AdminAction>['onChange'] = () => undefined
 
   return (
     <section>
-      <PageHeader
-        title="Audit Log"
-        subtitle="Inspect recent administrative actions and narrow the 100-row window by actor, resource, or method."
+      <ConfigListPage
+        title={t('admin.auditLog.title')}
+        subtitle={t('admin.auditLog.subtitle')}
         actions={<RefreshButton loading={auditQuery.isFetching} onClick={() => auditQuery.refetch()} />}
-      />
-
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input
-          allowClear
-          aria-label="Filter username"
-          placeholder="Username"
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-          style={{ width: 240 }}
-        />
-        <Input
-          allowClear
-          aria-label="Filter resource"
-          placeholder="Resource"
-          value={resource}
-          onChange={(event) => setResource(event.target.value)}
-          style={{ width: 240 }}
-        />
-        <Select
-          allowClear
-          aria-label="Filter method"
-          placeholder="Any method"
-          value={method}
-          onChange={setMethod}
-          style={{ width: 160 }}
-          options={METHODS.map((value) => ({ label: value, value }))}
-        />
-      </Space>
-
-      <ResponsiveListTable<AdminAction>
+        filters={
+          <Space wrap>
+            <Input
+              allowClear
+              aria-label={t('admin.auditLog.filterUsername')}
+              placeholder={t('admin.auditLog.filterUsername')}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              style={{ width: 240 }}
+            />
+            <Input
+              allowClear
+              aria-label={t('admin.auditLog.filterResource')}
+              placeholder={t('admin.auditLog.filterResource')}
+              value={resource}
+              onChange={(event) => setResource(event.target.value)}
+              style={{ width: 240 }}
+            />
+            <Select
+              allowClear
+              aria-label={t('admin.auditLog.filterMethod')}
+              placeholder={t('admin.auditLog.anyMethod')}
+              value={method}
+              onChange={setMethod}
+              style={{ width: 160 }}
+              options={METHODS.map((value) => ({ label: value, value }))}
+            />
+          </Space>
+        }
         rowKey="id"
         columns={columns}
         dataSource={rows}
         loading={auditQuery.isLoading}
         pagination={{ pageSize: 20, showSizeChanger: false }}
         onChange={onTableChange}
-        locale={{
-          emptyText: (
-            <Empty
-              description={hasFilters ? 'No audit entries match the current filters.' : 'No audit entries yet.'}
-            />
-          ),
+        emptyState={{
+          description: hasFilters ? t('admin.auditLog.emptyFiltered') : t('admin.auditLog.emptyTotal'),
         }}
         mobileCard={(row) => (
           <Card size="small" style={{ width: '100%' }}>
             <Space direction="vertical" size={4}>
               <Typography.Text type="secondary">{formatDate(row.created_at)}</Typography.Text>
-              <Typography.Text strong>{row.admin_username || 'Unknown admin'}</Typography.Text>
+              <Typography.Text strong>{row.admin_username || t('admin.auditLog.unknownAdmin')}</Typography.Text>
               <Space wrap>
                 {methodTag(row.method)}
                 {statusTag(row.status_code)}

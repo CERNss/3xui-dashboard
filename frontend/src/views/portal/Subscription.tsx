@@ -75,6 +75,7 @@ export function Subscription() {
       title: t('portal.subscription.regenerateTitle'),
       content: t('portal.subscription.regenerateConfirm'),
       okText: t('portal.subscription.regenerate'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
@@ -143,7 +144,7 @@ export function Subscription() {
                         <Space direction="vertical" size={2} style={{ alignItems: 'flex-start', width: '100%' }}>
                           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                             <Typography.Text strong>{format.label}</Typography.Text>
-                            {activeKey === format.key ? <CheckOutlined aria-label="selected" /> : null}
+                            {activeKey === format.key ? <CheckOutlined aria-label={t('portal.subscription.selected')} /> : null}
                           </Space>
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                             {format.hint}
@@ -215,7 +216,7 @@ export function Subscription() {
                     {t('portal.subscription.qrHint')}
                   </Typography.Text>
                   <div
-                    aria-label="subscription QR"
+                    aria-label={t('portal.subscription.qrImageAlt')}
                     style={{
                       alignItems: 'center',
                       aspectRatio: '1 / 1',
@@ -228,7 +229,7 @@ export function Subscription() {
                     }}
                   >
                     {qrDataUrl ? (
-                      <img alt="subscription QR" src={qrDataUrl} style={{ height: '100%', width: '100%' }} />
+                      <img alt={t('portal.subscription.qrImageAlt')} src={qrDataUrl} style={{ height: '100%', width: '100%' }} />
                     ) : (
                       <Space direction="vertical" align="center">
                         <QrcodeOutlined />

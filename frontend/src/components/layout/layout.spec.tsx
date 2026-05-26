@@ -1,6 +1,8 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { useThemeStore } from '@/stores/theme'
 import { AdminLayout, AuthLayout, PortalLayout } from './index'
 
 const translations: Record<string, string> = {
@@ -40,6 +42,8 @@ const translations: Record<string, string> = {
   'section.overview': 'Overview',
   'section.system': 'System',
   'section.users': 'Users & billing',
+  'theme.dark': 'Dark mode',
+  'theme.light': 'Light mode',
   'theme.toggleDark': 'Switch to dark',
   'theme.toggleLight': 'Switch to light',
 }
@@ -80,6 +84,9 @@ function mockMinWidth(matches: boolean) {
 }
 
 afterEach(() => {
+  act(() => {
+    useThemeStore.getState().setMode('system')
+  })
   vi.restoreAllMocks()
 })
 
@@ -142,5 +149,29 @@ describe('layout components', () => {
     expect(screen.getByText('Test Dashboard')).toBeInTheDocument()
     expect(screen.getByText('Fleet control')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Switch to dark' })).toHaveTextContent('Dark mode')
+  })
+
+  it('toggles AuthLayout theme from the lower-left control', async () => {
+    const user = userEvent.setup()
+    act(() => {
+      useThemeStore.getState().setMode('light')
+    })
+
+    render(
+      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <AuthLayout>
+          <button type="button">Continue</button>
+        </AuthLayout>
+      </MemoryRouter>,
+    )
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Switch to dark' }))
+    })
+
+    expect(useThemeStore.getState().resolvedTheme).toBe('dark')
+    expect(document.documentElement).toHaveClass('dark')
+    expect(screen.getByRole('button', { name: 'Switch to light' })).toHaveTextContent('Light mode')
   })
 })

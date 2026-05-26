@@ -163,7 +163,7 @@ export function panelPathFromURLPath(pathname: string): string {
   if (panelIndex >= 0) return `/${segments.slice(0, panelIndex + 1).join('/')}/`
   const apiIndex = segments.findIndex((item) => item.toLowerCase() === 'api')
   if (apiIndex > 0) return `/${segments.slice(0, apiIndex).join('/')}/`
-  return `/${segments.join('/')}/`
+  return `/${[...segments, 'panel'].join('/')}/`
 }
 
 export function nodeExportRows(nodes: Node[]): NodeInput[] {

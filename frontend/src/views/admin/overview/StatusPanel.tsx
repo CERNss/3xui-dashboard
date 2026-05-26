@@ -198,7 +198,7 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
                   </Space>
                   <Typography.Text type="secondary">{nodeDetail(node, t)}</Typography.Text>
                   <Typography.Text>{t('admin.status.column.cpuMem')}: {nodeMetrics(node)}</Typography.Text>
-                  <Typography.Text>Xray: {node.xray_version || '—'}</Typography.Text>
+                  <Typography.Text>{t('admin.nodes.column.xray')}: {node.xray_version || '—'}</Typography.Text>
                   <Typography.Text>{t('admin.status.column.lastSeen')}: {formatDateTime(node.last_seen_at)}</Typography.Text>
                 </Space>
               </Card>

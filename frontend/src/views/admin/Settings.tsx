@@ -1,6 +1,17 @@
+import {
+  AlertOutlined,
+  DatabaseOutlined,
+  FileTextOutlined,
+  HomeOutlined,
+  MailOutlined,
+  NotificationOutlined,
+  SafetyCertificateOutlined,
+  UserOutlined,
+} from '@ant-design/icons'
 import { Alert, Skeleton, Tabs } from 'antd'
 import type { TabsProps } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import type { SettingItem } from '@/api/admin/settings'
 import { PageHeader, RefreshButton } from '@/components/common'
@@ -13,7 +24,7 @@ import { NotificationsSettings } from './settings/NotificationsSettings'
 import { SecurityAuthSettings } from './settings/SecurityAuthSettings'
 import { SubscriptionSettings } from './settings/SubscriptionSettings'
 import { UserDefaultsSettings } from './settings/UserDefaultsSettings'
-import { SETTINGS_TABS, filterSettings, itemValue, tabI18nKeys, tabLabels } from './settings/settingHelpers'
+import { SETTINGS_TABS, filterSettings, itemValue, tabI18nKeys } from './settings/settingHelpers'
 import type { Drafts, SettingsSectionProps, SettingsTab } from './settings/types'
 
 function isSettingsTab(value: string | null): value is SettingsTab {
@@ -27,7 +38,19 @@ function makeDrafts(items: SettingItem[]) {
   }, {})
 }
 
+const settingsTabIcons: Record<SettingsTab, ReactNode> = {
+  general: <HomeOutlined />,
+  subscription: <FileTextOutlined />,
+  alerts: <AlertOutlined />,
+  dataCollection: <DatabaseOutlined />,
+  securityAuth: <SafetyCertificateOutlined />,
+  userDefaults: <UserOutlined />,
+  messages: <MailOutlined />,
+  notifications: <NotificationOutlined />,
+}
+
 export default function Settings() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = isSettingsTab(searchParams.get('tab')) ? searchParams.get('tab') : 'general'
   const [drafts, setDrafts] = useState<Drafts>({})
@@ -86,7 +109,14 @@ export default function Settings() {
 
   const items: TabsProps['items'] = SETTINGS_TABS.map((tab) => ({
     key: tab,
-    label: <span data-i18n-key={tabI18nKeys[tab]}>{tabLabels[tab]}</span>,
+    label: (
+      <span className="settings-tab-label" data-i18n-key={tabI18nKeys[tab]}>
+        <span aria-hidden="true" className="settings-tab-icon">
+          {settingsTabIcons[tab]}
+        </span>
+        <span>{t(tabI18nKeys[tab])}</span>
+      </span>
+    ),
     children:
       tab === 'general' ? (
         <GeneralSettings {...sectionProps(tab)} />
@@ -110,21 +140,23 @@ export default function Settings() {
   const error = settingsQuery.error ?? setSetting.error ?? clearSetting.error
 
   return (
-    <div>
+    <div className="settings-page">
       <PageHeader
-        title="Settings"
-        subtitle="Server-driven admin settings grouped by operator workflow."
+        title={t('admin.settings.title')}
+        subtitle={t('admin.settings.subtitle')}
         actions={<RefreshButton loading={settingsQuery.isFetching} onClick={() => settingsQuery.refetch()} />}
       />
-      {error ? <Alert type="error" showIcon message="Settings operation failed" style={{ marginBottom: 16 }} /> : null}
+      {error ? <Alert type="error" showIcon message={t('admin.settings.operationFailed')} style={{ marginBottom: 16 }} /> : null}
       {settingsQuery.isLoading ? (
         <Skeleton active />
       ) : (
         <Tabs
           activeKey={activeTab ?? 'general'}
+          className="settings-floating-tabs"
           destroyOnHidden={false}
           items={items}
           onChange={setActiveTab}
+          tabBarGutter={0}
         />
       )}
     </div>

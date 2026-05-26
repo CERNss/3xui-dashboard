@@ -24,10 +24,10 @@ export function NotFound() {
     <Result
       status="404"
       title="404"
-      subTitle={t('errors.notFound', { defaultValue: 'Page not found' })}
+      subTitle={t('errors.notFound')}
       extra={
         <Button type="primary" onClick={() => navigate(home)}>
-          {t('errors.backHome', { defaultValue: 'Back to home' })}
+          {t('errors.backHome')}
         </Button>
       }
     />

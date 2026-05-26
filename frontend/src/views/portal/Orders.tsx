@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom'
 import type { Order, PaymentMethod, Plan } from '@/api/portal/billing'
 import { portalBillingApi } from '@/api/portal/billing'
 import { AlipayPayModal } from '@/components/portal'
-import { PageHeader, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage } from '@/components/common'
 import { usePortalOrdersList, usePortalPlansList } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { formatError } from '@/utils/format'
@@ -34,15 +34,16 @@ export default function Orders() {
   const error = ordersQuery.error ?? plansQuery.error ?? profileQuery.error
 
   const methodLabels: Record<PaymentMethod, string> = {
-    alipay: t('portal.orders.method.alipay', { defaultValue: 'Alipay' }),
-    balance: t('portal.orders.method.balance', { defaultValue: 'Balance' }),
-    stripe: t('portal.orders.method.stripe', { defaultValue: 'Stripe' }),
+    alipay: t('portal.orders.method.alipay'),
+    balance: t('portal.orders.method.balance'),
+    stripe: t('portal.orders.method.stripe'),
   }
 
-  const statusLabel = (status: Order['status']) =>
-    t(`portal.orders.status.${status === 'payment_pending' ? 'paymentPending' : status === 'payment_failed' ? 'paymentFailed' : status === 'payment_expired' ? 'paymentExpired' : status}` as const, {
-      defaultValue: status,
-    })
+  const statusLabel = (status: Order['status']) => {
+    const key = status === 'payment_pending' ? 'paymentPending' : status === 'payment_failed' ? 'paymentFailed' : status === 'payment_expired' ? 'paymentExpired' : status
+    const label = t(`portal.orders.status.${key}` as const, { defaultValue: '' })
+    return label || t('portal.orders.status.unknown', { status })
+  }
 
   const refreshOrder = async (order: Order) => {
     setRefreshingOrderId(order.id)
@@ -54,7 +55,7 @@ export default function Orders() {
     } catch (err) {
       setFlash({
         type: 'error',
-        text: formatError(err, t('portal.orders.refreshFailed', { defaultValue: 'Failed to refresh order' })),
+        text: formatError(err, t('portal.orders.refreshFailed')),
       })
       return null
     } finally {
@@ -68,7 +69,7 @@ export default function Orders() {
     if (!fresh.payment_target_url) {
       setFlash({
         type: 'error',
-        text: t('portal.orders.paymentLinkMissing', { defaultValue: 'Payment link is no longer available' }),
+        text: t('portal.orders.paymentLinkMissing'),
       })
       return
     }
@@ -84,7 +85,7 @@ export default function Orders() {
   const handleAlipaySuccess = (order: Order) => {
     setFlash({
       type: 'success',
-      text: t('portal.orders.orderPaid', { defaultValue: 'Order #{id} paid', id: order.id }),
+      text: t('portal.orders.orderPaid', { id: order.id }),
     })
     void ordersQuery.refetch()
     window.setTimeout(() => setAlipayOrder(null), 1000)
@@ -92,45 +93,45 @@ export default function Orders() {
 
   const columns: ColumnsType<Order> = [
     {
-      title: t('portal.orders.column.orderId', { defaultValue: 'Order ID' }),
+      title: t('portal.orders.column.orderId'),
       dataIndex: 'id',
       render: (id: number) => <Typography.Text type="secondary">#{id}</Typography.Text>,
     },
     {
-      title: t('portal.orders.column.plan', { defaultValue: 'Plan' }),
+      title: t('portal.orders.column.plan'),
       dataIndex: 'plan_id',
       render: (planId: number) =>
-        planName(plans, planId, t('portal.orders.unknownPlan', { defaultValue: 'Plan #{id}', id: planId })),
+        planName(plans, planId, t('portal.orders.unknownPlan', { id: planId })),
     },
     {
-      title: t('portal.orders.column.amount', { defaultValue: 'Amount' }),
+      title: t('portal.orders.column.amount'),
       dataIndex: 'price_cents',
       align: 'right',
       render: (value: number) => <Typography.Text strong>{formatYuan(value)}</Typography.Text>,
     },
     {
-      title: t('portal.orders.column.method', { defaultValue: 'Method' }),
+      title: t('portal.orders.column.method'),
       dataIndex: 'payment_method',
       render: (method: PaymentMethod) => paymentMethodLabel(method, methodLabels),
     },
     {
-      title: t('portal.orders.column.status', { defaultValue: 'Status' }),
+      title: t('portal.orders.column.status'),
       dataIndex: 'status',
       render: (status: Order['status']) => <OrderStatusTag label={statusLabel(status)} status={status} />,
     },
     {
-      title: t('portal.orders.column.createdAt', { defaultValue: 'Created at' }),
+      title: t('portal.orders.column.createdAt'),
       dataIndex: 'created_at',
       render: (value: string) => new Date(value).toLocaleString(),
     },
     {
-      title: t('portal.orders.column.actions', { defaultValue: 'Actions' }),
+      title: t('portal.orders.column.actions'),
       key: 'actions',
       align: 'right',
       render: (_value, order) =>
         canContinuePayment(order) ? (
           <Button loading={refreshingOrderId === order.id} onClick={() => void continuePayment(order)}>
-            {t('portal.orders.continuePayment', { defaultValue: 'Continue payment' })}
+            {t('portal.orders.continuePayment')}
           </Button>
         ) : null,
     },
@@ -138,63 +139,58 @@ export default function Orders() {
 
   return (
     <div>
-      <PageHeader
-        title={t('portal.orders.title', { defaultValue: 'Orders' })}
-        subtitle={t('portal.orders.subtitle', { defaultValue: 'Purchase history' })}
+      <ConfigListPage
+        title={t('portal.orders.title')}
+        subtitle={t('portal.orders.subtitle')}
         actions={
           profileQuery.data ? (
             <Space direction="vertical" size={0} style={{ textAlign: 'right' }}>
-              <Typography.Text type="secondary">{t('portal.orders.balance', { defaultValue: 'Balance' })}</Typography.Text>
+              <Typography.Text type="secondary">{t('portal.orders.balance')}</Typography.Text>
               <Typography.Text strong>{formatYuan(profileQuery.data.balance_cents)}</Typography.Text>
             </Space>
           ) : null
         }
-      />
-
-      {error ? (
-        <Alert message={formatError(error, t('portal.orders.loadFailed', { defaultValue: 'Load failed' }))} showIcon style={{ marginBottom: 16 }} type="error" />
-      ) : null}
-      {flash ? <Alert message={flash.text} showIcon style={{ marginBottom: 16 }} type={flash.type} /> : null}
-
-      {orders.length > 0 || loading ? (
-        <ResponsiveListTable
-          columns={columns}
-          dataSource={orders}
-          loading={loading}
-          mobileCard={(order) => (
-            <Card size="small" style={{ width: '100%' }}>
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Typography.Text strong>#{order.id}</Typography.Text>
-                  <OrderStatusTag label={statusLabel(order.status)} status={order.status} />
-                </Space>
-                <Typography.Text>
-                  {planName(plans, order.plan_id, t('portal.orders.unknownPlan', { defaultValue: 'Plan #{id}', id: order.plan_id }))}
-                </Typography.Text>
-                <Typography.Text>{formatYuan(order.price_cents)}</Typography.Text>
-                <Typography.Text>{paymentMethodLabel(order.payment_method, methodLabels)}</Typography.Text>
-                {canContinuePayment(order) ? (
-                  <Button loading={refreshingOrderId === order.id} onClick={() => void continuePayment(order)}>
-                    {t('portal.orders.continuePayment', { defaultValue: 'Continue payment' })}
-                  </Button>
-                ) : null}
+        alerts={error || flash ? (
+          <>
+            {error ? <Alert message={formatError(error, t('portal.orders.loadFailed'))} showIcon type="error" /> : null}
+            {flash ? <Alert message={flash.text} showIcon style={{ marginTop: error ? 16 : 0 }} type={flash.type} /> : null}
+          </>
+        ) : null}
+        columns={columns}
+        dataSource={orders}
+        loading={loading}
+        emptyContent={
+          <Card>
+            <Space direction="vertical">
+              <Typography.Text strong>{t('portal.orders.empty')}</Typography.Text>
+              <Typography.Text type="secondary">{t('portal.orders.emptyDescription')}</Typography.Text>
+              <Link to="/portal/plans">{t('portal.orders.seePlans')}</Link>
+            </Space>
+          </Card>
+        }
+        mobileCard={(order) => (
+          <Card size="small" style={{ width: '100%' }}>
+            <Space direction="vertical">
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Typography.Text strong>#{order.id}</Typography.Text>
+                <OrderStatusTag label={statusLabel(order.status)} status={order.status} />
               </Space>
-            </Card>
-          )}
-          pagination={false}
-          rowKey="id"
-        />
-      ) : (
-        <Card>
-          <Space direction="vertical">
-            <Typography.Text strong>{t('portal.orders.empty', { defaultValue: 'No orders yet' })}</Typography.Text>
-            <Typography.Text type="secondary">
-              {t('portal.orders.emptyDescription', { defaultValue: 'Choose a plan to start service' })}
-            </Typography.Text>
-            <Link to="/portal/plans">{t('portal.orders.seePlans', { defaultValue: 'See plans' })}</Link>
-          </Space>
-        </Card>
-      )}
+              <Typography.Text>
+                {planName(plans, order.plan_id, t('portal.orders.unknownPlan', { id: order.plan_id }))}
+              </Typography.Text>
+              <Typography.Text>{formatYuan(order.price_cents)}</Typography.Text>
+              <Typography.Text>{paymentMethodLabel(order.payment_method, methodLabels)}</Typography.Text>
+              {canContinuePayment(order) ? (
+                <Button loading={refreshingOrderId === order.id} onClick={() => void continuePayment(order)}>
+                  {t('portal.orders.continuePayment')}
+                </Button>
+              ) : null}
+            </Space>
+          </Card>
+        )}
+        pagination={false}
+        rowKey="id"
+      />
 
       <AlipayPayModal
         open={Boolean(alipayOrder)}

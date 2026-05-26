@@ -1,5 +1,6 @@
 import { Alert, Button, Drawer, Form, Input, InputNumber, Select, Space, Switch, Tabs } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useCreateInbound, useUpdateInbound } from '@/hooks/queries/admin/inbounds'
 import { AdvancedJsonForm } from './inbound-editor/AdvancedJsonForm'
 import { blankInboundValues, inboundToValues, valuesToInboundBody } from './inbound-editor/model'
@@ -13,16 +14,8 @@ import { VlessProtocol } from './inbound-editor/protocols/VlessProtocol'
 import { VmessProtocol } from './inbound-editor/protocols/VmessProtocol'
 import { WireguardProtocol } from './inbound-editor/protocols/WireguardProtocol'
 
-function ProtocolFields({ protocol }: { protocol: ProtocolName }) {
-  if (protocol === 'vmess') return <VmessProtocol />
-  if (protocol === 'trojan') return <TrojanProtocol />
-  if (protocol === 'shadowsocks') return <ShadowsocksProtocol />
-  if (protocol === 'wireguard') return <WireguardProtocol />
-  if (protocol === 'hysteria') return <HysteriaProtocol />
-  return <VlessProtocol />
-}
-
 export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, onClose, onSaved }: InboundEditorProps) {
+  const { t } = useTranslation()
   const [form] = Form.useForm<InboundEditorValues>()
   const [protocol, setProtocol] = useState<ProtocolName>('vless')
   const createInbound = useCreateInbound()
@@ -51,28 +44,37 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     onClose()
   }
 
+  const protocolFields = () => {
+    if (protocol === 'vmess') return <VmessProtocol />
+    if (protocol === 'trojan') return <TrojanProtocol />
+    if (protocol === 'shadowsocks') return <ShadowsocksProtocol />
+    if (protocol === 'wireguard') return <WireguardProtocol />
+    if (protocol === 'hysteria') return <HysteriaProtocol />
+    return <VlessProtocol />
+  }
+
   const tabs = [
     {
       key: 'basic',
-      label: 'Basic',
+      label: t('admin.inboundEditor.tab.basic'),
       children: (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Space align="start" wrap>
-            <Form.Item name="enable" label="Enabled" valuePropName="checked">
+            <Form.Item name="enable" label={t('admin.inboundEditor.basicEnable')} valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item name="node_id" label="Node" rules={[{ required: true, message: 'Node is required' }]}>
+            <Form.Item name="node_id" label={t('admin.inboundEditor.basicNode')} rules={[{ required: true, message: t('admin.inboundEditor.errSelectNode') }]}>
               <Select
                 disabled={mode === 'edit'}
                 style={{ minWidth: 220 }}
                 options={nodes.map((node) => ({
-                  label: `${node.name}${node.enabled ? '' : ' (disabled)'}`,
+                  label: `${node.name}${node.enabled ? '' : ` ${t('admin.inboundEditor.nodeDisabledSuffix')}`}`,
                   value: node.id,
                   disabled: !node.enabled,
                 }))}
               />
             </Form.Item>
-            <Form.Item name="protocol" label="Protocol" rules={[{ required: true }]}>
+            <Form.Item name="protocol" label={t('admin.inboundEditor.basicProtocol')} rules={[{ required: true }]}>
               <Select
                 style={{ width: 180 }}
                 onChange={(value) => {
@@ -86,68 +88,68 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
               />
             </Form.Item>
           </Space>
-          {protocol === 'wireguard' ? <Alert type="info" showIcon message="WireGuard hides Stream and Sniffing because those settings do not apply." /> : null}
-          {protocol === 'hysteria' ? <Alert type="info" showIcon message="Hysteria uses mandatory TLS and fixed hysteria stream settings." /> : null}
+          {protocol === 'wireguard' ? <Alert type="info" showIcon message={t('admin.inboundEditor.wireguardStreamHidden')} /> : null}
+          {protocol === 'hysteria' ? <Alert type="info" showIcon message={t('admin.inboundEditor.hysteriaStreamFixed')} /> : null}
           <Space align="start" wrap>
-            <Form.Item name="remark" label="Remark" rules={[{ required: true, whitespace: true, message: 'Remark is required' }]}>
-              <Input placeholder="inbound remark" />
+            <Form.Item name="remark" label={t('admin.inboundEditor.basicRemark')} rules={[{ required: true, whitespace: true, message: t('admin.inboundEditor.errRemark') }]}>
+              <Input placeholder={t('admin.inboundEditor.basicRemarkPlaceholder')} />
             </Form.Item>
-            <Form.Item name="listen" label="Listen address">
-              <Input placeholder="0.0.0.0 or empty" />
+            <Form.Item name="listen" label={t('admin.inboundEditor.basicAddress')}>
+              <Input placeholder={t('admin.inboundEditor.basicAddressPlaceholder')} />
             </Form.Item>
             <Form.Item
               name="port"
-              label="Port"
+              label={t('admin.inboundEditor.basicPort')}
               rules={[
-                { required: true, type: 'number', message: 'Port is required' },
-                { type: 'number', min: 1, max: 65535, message: 'Port must be between 1 and 65535' },
+                { required: true, type: 'number', message: t('admin.inboundEditor.errPortRequired') },
+                { type: 'number', min: 1, max: 65535, message: t('admin.inboundEditor.errPort') },
               ]}
             >
               <InputNumber precision={0} />
             </Form.Item>
-            <Form.Item name="total_gb" label="Traffic GB">
+            <Form.Item name="total_gb" label={t('admin.inboundEditor.basicTotalGB')}>
               <InputNumber min={0} step={0.01} />
             </Form.Item>
-            <Form.Item name="trafficReset" label="Traffic reset">
+            <Form.Item name="trafficReset" label={t('admin.inboundEditor.basicTrafficReset')}>
               <Select
                 style={{ width: 160 }}
-                options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({ label: value, value }))}
+                options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({ label: t(`admin.inboundEditor.trafficReset.${value}`), value }))}
               />
             </Form.Item>
-            <Form.Item name="expiryTime" label="Expiry">
+            <Form.Item name="expiryTime" label={t('admin.inboundEditor.basicExpiry')}>
               <Input type="datetime-local" />
             </Form.Item>
           </Space>
         </Space>
       ),
     },
-    { key: 'protocol', label: 'Protocol', children: <ProtocolFields protocol={protocol} /> },
+    { key: 'protocol', label: t('admin.inboundEditor.tab.protocol'), children: protocolFields() },
     ...(protocol === 'wireguard' || protocol === 'hysteria'
       ? []
       : [
-          { key: 'stream', label: 'Stream', children: <StreamSettingsForm /> },
-          { key: 'sniffing', label: 'Sniffing', children: <SniffingForm /> },
+          { key: 'stream', label: t('admin.inboundEditor.tab.stream'), children: <StreamSettingsForm /> },
+          { key: 'sniffing', label: t('admin.inboundEditor.tab.sniffing'), children: <SniffingForm /> },
         ]),
-    { key: 'advanced', label: 'Advanced', children: <AdvancedJsonForm /> },
+    { key: 'advanced', label: t('admin.inboundEditor.tab.advanced'), children: <AdvancedJsonForm /> },
   ]
 
   return (
     <Drawer
-      title={mode === 'create' ? 'New Inbound' : `Edit inbound ${tag}`}
+      title={mode === 'create' ? t('admin.inboundEditor.createTitle') : t('admin.inboundEditor.editTitle', { tag })}
       open={open}
       width={920}
       onClose={onClose}
       destroyOnClose
       extra={
         <Space>
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={onClose}>{t('admin.inboundEditor.close')}</Button>
           <Button type="primary" loading={busy} onClick={save}>
-            {mode === 'create' ? 'Create' : 'Save'}
+            {mode === 'create' ? t('admin.inboundEditor.submitCreate') : t('admin.inboundEditor.submitSave')}
           </Button>
         </Space>
       }
     >
-      {error ? <Alert type="error" showIcon message="Inbound operation failed" style={{ marginBottom: 16 }} /> : null}
+      {error ? <Alert type="error" showIcon message={t('admin.inboundEditor.operationFailed')} style={{ marginBottom: 16 }} /> : null}
       <Form
         form={form}
         layout="vertical"

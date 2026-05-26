@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { settingsApi } from '@/api/admin/settings'
+import { BRANDING_QUERY_KEY } from '@/hooks/queries/branding'
 import { settingsQueryOptions } from '@/lib/queryClient'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
 import { queryKeys } from '../keys'
@@ -21,7 +22,10 @@ export function useSetSetting() {
   const handleError = useMutationErrorHandler()
   return useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.set(key, value),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.root })
+      void queryClient.invalidateQueries({ queryKey: BRANDING_QUERY_KEY })
+    },
     onError: (error) => handleError(error),
   })
 }
@@ -31,7 +35,10 @@ export function useClearSetting() {
   const handleError = useMutationErrorHandler()
   return useMutation({
     mutationFn: (key: string) => settingsApi.clear(key),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.root })
+      void queryClient.invalidateQueries({ queryKey: BRANDING_QUERY_KEY })
+    },
     onError: (error) => handleError(error),
   })
 }
@@ -41,7 +48,10 @@ export function useUploadBrandIcon() {
   const handleError = useMutationErrorHandler()
   return useMutation({
     mutationFn: (file: File) => settingsApi.uploadBrandIcon(file),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.root })
+      void queryClient.invalidateQueries({ queryKey: BRANDING_QUERY_KEY })
+    },
     onError: (error) => handleError(error),
   })
 }

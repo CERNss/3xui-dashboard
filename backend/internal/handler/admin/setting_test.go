@@ -144,8 +144,20 @@ func TestValidateBrandSettings(t *testing.T) {
 	if err := validate(model.SettingBrandFooter, "© 2026 Acme Network"); err != nil {
 		t.Fatalf("brand footer rejected: %v", err)
 	}
+	if err := validate(model.SettingBrandDocsURL, "https://docs.example.com"); err != nil {
+		t.Fatalf("brand docs URL rejected: %v", err)
+	}
+	if err := validate(model.SettingBrandHomepageContent, strings.Repeat("x", 4000)); err != nil {
+		t.Fatalf("homepage content at limit rejected: %v", err)
+	}
 	if err := validate(model.SettingBrandTitle, strings.Repeat("x", 81)); err == nil {
 		t.Fatal("overlong brand title should be rejected")
+	}
+	if err := validate(model.SettingBrandDocsURL, "/docs"); err == nil {
+		t.Fatal("relative brand docs URL should be rejected")
+	}
+	if err := validate(model.SettingBrandHomepageContent, strings.Repeat("x", 4001)); err == nil {
+		t.Fatal("overlong homepage content should be rejected")
 	}
 }
 

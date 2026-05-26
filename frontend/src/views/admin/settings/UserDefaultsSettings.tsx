@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { SettingsSection } from './SettingsSection'
 import type { SettingsSectionProps } from './types'
 
 export function UserDefaultsSettings(props: SettingsSectionProps) {
-  return <SettingsSection {...props} title="User defaults" description="Initial balance and starter plan defaults for new users." />
+  const { t } = useTranslation()
+  return <SettingsSection {...props} title={t('admin.settings.userDefaultsTitle')} description={t('admin.settings.userDefaultsDesc')} />
 }

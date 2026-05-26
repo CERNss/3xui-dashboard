@@ -36,8 +36,8 @@ export function formatBytes(value: number): string {
   return `${unit === 0 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`
 }
 
-export function formatLimit(value: number) {
-  return value === 0 ? 'Unlimited' : formatBytes(value)
+export function formatLimit(value: number, unlimitedLabel = 'Unlimited') {
+  return value === 0 ? unlimitedLabel : formatBytes(value)
 }
 
 export function protocolKey(protocol: string): ProtocolFilter | null {

@@ -1,5 +1,6 @@
 import { Alert, Card, Col, Row, Skeleton, Space, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { NodeMetricPoint } from '@/api/admin/nodes'
 import { nodesApi } from '@/api/admin/nodes'
 import { BarsPanel, DonutGauge, DotsGrid, TrendLine } from '@/components/charts'
@@ -26,11 +27,6 @@ function formatRatio(value: number, total: number) {
   return `${value}/${total}`
 }
 
-function lastRefreshText(date: Date | null) {
-  if (!date) return 'Waiting for refresh'
-  return `Last refresh ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-}
-
 function MetricCard({ card }: { card: MonitorCard }) {
   return (
     <Card size="small" style={{ borderColor: cardBorder(card.tone), minHeight: 112 }}>
@@ -52,6 +48,7 @@ function MetricCard({ card }: { card: MonitorCard }) {
 }
 
 export default function OpsMonitor() {
+  const { t } = useTranslation()
   const nodesQuery = useNodesList()
   const fleetQuery = useInboundsFleet()
   const [metricSeries, setMetricSeries] = useState<Record<number, NodeMetricPoint[]>>({})
@@ -98,7 +95,7 @@ export default function OpsMonitor() {
           }
         })
         setMetricSeries(next)
-        setMetricError(failures > 0 ? `${failures} node metric request failed; healthy series are still shown.` : null)
+        setMetricError(failures > 0 ? t('admin.opsMonitor.metricsPartialFailed', { n: failures }) : null)
       })
       .finally(() => {
         if (!cancelled) setMetricsLoading(false)
@@ -107,7 +104,7 @@ export default function OpsMonitor() {
     return () => {
       cancelled = true
     }
-  }, [nodes, nodesQuery.isLoading])
+  }, [nodes, nodesQuery.isLoading, t])
 
   const enabledNodes = useMemo(() => nodes.filter((node) => node.enabled), [nodes])
   const onlineNodes = enabledNodes.filter((node) => node.status === 'online')
@@ -117,7 +114,15 @@ export default function OpsMonitor() {
   const attentionCount = offlineNodes.length + unknownNodes.length + disabledNodes.length
   const healthScore = enabledNodes.length === 0 ? 0 : Math.round((onlineNodes.length / enabledNodes.length) * 100)
   const healthTone: Tone = enabledNodes.length === 0 ? 'muted' : attentionCount > 0 ? 'warn' : 'live'
-  const healthLabel = enabledNodes.length === 0 ? 'No enabled nodes' : attentionCount > 0 ? 'Needs attention' : 'Healthy'
+  const healthLabel =
+    enabledNodes.length === 0
+      ? t('admin.opsMonitor.health.empty')
+      : attentionCount > 0
+        ? t('admin.opsMonitor.health.warning')
+        : t('admin.opsMonitor.health.healthy')
+  const businessUnavailable = t('admin.opsMonitor.metric.businessUnavailable')
+  const infrastructureUnavailable = t('admin.opsMonitor.metric.infrastructureUnavailable')
+  const nodeProbeAverage = t('admin.opsMonitor.metric.nodeProbeAverage')
 
   const inbounds = fleet.inbounds.map((row) => row.inbound)
   const activeInbounds = inbounds.filter((row) => row.enable).length
@@ -136,43 +141,56 @@ export default function OpsMonitor() {
     .slice(0, 6)
 
   const realtimeCards: MonitorCard[] = [
-    { label: 'QPS', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
-    { label: 'TPS', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
-    { label: 'Requests', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
-    { label: 'Tokens', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.qps'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.tps'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.requests'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.tokens'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
     {
-      label: 'Active inbounds',
+      label: t('admin.opsMonitor.metric.activeInbounds'),
       value: formatRatio(activeInbounds, inbounds.length),
-      hint: 'From fleet inventory.',
+      hint: t('admin.opsMonitor.metric.fromFleet'),
       tone: activeInbounds > 0 ? 'live' : 'muted',
     },
     {
-      label: 'Clients',
+      label: t('admin.opsMonitor.metric.clients'),
       value: enabledClientCount.toLocaleString(),
-      hint: `${clientCount.toLocaleString()} total clients.`,
+      hint: t('admin.opsMonitor.metric.clientsHint', { total: clientCount.toLocaleString() }),
       tone: enabledClientCount > 0 ? 'live' : 'muted',
     },
   ]
   const qualityCards: MonitorCard[] = [
-    { label: 'SLA', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
-    { label: 'Request errors', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
-    { label: 'Latency P99', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
-    { label: 'TTFT P99', value: 'Unavailable', hint: 'Business telemetry is not connected.', tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.sla'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.requestErrors'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.latencyP99'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.ttftP99'), value: t('admin.opsMonitor.unavailable'), hint: businessUnavailable, tone: 'muted' },
     {
-      label: 'Upstream errors',
+      label: t('admin.opsMonitor.metric.upstreamErrors'),
       value: nodeErrorCount.toLocaleString(),
-      hint: 'Fleet node errors.',
+      hint: t('admin.opsMonitor.metric.nodeErrorsHint'),
       tone: nodeErrorCount > 0 ? 'warn' : 'live',
     },
   ]
   const infraCards: MonitorCard[] = [
-    { label: 'CPU', value: formatPercent(cpuAvg), hint: 'Average node probe.', tone: cpuAvg === null ? 'muted' : cpuAvg >= 85 ? 'warn' : 'live' },
-    { label: 'Memory', value: formatPercent(memAvg), hint: 'Average node probe.', tone: memAvg === null ? 'muted' : memAvg >= 85 ? 'warn' : 'live' },
-    { label: 'DB', value: 'Unavailable', hint: 'Infrastructure telemetry is not connected.', tone: 'muted' },
-    { label: 'Redis', value: 'Unavailable', hint: 'Infrastructure telemetry is not connected.', tone: 'muted' },
-    { label: 'Queue', value: 'Unavailable', hint: 'Infrastructure telemetry is not connected.', tone: 'muted' },
-    { label: 'Background tasks', value: 'Unavailable', hint: 'Infrastructure telemetry is not connected.', tone: 'muted' },
+    {
+      label: t('admin.opsMonitor.metric.cpu'),
+      value: formatPercent(cpuAvg, t('admin.opsMonitor.unavailable')),
+      hint: nodeProbeAverage,
+      tone: cpuAvg === null ? 'muted' : cpuAvg >= 85 ? 'warn' : 'live',
+    },
+    {
+      label: t('admin.opsMonitor.metric.memory'),
+      value: formatPercent(memAvg, t('admin.opsMonitor.unavailable')),
+      hint: nodeProbeAverage,
+      tone: memAvg === null ? 'muted' : memAvg >= 85 ? 'warn' : 'live',
+    },
+    { label: t('admin.opsMonitor.metric.db'), value: t('admin.opsMonitor.unavailable'), hint: infrastructureUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.redis'), value: t('admin.opsMonitor.unavailable'), hint: infrastructureUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.queue'), value: t('admin.opsMonitor.unavailable'), hint: infrastructureUnavailable, tone: 'muted' },
+    { label: t('admin.opsMonitor.metric.backgroundTasks'), value: t('admin.opsMonitor.unavailable'), hint: infrastructureUnavailable, tone: 'muted' },
   ]
+  const lastRefreshText = lastRefresh
+    ? t('admin.opsMonitor.lastRefresh', { time: lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+    : t('admin.opsMonitor.waitingRefresh')
 
   if (loading) {
     return (
@@ -186,28 +204,34 @@ export default function OpsMonitor() {
 
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }}>
-      {error ? <Alert type="error" showIcon message="Ops monitor failed to load" /> : null}
+      {error ? <Alert type="error" showIcon message={t('admin.opsMonitor.loadFailed')} /> : null}
       <Space wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
         <Tag color={healthTone === 'warn' ? 'gold' : healthTone === 'live' ? 'green' : 'default'}>{healthLabel}</Tag>
-        <Tag>{lastRefreshText(lastRefresh)}</Tag>
+        <Tag>{lastRefreshText}</Tag>
       </Space>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={8}>
-          <Card title="Fleet health" extra={formatRatio(onlineNodes.length, enabledNodes.length)} style={{ height: '100%' }}>
-            <DonutGauge value={healthScore} label="Health score" detail={healthLabel} tone={healthTone} ariaLabel="Fleet health score" />
+          <Card title={t('admin.opsMonitor.health.title')} extra={formatRatio(onlineNodes.length, enabledNodes.length)} style={{ height: '100%' }}>
+            <DonutGauge
+              value={healthScore}
+              label={t('admin.opsMonitor.health.score')}
+              detail={healthLabel}
+              tone={healthTone}
+              ariaLabel={t('admin.opsMonitor.health.title')}
+            />
             <Row gutter={8} style={{ textAlign: 'center' }}>
-              <Col span={6}><Typography.Text strong>{onlineNodes.length}</Typography.Text><br /><Typography.Text type="secondary">Online</Typography.Text></Col>
-              <Col span={6}><Typography.Text strong>{offlineNodes.length}</Typography.Text><br /><Typography.Text type="secondary">Offline</Typography.Text></Col>
-              <Col span={6}><Typography.Text strong>{unknownNodes.length}</Typography.Text><br /><Typography.Text type="secondary">Unknown</Typography.Text></Col>
-              <Col span={6}><Typography.Text strong>{disabledNodes.length}</Typography.Text><br /><Typography.Text type="secondary">Disabled</Typography.Text></Col>
+              <Col span={6}><Typography.Text strong>{onlineNodes.length}</Typography.Text><br /><Typography.Text type="secondary">{t('admin.opsMonitor.node.online')}</Typography.Text></Col>
+              <Col span={6}><Typography.Text strong>{offlineNodes.length}</Typography.Text><br /><Typography.Text type="secondary">{t('admin.opsMonitor.node.offline')}</Typography.Text></Col>
+              <Col span={6}><Typography.Text strong>{unknownNodes.length}</Typography.Text><br /><Typography.Text type="secondary">{t('admin.opsMonitor.node.unknown')}</Typography.Text></Col>
+              <Col span={6}><Typography.Text strong>{disabledNodes.length}</Typography.Text><br /><Typography.Text type="secondary">{t('admin.opsMonitor.node.disabled')}</Typography.Text></Col>
             </Row>
           </Card>
         </Col>
         <Col xs={24} xl={16}>
-          <Card title="Realtime">
+          <Card title={t('admin.opsMonitor.realtime')}>
             <Row gutter={[12, 12]}>{realtimeCards.map((card) => <Col key={card.label} xs={24} sm={12} lg={8}><MetricCard card={card} /></Col>)}</Row>
-            <Typography.Title level={5}>Quality</Typography.Title>
+            <Typography.Title level={5}>{t('admin.opsMonitor.quality')}</Typography.Title>
             <Row gutter={[12, 12]}>{qualityCards.map((card) => <Col key={card.label} xs={24} sm={12} xl={8}><MetricCard card={card} /></Col>)}</Row>
           </Card>
         </Col>
@@ -218,12 +242,12 @@ export default function OpsMonitor() {
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
           <Card
-            title="Resource trend"
-            extra={metricsLoading ? <Tag>Loading metrics</Tag> : <Space><Tag color="green">CPU</Tag><Tag color="blue">Memory</Tag></Space>}
+            title={t('admin.opsMonitor.resourceTrend')}
+            extra={metricsLoading ? <Tag>{t('common.loading')}</Tag> : <Space><Tag color="green">{t('admin.opsMonitor.metric.cpu')}</Tag><Tag color="blue">{t('admin.opsMonitor.metric.memory')}</Tag></Space>}
           >
             {trendPoints.length >= 2 ? (
               <TrendLine
-                ariaLabel="Resource trend"
+                ariaLabel={t('admin.opsMonitor.resourceTrend')}
                 height={176}
                 series={[
                   { points: trendPoints.map((point) => point.mem), color: '#0ea5e9', strokeWidth: 1.6 },
@@ -231,16 +255,16 @@ export default function OpsMonitor() {
                 ]}
               />
             ) : (
-              <EmptyText title="No trend data" text="Enabled nodes have not reported enough metric points yet." />
+              <EmptyText title={t('admin.opsMonitor.noTrend')} text={t('admin.opsMonitor.noTrendHint')} />
             )}
             <Row gutter={12}>
-              <Col span={12}><MetricCard card={{ label: 'CPU', value: formatPercent(cpuAvg), hint: 'Average node probe.', tone: 'live' }} /></Col>
-              <Col span={12}><MetricCard card={{ label: 'Memory', value: formatPercent(memAvg), hint: 'Average node probe.', tone: 'live' }} /></Col>
+              <Col span={12}><MetricCard card={{ label: t('admin.opsMonitor.metric.cpu'), value: formatPercent(cpuAvg, t('admin.opsMonitor.unavailable')), hint: nodeProbeAverage, tone: 'live' }} /></Col>
+              <Col span={12}><MetricCard card={{ label: t('admin.opsMonitor.metric.memory'), value: formatPercent(memAvg, t('admin.opsMonitor.unavailable')), hint: nodeProbeAverage, tone: 'live' }} /></Col>
             </Row>
           </Card>
         </Col>
         <Col xs={24} xl={10}>
-          <Card title="Infrastructure">
+          <Card title={t('admin.opsMonitor.infrastructure')}>
             <Row gutter={[12, 12]}>{infraCards.map((card) => <Col key={card.label} xs={24} sm={12}><MetricCard card={card} /></Col>)}</Row>
           </Card>
         </Col>
@@ -248,7 +272,7 @@ export default function OpsMonitor() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
-          <Card title="Node load">
+          <Card title={t('admin.opsMonitor.nodeLoad')}>
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               {loadedNodes.map((node) => (
                 <Card key={node.id} size="small">
@@ -266,18 +290,18 @@ export default function OpsMonitor() {
                   </Space>
                 </Card>
               ))}
-              {loadedNodes.length === 0 ? <EmptyText title="No node metrics" text="No enabled node has probe data yet." /> : null}
+              {loadedNodes.length === 0 ? <EmptyText title={t('admin.opsMonitor.noNodeMetrics')} text={t('admin.opsMonitor.noTrendHint')} /> : null}
             </Space>
           </Card>
         </Col>
         <Col xs={24} xl={12}>
-          <Card title="Node errors">
+          <Card title={t('admin.opsMonitor.nodeErrors')}>
             {nodeErrorCount === 0 ? (
-              <EmptyText title="No node errors" text="Fleet inventory returned without node errors." />
+              <EmptyText title={t('admin.opsMonitor.noNodeErrors')} text={t('admin.opsMonitor.noNodeErrorsHint')} />
             ) : (
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 {Object.entries(fleet.node_errors ?? {}).map(([id, text]) => (
-                  <Alert key={id} type="warning" showIcon message={`Node ${id}`} description={text} />
+                  <Alert key={id} type="warning" showIcon message={t('admin.opsMonitor.nodeId', { id })} description={text} />
                 ))}
               </Space>
             )}
@@ -285,14 +309,14 @@ export default function OpsMonitor() {
         </Col>
       </Row>
 
-      <Card title="Business telemetry" extra={<Tag>Not connected</Tag>}>
+      <Card title={t('admin.opsMonitor.businessTelemetry')} extra={<Tag>{t('admin.opsMonitor.notConnected')}</Tag>}>
         <Row gutter={[12, 12]}>
-          <AnalysisPanel title="Concurrency queue" kind="bars" />
-          <AnalysisPanel title="Account switch" kind="line" />
-          <AnalysisPanel title="Throughput" kind="line" />
-          <AnalysisPanel title="Duration distribution" kind="stack" />
-          <AnalysisPanel title="Error distribution" kind="dots" />
-          <AnalysisPanel title="Error trend" kind="line" />
+          <AnalysisPanel title={t('admin.opsMonitor.analysis.concurrencyQueue')} kind="bars" />
+          <AnalysisPanel title={t('admin.opsMonitor.analysis.accountSwitch')} kind="line" />
+          <AnalysisPanel title={t('admin.opsMonitor.analysis.throughput')} kind="line" />
+          <AnalysisPanel title={t('admin.opsMonitor.analysis.durationDistribution')} kind="stack" />
+          <AnalysisPanel title={t('admin.opsMonitor.analysis.errorDistribution')} kind="dots" />
+          <AnalysisPanel title={t('admin.opsMonitor.analysis.errorTrend')} kind="line" />
         </Row>
       </Card>
     </Space>
@@ -310,23 +334,24 @@ function EmptyText({ title, text }: { title: string; text: string }) {
 }
 
 function AnalysisPanel({ title, kind }: { title: string; kind: 'bars' | 'line' | 'stack' | 'dots' }) {
+  const { t } = useTranslation()
   return (
     <Col xs={24} md={12} xl={8}>
       <Card size="small" title={title} extra={<span aria-hidden style={{ background: '#94a3b8', borderRadius: 999, display: 'block', height: 8, width: 8 }} />}>
-        <Typography.Text type="secondary">Business telemetry is not connected.</Typography.Text>
+        <Typography.Text type="secondary">{t('admin.opsMonitor.metric.businessUnavailable')}</Typography.Text>
         <div style={{ marginTop: 16 }}>
-          {kind === 'bars' ? <BarsPanel ariaLabel={`${title} bars`} values={[28, 44, 22, 52, 36]} /> : null}
-          {kind === 'line' ? <TrendLine ariaLabel={`${title} line`} height={64} showGrid={false} series={[{ points: [25, 38, 30, 52, 46, 68, 60], color: '#cbd5e1' }]} /> : null}
+          {kind === 'bars' ? <BarsPanel ariaLabel={title} values={[28, 44, 22, 52, 36]} /> : null}
+          {kind === 'line' ? <TrendLine ariaLabel={title} height={64} showGrid={false} series={[{ points: [25, 38, 30, 52, 46, 68, 60], color: '#cbd5e1' }]} /> : null}
           {kind === 'stack' ? (
-            <svg aria-label={`${title} stack`} role="img" viewBox="0 0 120 48" style={{ height: 64, width: '100%' }}>
+            <svg aria-label={title} role="img" viewBox="0 0 120 48" style={{ height: 64, width: '100%' }}>
               <rect x="4" y="18" width="56" height="12" rx="6" fill="#cbd5e1" />
               <rect x="62" y="18" width="36" height="12" rx="6" fill="#cbd5e1" opacity="0.75" />
               <rect x="100" y="18" width="16" height="12" rx="6" fill="#cbd5e1" opacity="0.5" />
             </svg>
           ) : null}
-          {kind === 'dots' ? <DotsGrid ariaLabel={`${title} dots`} values={[12, 8, 16, 10, 14, 8]} /> : null}
+          {kind === 'dots' ? <DotsGrid ariaLabel={title} values={[12, 8, 16, 10, 14, 8]} /> : null}
         </div>
-        <Typography.Text type="secondary">Not connected</Typography.Text>
+        <Typography.Text type="secondary">{t('admin.opsMonitor.notConnected')}</Typography.Text>
       </Card>
     </Col>
   )

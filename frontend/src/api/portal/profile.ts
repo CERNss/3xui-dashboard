@@ -1,4 +1,9 @@
 import { portalClient } from '../client/portal'
+import type {
+  AccountEmailVerificationPurpose,
+  EmailVerificationConfirmResponse,
+  EmailVerificationStartResponse,
+} from './emailVerification'
 
 export interface UserProfile {
   id: number
@@ -10,22 +15,6 @@ export interface UserProfile {
   balance_cents: number
   sub_id: string
   created_at: string
-}
-
-export type EmailVerificationPurpose = 'change_email' | 'oidc_create_account'
-
-export interface EmailVerificationStartResponse {
-  status: string
-  expires_at?: string
-  resend_at?: string
-  cooldown_seconds?: number
-  resend_after_seconds?: number
-}
-
-export interface EmailVerificationConfirmResponse {
-  status: string
-  verification_token: string
-  expires_at?: string
 }
 
 export interface EmailLoginMethod {
@@ -64,11 +53,11 @@ export const portalProfileApi = {
     portalClient.get<LoginMethodsResponse>('/login-methods').then((r) => r.data),
   updateProfile: (input: { display_name?: string | null }) =>
     portalClient.patch<UserProfile>('/profile', input).then((r) => r.data),
-  startEmailVerification: (input: { email: string; purpose: EmailVerificationPurpose }) =>
+  startEmailVerification: (input: { email: string; purpose: AccountEmailVerificationPurpose }) =>
     portalClient
       .post<EmailVerificationStartResponse>('/email-verification/start', input)
       .then((r) => r.data),
-  confirmEmailVerification: (input: { email: string; code: string; purpose: EmailVerificationPurpose }) =>
+  confirmEmailVerification: (input: { email: string; code: string; purpose: AccountEmailVerificationPurpose }) =>
     portalClient
       .post<EmailVerificationConfirmResponse>('/email-verification/confirm', input)
       .then((r) => r.data),
