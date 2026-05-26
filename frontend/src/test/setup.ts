@@ -1,15 +1,42 @@
-import { config } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
+import '@testing-library/jest-dom/vitest'
 
-import zh from '@/i18n/locales/zh'
-import en from '@/i18n/locales/en'
+if (!window.localStorage) {
+  const storage = new Map<string, string>()
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      clear: () => storage.clear(),
+      getItem: (key: string) => storage.get(key) ?? null,
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      removeItem: (key: string) => storage.delete(key),
+      setItem: (key: string, value: string) => storage.set(key, value),
+      get length() {
+        return storage.size
+      },
+    },
+  })
+}
 
-const i18n = createI18n({
-  legacy: false,
-  globalInjection: true,
-  locale: 'zh',
-  fallbackLocale: 'en',
-  messages: { zh, en },
-})
+if (!window.matchMedia) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  })
+}
 
-config.global.plugins = [...(config.global.plugins ?? []), i18n]
+const getComputedStyle = window.getComputedStyle.bind(window)
+window.getComputedStyle = (element: Element, pseudoElt?: string | null): CSSStyleDeclaration => {
+  if (pseudoElt) {
+    return getComputedStyle(element)
+  }
+  return getComputedStyle(element, pseudoElt)
+}

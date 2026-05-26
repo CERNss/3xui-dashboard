@@ -1,42 +1,73 @@
-// Tiny theme store. Reads `theme` from localStorage on init, exposes a toggle.
-// Default = 'light' (per user preference). Persisted across reloads.
+import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { THEME_STORAGE_KEY, readString, writeString } from './storage'
 
-import { defineStore } from 'pinia'
+export type ThemeMode = 'light' | 'dark' | 'system'
+export type ResolvedTheme = 'light' | 'dark'
 
-type Theme = 'light' | 'dark'
+interface ThemeState {
+  mode: ThemeMode
+  resolvedTheme: ResolvedTheme
+  set: (mode: ThemeMode) => void
+  setMode: (mode: ThemeMode) => void
+  toggle: () => void
+  init: () => void
+}
 
-const STORAGE_KEY = 'cp.theme'
-
-function readInitial(): Theme {
+function systemTheme(): ResolvedTheme {
   if (typeof window === 'undefined') return 'light'
-  const stored = window.localStorage.getItem(STORAGE_KEY)
-  if (stored === 'dark' || stored === 'light') return stored
-  // No user override — follow the OS preference. Re-checked on every fresh
-  // page load; once the user toggles inside the app, the choice is persisted
-  // to localStorage and wins on subsequent loads.
-  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
-  return 'light'
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-function applyToHtml(theme: Theme) {
-  if (typeof document === 'undefined') return
-  document.documentElement.classList.toggle('dark', theme === 'dark')
+function readInitialMode(): ThemeMode {
+  const stored = readString(THEME_STORAGE_KEY)
+  if (stored === 'dark' || stored === 'light' || stored === 'system') return stored
+  return 'system'
 }
 
-export const useThemeStore = defineStore('theme', {
-  state: () => ({ theme: readInitial() as Theme }),
-  actions: {
-    set(t: Theme) {
-      this.theme = t
-      try { window.localStorage.setItem(STORAGE_KEY, t) } catch { /* ignore */ }
-      applyToHtml(t)
-    },
-    toggle() {
-      this.set(this.theme === 'dark' ? 'light' : 'dark')
-    },
-    /** Call once on app bootstrap so the saved theme is applied before first paint. */
-    init() {
-      applyToHtml(this.theme)
-    },
-  },
-})
+function resolveTheme(mode: ThemeMode): ResolvedTheme {
+  return mode === 'system' ? systemTheme() : mode
+}
+
+function applyToHtml(mode: ThemeMode): ResolvedTheme {
+  const resolvedTheme = resolveTheme(mode)
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark')
+  }
+  return resolvedTheme
+}
+
+const initialMode = readInitialMode()
+const initialResolvedTheme = resolveTheme(initialMode)
+
+export const useThemeStore = create<ThemeState>()(
+  persist(
+    (set, get) => ({
+      mode: initialMode,
+      resolvedTheme: initialResolvedTheme,
+      set: (mode) => get().setMode(mode),
+      setMode: (mode) => {
+        writeString(THEME_STORAGE_KEY, mode)
+        set({ mode, resolvedTheme: applyToHtml(mode) })
+      },
+      toggle: () => {
+        get().setMode(get().resolvedTheme === 'dark' ? 'light' : 'dark')
+      },
+      init: () => {
+        const { mode } = get()
+        set({ resolvedTheme: applyToHtml(mode) })
+      }
+    }),
+    {
+      name: THEME_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
+      partialize: ({ mode }) => ({ mode }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        state.resolvedTheme = applyToHtml(state.mode)
+      }
+    }
+  )
+)
+
+export type { ThemeState }

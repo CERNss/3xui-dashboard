@@ -1,45 +1,61 @@
-import { defineStore } from 'pinia'
+import { create } from 'zustand'
+import { APP_THEME_STORAGE_KEY, LOCALE_STORAGE_KEY, readString, writeString } from './storage'
 
 export type Locale = 'en' | 'zh'
-type Theme = 'light' | 'dark'
+export type LocaleValue = 'en-US' | 'zh-CN'
+export type AppTheme = 'light' | 'dark'
 
-const LOCALE_KEY = 'dashboard.locale'
-const THEME_KEY = 'dashboard.theme'
-
-interface State {
-  locale: Locale
-  theme: Theme
+interface AppState {
+  locale: LocaleValue
+  theme: AppTheme
+  setLocale: (locale: LocaleValue) => void
+  toggleLocale: () => void
+  setTheme: (theme: AppTheme) => void
 }
 
-function detectLocale(): Locale {
-  const stored = localStorage.getItem(LOCALE_KEY)
-  if (stored === 'en' || stored === 'zh') return stored
-  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+function normalizeLocale(locale: Locale | LocaleValue): LocaleValue {
+  return locale === 'zh' || locale === 'zh-CN' ? 'zh-CN' : 'en-US'
 }
 
-function detectTheme(): Theme {
-  const stored = localStorage.getItem(THEME_KEY)
-  if (stored === 'light' || stored === 'dark') return stored
-  return 'light'
+function persistLocale(locale: LocaleValue): void {
+  writeString(LOCALE_STORAGE_KEY, locale === 'zh-CN' ? 'zh' : 'en')
 }
 
-export const useAppStore = defineStore('app', {
-  state: (): State => ({
-    locale: detectLocale(),
-    theme: detectTheme(),
-  }),
-  actions: {
-    setLocale(loc: Locale) {
-      this.locale = loc
-      localStorage.setItem(LOCALE_KEY, loc)
-    },
-    toggleLocale() {
-      this.setLocale(this.locale === 'zh' ? 'en' : 'zh')
-    },
-    setTheme(theme: Theme) {
-      this.theme = theme
-      localStorage.setItem(THEME_KEY, theme)
-      document.documentElement.classList.toggle('dark', theme === 'dark')
-    },
+function detectLocale(): LocaleValue {
+  const stored = readString(LOCALE_STORAGE_KEY)
+  if (stored === 'en' || stored === 'zh' || stored === 'en-US' || stored === 'zh-CN') {
+    return normalizeLocale(stored)
+  }
+
+  if (typeof navigator === 'undefined') return 'en-US'
+  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US'
+}
+
+function detectTheme(): AppTheme {
+  const stored = readString(APP_THEME_STORAGE_KEY)
+  return stored === 'dark' || stored === 'light' ? stored : 'light'
+}
+
+function applyTheme(theme: AppTheme): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.toggle('dark', theme === 'dark')
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
+  locale: detectLocale(),
+  theme: detectTheme(),
+  setLocale: (locale) => {
+    persistLocale(locale)
+    set({ locale })
   },
-})
+  toggleLocale: () => {
+    get().setLocale(get().locale === 'zh-CN' ? 'en-US' : 'zh-CN')
+  },
+  setTheme: (theme) => {
+    writeString(APP_THEME_STORAGE_KEY, theme)
+    applyTheme(theme)
+    set({ theme })
+  }
+}))
+
+export type { AppState }

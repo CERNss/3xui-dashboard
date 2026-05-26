@@ -1,4 +1,4 @@
-export default {
+export const zh = {
   a11y: {
     closeNav: '关闭导航',
     openNav: '打开导航',

@@ -1,41 +1,47 @@
-import { createI18n } from 'vue-i18n'
-import { watch, type WatchStopHandle } from 'vue'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
 
-import en from './locales/en'
-import zh from './locales/zh'
+import { en } from './locales/en'
+import { zh } from './locales/zh'
 
-import { useAppStore } from '@/stores/app'
+const LOCALE_KEY = 'dashboard.locale'
 
-// `pinia` is not yet active when this module is evaluated, so read
-// the locale preference directly from localStorage with the same logic
-// the store uses; the app store will pick the same value on mount.
-function initialLocale(): 'en' | 'zh' {
-  const stored = localStorage.getItem('dashboard.locale')
-  if (stored === 'en' || stored === 'zh') return stored
-  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+export type Locale = 'en' | 'zh'
+
+function initialLocale(): Locale {
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem(LOCALE_KEY)
+    if (stored === 'en' || stored === 'zh') return stored
+
+    return window.navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  }
+
+  return 'en'
 }
 
-export const i18n = createI18n({
-  legacy: false,
-  globalInjection: true,
-  locale: initialLocale(),
-  fallbackLocale: 'en',
-  messages: { en, zh },
-})
-
-export type MessageSchema = typeof en
-
-// Keep the i18n locale in lockstep with the app store.
-let stopLocaleWatch: WatchStopHandle | null = null
-
-export function bindI18nToStore() {
-  const app = useAppStore()
-  stopLocaleWatch?.()
-  stopLocaleWatch = watch(
-    () => app.locale,
-    (loc) => {
-      i18n.global.locale.value = loc
+i18n
+  .use(initReactI18next)
+  .init({
+    resources: {
+      zh: { translation: zh },
+      en: { translation: en },
     },
-    { immediate: true },
-  )
-}
+    lng: initialLocale(),
+    fallbackLng: 'en',
+    returnNull: false,
+    keySeparator: '.',
+    interpolation: {
+      escapeValue: false,
+      prefix: '{',
+      suffix: '}',
+    },
+    saveMissing: import.meta.env.DEV,
+    missingKeyHandler: import.meta.env.DEV
+      ? (lngs, namespace, key) => {
+          console.warn(`[i18n] Missing key "${key}" in namespace "${namespace}" for locale "${lngs}"`)
+        }
+      : undefined,
+  })
+
+export { i18n }
+export type MessageSchema = typeof en

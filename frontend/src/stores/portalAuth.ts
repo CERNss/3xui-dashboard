@@ -1,35 +1,54 @@
-import { defineStore } from 'pinia'
+import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import {
+  LEGACY_PORTAL_TOKEN_KEY,
+  PORTAL_AUTH_STORAGE_KEY,
+  readPersistedToken,
+  removeString,
+  writeString
+} from './storage'
 
-import { PORTAL_TOKEN_KEY } from '@/api/client/portal'
-
-interface UserProfile {
+export interface UserProfile {
   id: number
   email: string
 }
 
-interface State {
+interface PortalAuthState {
   token: string | null
   user: UserProfile | null
+  isAuthenticated: boolean
+  setSession: (token: string, user: UserProfile) => void
+  clear: () => void
 }
 
-export const usePortalAuthStore = defineStore('portalAuth', {
-  state: (): State => ({
-    token: localStorage.getItem(PORTAL_TOKEN_KEY),
-    user: null,
-  }),
-  getters: {
-    isAuthenticated: (state) => state.token !== null,
-  },
-  actions: {
-    setSession(token: string, user: UserProfile) {
-      this.token = token
-      this.user = user
-      localStorage.setItem(PORTAL_TOKEN_KEY, token)
-    },
-    clear() {
-      this.token = null
-      this.user = null
-      localStorage.removeItem(PORTAL_TOKEN_KEY)
-    },
-  },
-})
+const initialToken = readPersistedToken(PORTAL_AUTH_STORAGE_KEY, LEGACY_PORTAL_TOKEN_KEY)
+
+export const usePortalAuthStore = create<PortalAuthState>()(
+  persist(
+    (set) => ({
+      token: initialToken,
+      user: null,
+      isAuthenticated: initialToken !== null,
+      setSession: (token, user) => {
+        writeString(LEGACY_PORTAL_TOKEN_KEY, token)
+        set({ token, user, isAuthenticated: true })
+      },
+      clear: () => {
+        removeString(LEGACY_PORTAL_TOKEN_KEY)
+        set({ token: null, user: null, isAuthenticated: false })
+      }
+    }),
+    {
+      name: PORTAL_AUTH_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
+      partialize: ({ token, user }) => ({ token, user }),
+      onRehydrateStorage: () => (state) => {
+        if (!state?.token) return
+        state.isAuthenticated = true
+        writeString(LEGACY_PORTAL_TOKEN_KEY, state.token)
+      }
+    }
+  )
+)
+
+export type { PortalAuthState }

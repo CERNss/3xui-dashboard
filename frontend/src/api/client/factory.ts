@@ -5,12 +5,25 @@
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-import type { ApiEnvelope, ApiError } from '@/types/api'
-import { pushToast } from '@/composables/useToast'
+// API response envelope used by every JSON endpoint on the backend.
+interface ApiEnvelope<T> {
+  success: boolean
+  msg?: string
+  obj?: T
+}
+
+// Normalized error surfaced by the Axios response interceptors.
+interface ApiError {
+  status: number
+  message: string
+  // Free-form payload from the server, if any.
+  data?: unknown
+}
 
 export interface ClientOptions {
   baseURL: string
   tokenStorageKey: string
+  persistedStorageKey?: string
   loginPath: string
 }
 
@@ -22,7 +35,7 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
   })
 
   instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem(opts.tokenStorageKey)
+    const token = readToken(opts)
     if (token) {
       config.headers.set('Authorization', `Bearer ${token}`)
     }
@@ -51,6 +64,7 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
       const status = error.response?.status ?? 0
       if (status === 401) {
         localStorage.removeItem(opts.tokenStorageKey)
+        if (opts.persistedStorageKey) localStorage.removeItem(opts.persistedStorageKey)
         // Avoid a redirect loop if we're already on the login page.
         if (!window.location.pathname.startsWith(opts.loginPath)) {
           const next = encodeURIComponent(window.location.pathname + window.location.search)
@@ -69,10 +83,38 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
   return instance
 }
 
+function readToken(opts: ClientOptions): string | null {
+  const legacyToken = localStorage.getItem(opts.tokenStorageKey)
+  if (legacyToken) return legacyToken
+
+  if (!opts.persistedStorageKey) return null
+
+  const stored = localStorage.getItem(opts.persistedStorageKey)
+  if (!stored) return null
+
+  try {
+    const parsed = JSON.parse(stored) as { state?: { token?: unknown }; token?: unknown }
+    const token = parsed.state?.token ?? parsed.token
+    return typeof token === 'string' && token.length > 0 ? token : null
+  } catch {
+    return stored
+  }
+}
+
 function notifySuccess(method?: string, url?: string) {
   const m = method?.toUpperCase()
   if (!m || m === 'GET') return
   pushToast(successMessage(url))
+}
+
+function pushToast(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return
+  window.dispatchEvent(
+    new CustomEvent('dashboard:toast', {
+      detail: { kind: 'success', text: trimmed },
+    }),
+  )
 }
 
 function successMessage(url?: string): string {

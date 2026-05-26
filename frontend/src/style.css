@@ -1,125 +1,29 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-mono/400.css';
 
-@layer base {
-  :root {
-    --surface-0: 255 255 255;
-    --surface-50: 250 250 249;
-    --surface-100: 245 245 244;
-    --surface-200: 231 229 228;
-    --surface-300: 214 211 209;
-    --surface-400: 168 162 158;
-    --surface-500: 120 113 108;
-    --surface-600: 87 83 78;
-    --surface-700: 54 63 79;
-    --surface-800: 35 42 54;
-    --surface-900: 26 32 48;
-    --surface-950: 14 19 32;
-  }
-
-  :root.dark {
-    --app-sidebar-bg: 8 16 30;
-    --app-topbar-bg: 27 43 66;
-    --app-page-top: 38 56 82;
-    --app-page-bg: 30 46 70;
-    --surface-0: 255 255 255;
-    --surface-50: 255 255 255;
-    --surface-100: 248 250 252;
-    --surface-200: 234 240 247;
-    --surface-300: 216 226 238;
-    --surface-400: 183 196 212;
-    --surface-500: 139 155 176;
-    --surface-600: 100 116 139;
-    --surface-700: 76 92 119;
-    --surface-800: 39 54 78;
-    --surface-900: 18 29 46;
-    --surface-950: 30 46 70;
-  }
-
-  html,
-  body,
-  #app {
-    height: 100%;
-  }
-
-  body {
-    @apply bg-surface-50 text-surface-900 antialiased;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
-  }
-
-  :root.dark body {
-    @apply text-surface-100;
-    background:
-      linear-gradient(180deg, rgb(var(--app-page-top)) 0, rgb(var(--app-page-bg)) 118px, rgb(var(--app-page-bg)) 100%);
-  }
-
-  /* Consistent focus ring — keyboard only, never removed. */
-  :focus-visible {
-    outline: 2px solid theme('colors.accent.500');
-    outline-offset: 2px;
-    border-radius: 6px;
-  }
-
-  /* Reduced-motion: kill every animation/transition. */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
-  }
+:root {
+  font-family: Geist, "DM Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: #0c0e12;
+  background: #f7f8f9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@layer utilities {
-  :root.dark .app-dark-bg {
-    background:
-      linear-gradient(180deg, rgb(var(--app-page-top)) 0, rgb(var(--app-page-bg)) 118px, rgb(var(--app-page-bg)) 100%);
-  }
+* {
+  box-sizing: border-box;
+}
 
-  :root.dark .app-dark-sidebar {
-    background: rgb(var(--app-sidebar-bg));
-  }
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
 
-  :root.dark .app-dark-header {
-    background: rgb(var(--app-topbar-bg));
-  }
-
-  .overview-slide-forward-enter-active,
-  .overview-slide-forward-leave-active,
-  .overview-slide-back-enter-active,
-  .overview-slide-back-leave-active {
-    transition:
-      opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
-      transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
-    will-change: opacity, transform;
-  }
-
-  .overview-slide-forward-enter-from {
-    opacity: 0;
-    transform: translateX(18px);
-  }
-
-  .overview-slide-forward-leave-to {
-    opacity: 0;
-    transform: translateX(-18px);
-  }
-
-  .overview-slide-back-enter-from {
-    opacity: 0;
-    transform: translateX(-18px);
-  }
-
-  .overview-slide-back-leave-to {
-    opacity: 0;
-    transform: translateX(18px);
-  }
-
-  /* Brand-eased transitions for hand-rolled UI elements. */
-  .transition-brand {
-    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-  }
+#root {
+  min-height: 100vh;
 }

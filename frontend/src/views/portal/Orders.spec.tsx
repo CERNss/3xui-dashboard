@@ -102,7 +102,7 @@ describe('Portal Orders', () => {
     expect(screen.getByText('Lite 7d')).toBeInTheDocument()
   })
 
-  it('renders Vue-parity status badge colors', () => {
+  it('renders legacy-parity status badge colors', () => {
     orders = [
       makeOrder({ id: 1, status: 'completed' }),
       makeOrder({ id: 2, status: 'failed' }),
