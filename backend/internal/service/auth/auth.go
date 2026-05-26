@@ -142,6 +142,7 @@ func (s *Service) VerifyToken(tokenStr string, wantAud ...string) (*Claims, erro
 	},
 		jwt.WithIssuer(Issuer),
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {

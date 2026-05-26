@@ -75,7 +75,7 @@ beforeEach(() => {
         auto_renew: true,
         sub_id: 'sub-bob987654321',
         created_at: '2026-05-02T00:00:00Z',
-        oidc_subject: 'oidc|bob',
+        oidc_linked: true,
       }),
     ]),
   )

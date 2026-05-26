@@ -40,7 +40,6 @@ var (
 	ErrOIDCEmailMismatch    = errors.New("oidc: email does not match current account")
 	ErrOIDCEmailUnverified  = errors.New("oidc: verified email claim is required")
 	ErrOIDCPendingInvalid   = errors.New("oidc: pending decision invalid or expired")
-	ErrOIDCActionInvalid    = errors.New("oidc: invalid account decision")
 	ErrOIDCProviderRequired = errors.New("oidc: provider key is required")
 	ErrOIDCProviderNotFound = errors.New("oidc: provider not found")
 )
@@ -162,7 +161,6 @@ type LoginInput struct {
 // user's profile page.
 type LoginMethods struct {
 	Email LoginMethodEmail   `json:"email"`
-	OIDC  LoginMethodOIDC    `json:"oidc"`
 	OIDCs []OIDCProviderView `json:"oidc_providers,omitempty"`
 }
 
@@ -170,13 +168,6 @@ type LoginMethodEmail struct {
 	Bound    bool   `json:"bound"`
 	Email    string `json:"email,omitempty"`
 	Verified bool   `json:"verified"`
-}
-
-type LoginMethodOIDC struct {
-	Enabled bool   `json:"enabled"`
-	Bound   bool   `json:"bound"`
-	Name    string `json:"name,omitempty"`
-	Icon    string `json:"icon,omitempty"`
 }
 
 type OIDCProviderView struct {
@@ -202,6 +193,11 @@ type OIDCCreateAccountInput struct {
 	DisplayName  string `json:"display_name"`
 	Email        string `json:"email"`
 	Password     string `json:"password"`
+}
+
+type AdminUserView struct {
+	model.User
+	OIDCLinked bool `json:"oidc_linked"`
 }
 
 // UpdateProfile updates profile metadata that does not participate in
@@ -346,17 +342,6 @@ func (s *Service) LoginMethods(ctx context.Context, userID int64) (*LoginMethods
 		return nil, err
 	}
 	out.OIDCs = providers
-	if len(providers) > 0 {
-		out.OIDC.Enabled = true
-		out.OIDC.Name = providers[0].DisplayName
-		out.OIDC.Icon = providers[0].IconURL
-		for _, p := range providers {
-			if p.Linked {
-				out.OIDC.Bound = true
-				break
-			}
-		}
-	}
 	return out, nil
 }
 
@@ -397,7 +382,7 @@ func (s *Service) RotateSubID(ctx context.Context, userID int64) (string, error)
 	return newID, nil
 }
 
-// ---- OIDC stubs ----------------------------------------------------------
+// ---- OIDC login ----------------------------------------------------------
 
 // OIDCStart generates a state + PKCE verifier, stashes them in the
 // in-memory session store, and returns the IDP's authorize URL.
@@ -452,23 +437,6 @@ func (s *Service) OIDCCallback(ctx context.Context, code, state string) (*OIDCLo
 		return nil, ErrNotImplemented
 	}
 	return s.oidcCallbackImpl(ctx, oidc, code, state)
-}
-
-// OIDCResolve finalizes a pending OIDC account decision returned by
-// OIDCCallback. action is one of:
-//   - bind: link this OIDC subject to the existing email account.
-//   - recreate: reset that email account's login identity to OIDC
-//     (password removed, subscription id rotated) while keeping the
-//     same canonical email row.
-func (s *Service) OIDCResolve(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
-	oidc, err := s.effectiveOIDC(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	if !oidc.Enabled() {
-		return nil, "", ErrNotImplemented
-	}
-	return s.resolveOIDCPending(ctx, pendingToken, action)
 }
 
 // OIDCBindExisting links a pending verified provider identity to an
@@ -741,8 +709,27 @@ func (s *Service) AdminUpdate(ctx context.Context, userID int64, in AdminUpdateI
 }
 
 // AdminList returns paged user rows for the admin console.
-func (s *Service) AdminList(ctx context.Context, limit, offset int) ([]model.User, error) {
-	return s.users.List(ctx, limit, offset)
+func (s *Service) AdminList(ctx context.Context, limit, offset int) ([]AdminUserView, error) {
+	rows, err := s.users.List(ctx, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	userIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		userIDs = append(userIDs, row.ID)
+	}
+	identitiesByUser, err := s.users.ListOIDCIdentitiesByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AdminUserView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, AdminUserView{
+			User:       row,
+			OIDCLinked: len(identitiesByUser[row.ID]) > 0,
+		})
+	}
+	return out, nil
 }
 
 // AdminDelete removes a user. ON DELETE CASCADE on the FK takes

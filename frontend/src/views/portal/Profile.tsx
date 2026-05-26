@@ -81,17 +81,8 @@ function oidcProviderIcon(provider: OIDCProviderLink) {
   return provider.icon ?? provider.icon_url
 }
 
-function legacyOidcProvider(profile?: UserProfile, loginMethods?: LoginMethodsResponse): OIDCProviderLink[] {
-  if (loginMethods?.oidc_providers?.length) return loginMethods.oidc_providers
-  if (!loginMethods?.oidc) return []
-  return [
-    {
-      key: 'default',
-      name: loginMethods.oidc.name || 'OIDC',
-      icon: loginMethods.oidc.icon,
-      linked: loginMethods.oidc.bound || !!profile?.oidc_subject,
-    },
-  ]
+function visibleOidcProviders(loginMethods?: LoginMethodsResponse): OIDCProviderLink[] {
+  return loginMethods?.oidc_providers ?? []
 }
 
 export function Profile() {
@@ -112,7 +103,7 @@ export function Profile() {
   const loading = profile.isLoading || methods.isLoading
   const refreshing = profile.isFetching || methods.isFetching
   const error = profile.error ?? methods.error
-  const providers = useMemo(() => legacyOidcProvider(profile.data, methods.data), [methods.data, profile.data])
+  const providers = useMemo(() => visibleOidcProviders(methods.data), [methods.data])
 
   useEffect(() => {
     if (!profile.data) return

@@ -1,16 +1,14 @@
 # oidc-providers
 
-Exposes the operator's configured OIDC identity provider so the login
-page can render a "使用 <name> 登录" button at the bottom of the form.
+Exposes the operator's configured OIDC identity providers so the login
+page can render SSO buttons and start the Authorization Code + PKCE
+flow.
 
 ## Purpose & boundaries
 
-In v1 OIDC start/callback are 501 stubs — actual federation isn't
-wired yet. This module covers ONLY the **discovery surface** that lets
-the SPA decide whether to render the OIDC button row at all, and what
-label/icon to show. When OIDC is properly configured, the same endpoint
-will already be returning useful data, so adding real flow later is a
-no-op for the UI.
+OIDC is an active login surface. This module covers provider discovery,
+start/callback, and account completion for callback results that cannot
+be resolved automatically.
 
 ## Configuration
 
@@ -18,42 +16,43 @@ New env vars (added to `config.OIDC`):
 
 | Var | Purpose | Required for button to render |
 |---|---|---|
-| `OIDC_ISSUER` | Discovery base URL | Yes (already used by future flow) |
+| `OIDC_ISSUER` | Discovery base URL | Yes |
 | `OIDC_CLIENT_ID` | OIDC client | Yes |
 | `OIDC_CLIENT_SECRET` | OIDC secret | Yes |
 | `OIDC_REDIRECT_URL` | Callback URL | Yes |
 | `OIDC_DISPLAY_NAME` | Human label, e.g. "集换社" | No — falls back to issuer hostname |
 | `OIDC_ICON_URL` | Icon shown on the button (URL or SVG path) | No — frontend falls back to generic globe |
 
-`config.OIDC.Enabled() == (Issuer && ClientID && ClientSecret && RedirectURL)` — same as before; the new fields are pure UI hints.
+`config.OIDC.Enabled() == (Issuer && ClientID && ClientSecret && RedirectURL)`. Providers can also be persisted in `oidc_providers`; the env/runtime provider is exposed as provider key `default`.
 
 ## Endpoint
 
-`GET /api/user/auth/oidc/providers` — public (no auth gate).
-
+`GET /api/user/auth/oidc/providers` is public (no auth gate).
 Response: JSON array. Empty array (not 404) when OIDC isn't configured.
 
 ```json
 [
   {
+    "key": "default",
     "name": "集换社",
     "icon": "https://cdn.example.com/jihuanshe.svg",
-    "login_url": "/api/user/auth/oidc/start"
+    "start_url": "/api/user/auth/oidc/start",
+    "login_url": ""
   }
 ]
 ```
 
-Future expansion: multiple providers SHALL be permitted in the response
-shape, even though the env vars only express one today. Frontend already
-iterates `v-for`.
+Multiple providers SHALL be permitted in the response shape. The
+frontend starts a provider by POSTing to `/auth/oidc/start` with the
+returned `key`, then navigates to the returned `authorize_url`.
 
 ## Requirements
 
 ### Requirement: Providers endpoint reflects config
 
 The system SHALL provide a public `GET /api/user/auth/oidc/providers`
-endpoint that returns the configured OIDC provider as a single-element
-array, or an empty array when OIDC isn't configured.
+endpoint that returns enabled OIDC providers, or an empty array when
+OIDC isn't configured.
 
 #### Scenario: OIDC fully configured with display name
 
@@ -61,7 +60,7 @@ array, or an empty array when OIDC isn't configured.
 - **AND** `OIDC_DISPLAY_NAME=集换社`, `OIDC_ICON_URL=https://cdn/jhs.svg`
 - **WHEN** a client GETs `/api/user/auth/oidc/providers`
 - **THEN** the response SHALL be a JSON array with exactly one element:
-  `{"name":"集换社","icon":"https://cdn/jhs.svg","login_url":"/api/user/auth/oidc/start"}`
+  `{"key":"default","name":"集换社","icon":"https://cdn/jhs.svg","start_url":"/api/user/auth/oidc/start","login_url":""}`
 
 #### Scenario: OIDC configured but display name missing
 
@@ -81,13 +80,13 @@ array, or an empty array when OIDC isn't configured.
 
 - **GIVEN** `OIDC_ICON_URL` is empty
 - **WHEN** providers is queried
-- **THEN** the provider object SHALL omit the `icon` field (Go zero-value + `omitempty`)
+- **THEN** the provider object SHALL omit the `icon` field
 - **AND** the frontend SHALL render a generic globe SVG in its place
 
 ### Requirement: Frontend renders providers below the form
 
 The login page SHALL, on mount, fetch providers and render one button
-per provider beneath the email/password form, separated by a divider.
+per provider beneath the admin login form, separated by a divider.
 
 #### Scenario: No providers — section hidden
 
@@ -97,13 +96,14 @@ per provider beneath the email/password form, separated by a divider.
 
 #### Scenario: Single provider — button rendered
 
-- **GIVEN** providers returned `[{name:"集换社", login_url:"/api/user/auth/oidc/start"}]`
-- **WHEN** the login view renders (login mode, not register)
+- **GIVEN** providers returned `[{key:"default", name:"集换社", start_url:"/api/user/auth/oidc/start"}]`
+- **WHEN** the login view renders
 - **THEN** the section SHALL show:
-  - A horizontal divider with the text "或使用其他方式登录"
-  - One button with the provider icon on the left and the literal label "使用 集换社 登录"
-- **AND** clicking the button SHALL navigate the browser to
-  `<login_url>?next=<current ?next or /portal>`
+  - A horizontal divider with the SSO label
+  - One button labelled with the provider name
+- **AND** clicking the button SHALL call `POST /api/user/auth/oidc/start`
+  with `{provider_key:"default", redirect_after:<safe next path>}`
+- **AND** the browser SHALL navigate to the returned `authorize_url`
 
 #### Scenario: Multiple providers (future-proofing)
 
@@ -112,42 +112,60 @@ per provider beneath the email/password form, separated by a divider.
 - **THEN** each provider SHALL render as a separate button in array order
 - **AND** the divider SHALL appear exactly once, above the first button
 
-### Requirement: OIDC buttons hidden in register mode
-
-The OIDC providers row SHALL only appear while the user is on the 登录 tab.
-
-#### Scenario: User switches to register
-
-- **GIVEN** OIDC is configured
-- **WHEN** the user clicks the 注册 tab
-- **THEN** the OIDC button row SHALL be hidden
-- **AND** SHALL re-appear when they switch back to 登录
-
 ### Requirement: Providers endpoint is fail-soft on the client
 
 The frontend SHALL treat any error fetching providers as "no providers",
-so a backend without the route (older deploy) doesn't break the login page.
+so a transient backend/config error does not break the login page.
 
 #### Scenario: Endpoint returns 404 on old deploy
 
-- **WHEN** `portalAuthApi.oidcProviders()` rejects with a 404
+- **WHEN** `portalAuthApi.oidcProviders()` rejects
 - **THEN** the SPA SHALL set `oidcProviders.value = []` (no error toast)
 - **AND** the login page SHALL render exactly as if OIDC were not configured
+
+### Requirement: OIDC start and callback flow
+
+The system SHALL support standard OIDC login through Authorization Code
+flow with PKCE.
+
+#### Scenario: Start returns authorize URL
+
+- **WHEN** a client POSTs `/api/user/auth/oidc/start` with optional `provider_key` and `redirect_after`
+- **THEN** the system SHALL generate `state` and PKCE verifier data, store them in the short-lived session store, and return `authorize_url`
+
+#### Scenario: Callback returns a token for linked identities
+
+- **WHEN** the frontend POSTs `code` and `state` to `/api/user/auth/oidc/callback`
+- **THEN** the system SHALL exchange the code for tokens, validate the ID token signature, issuer, audience, and expiration, and read subject/email claims
+- **AND** if the provider subject is already linked to a local user, the response SHALL be a user-audience JWT
+
+#### Scenario: Callback returns pending account completion
+
+- **WHEN** the provider subject is not linked to a local user
+- **THEN** the callback SHALL return `status:"pending"` with a short-lived `pending_token`, provider metadata, provider email, and existing-user metadata
+- **AND** the system SHALL NOT expose `POST /api/user/auth/oidc/resolve`
+
+#### Scenario: Bind existing requires local password
+
+- **WHEN** the pending provider email belongs to an existing local account
+- **THEN** completion SHALL use `POST /api/user/auth/oidc/bind-existing`
+- **AND** the request SHALL include the existing local account password before the OIDC identity is linked or a JWT is issued
+
+#### Scenario: Create account requires verified local email
+
+- **WHEN** the user chooses to create a new local account from a pending OIDC callback
+- **THEN** completion SHALL use `POST /api/user/auth/oidc/create-account`
+- **AND** the handler SHALL require a display name, password, and email-verification token for `oidc_create_account`
 
 ## Implementation notes
 
 - `internal/handler/user/auth.go::OIDCProviders` is the handler; route
   is `GET` (not POST) so it can be cached / preflighted cleanly.
-- The handler imports `internal/config` for `config.OIDC` and stays
-  decoupled from the future `oidc` service (login flow). When OIDC
-  actually lands, the `LoginURL` field can stay pointing at
-  `/api/user/auth/oidc/start` since that's where the flow begins.
 - TypeScript shape: `OIDCProvider` in `frontend/src/api/portal/auth.ts`.
-- Login view mount hook: `onMounted(loadOIDC)` in `views/Login.vue`.
+- Login view hook: `useOidcStart` in `frontend/src/views/Login.tsx`.
 
 ## Out of scope
 
-- The OIDC start / callback / token-exchange flow itself (v1 stubs).
-- PKCE, nonce, state parameter handling.
-- Account-linking (creating a portal user when an OIDC subject doesn't
-  match an existing email).
+- Passwordless pending resolution.
+- Recreate/reset of an existing email identity from OIDC callback.
+- OIDC unlink actions in the portal profile.

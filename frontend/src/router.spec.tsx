@@ -32,7 +32,6 @@ vi.mock('@/api/portal/auth', () => ({
   portalAuthApi: {
     oidcCallback: vi.fn(),
     oidcProviders: vi.fn().mockResolvedValue([]),
-    oidcResolve: vi.fn(),
     oidcStart: vi.fn(),
   },
 }))

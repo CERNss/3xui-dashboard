@@ -288,21 +288,6 @@ func TestOIDCBindExisting_RequiresPasswordThenLinks(t *testing.T) {
 	}
 }
 
-func TestOIDCBindExisting_RecreateActionIsInvalid(t *testing.T) {
-	_, svc := setupOIDCDB(t)
-	ctx := context.Background()
-	seedEmailUser(t, svc, "alice@example.com", "password123")
-
-	res, err := svc.upsertOIDCUser(ctx, "sub-recreate", "alice@example.com", true, "")
-	if err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	_, _, err = svc.resolveOIDCPending(ctx, res.Pending.Token, "recreate")
-	if !errors.Is(err, ErrOIDCActionInvalid) {
-		t.Fatalf("recreate should be out of P5 scope, got %v", err)
-	}
-}
-
 func TestUpsertOIDC_RejectsUnverifiedOrMissingProviderEmail(t *testing.T) {
 	_, svc := setupOIDCDB(t)
 	ctx := context.Background()
@@ -392,5 +377,28 @@ func TestListOIDCProviders_ReturnsLinkedStateForMultipleProviders(t *testing.T) 
 	}
 	if linked["github"] {
 		t.Fatalf("github should not be linked: %+v", providers)
+	}
+}
+
+func TestAdminList_MarksOIDCLinkedUsers(t *testing.T) {
+	_, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	emailOnly := seedEmailUser(t, svc, "email-only@example.com", "password123")
+	oidcUser := seedEmailUser(t, svc, "oidc-linked@example.com", "password123")
+	seedOIDCIdentity(t, svc, oidcUser.ID, defaultOIDCProviderKey, "sub-admin-list", "provider@example.com")
+
+	rows, err := svc.AdminList(ctx, 100, 0)
+	if err != nil {
+		t.Fatalf("admin list: %v", err)
+	}
+	linkedByID := map[int64]bool{}
+	for _, row := range rows {
+		linkedByID[row.ID] = row.OIDCLinked
+	}
+	if linkedByID[emailOnly.ID] {
+		t.Fatalf("email-only user marked OIDC-linked: %+v", linkedByID)
+	}
+	if !linkedByID[oidcUser.ID] {
+		t.Fatalf("OIDC-linked user not marked: %+v", linkedByID)
 	}
 }

@@ -12,8 +12,8 @@ the `users` table. Adjacent modules:
 - **`admin-auth`** — the single administrator (never in this table).
 - **`email-verification`** — the 6-digit code service that gates register.
 - **`unified-login`** — the SPA chrome that presents login + register.
-- **`oidc-providers`** — listing endpoint; OIDC start/callback flow is a
-  separate planned change.
+- **`oidc-providers`** — provider listing, OIDC start/callback, and
+  account-completion endpoints.
 - **`client-provisioning`** — owns the `client_ownerships` table on the
   fleet side; this module owns the user side of that relation.
 
@@ -172,15 +172,10 @@ user-only endpoint.
 - **THEN** the system SHALL respond HTTP 403 with `ErrUserSuspended` surfaced
 - **AND** no JWT SHALL be issued
 
-### Requirement: Standard OIDC Login (planned)
+### Requirement: Standard OIDC Login
 
 The system SHALL support end-user login through a standard OIDC
 provider using the Authorization Code flow with PKCE.
-
-> Note: v1 ships the discovery surface only (see `oidc-providers`).
-> The start / callback / token-exchange handlers respond HTTP 501 until
-> the dedicated OIDC change lands. Scenarios below describe the target
-> behavior so the test plan stays stable across that change.
 
 #### Scenario: OIDC configured from environment
 
@@ -200,18 +195,21 @@ provider using the Authorization Code flow with PKCE.
 #### Scenario: First OIDC login provisions an account
 
 - **WHEN** a user completes OIDC login with an email claim and no account exists for that email
-- **THEN** the system SHALL create a `users` row using that email, link the OIDC subject to it, and issue a user-audience JWT
+- **THEN** the callback SHALL return a short-lived pending completion token
+- **AND** the user SHALL complete `POST /api/user/auth/oidc/create-account` with display name, password, and a verified local email token before a `users` row is created
 
 #### Scenario: Returning OIDC user
 
-- **WHEN** a user completes OIDC login and the OIDC subject is already linked to the same email account
+- **WHEN** a user completes OIDC login and the OIDC subject is already linked to a local account
 - **THEN** the system SHALL log them into the existing account without creating a duplicate
 
 #### Scenario: Existing email requires account decision
 
 - **WHEN** an OIDC login presents an email that already belongs to an account not linked to that OIDC subject
 - **THEN** the callback SHALL return a short-lived pending decision rather than silently linking or creating a duplicate
-- **AND** the frontend SHALL ask whether to bind the OIDC login to the existing account or recreate/reset that email identity
+- **AND** the frontend SHALL ask whether to bind the OIDC login to the existing account or create a separate local account
+- **AND** binding the existing account SHALL require the existing local password through `POST /api/user/auth/oidc/bind-existing`
+- **AND** the system SHALL NOT expose a passwordless `/api/user/auth/oidc/resolve` endpoint
 
 #### Scenario: Missing OIDC email is rejected
 

@@ -44,7 +44,6 @@ func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/auth/oidc/providers", h.OIDCProviders)
 	rg.POST("/auth/oidc/start", h.OIDCStart)
 	rg.POST("/auth/oidc/callback", h.OIDCCallback)
-	rg.POST("/auth/oidc/resolve", h.OIDCResolve)
 	rg.POST("/auth/oidc/bind-existing", h.OIDCBindExisting)
 	rg.POST("/auth/oidc/create-account", h.OIDCCreateAccount)
 }
@@ -414,34 +413,6 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 	h.writeToken(c, http.StatusOK, result.User, result.RedirectAfter)
-}
-
-func (h *AuthHandler) OIDCResolve(c *gin.Context) {
-	var req struct {
-		PendingToken string `json:"pending_token" binding:"required"`
-		Action       string `json:"action" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "pending_token+action required"})
-		return
-	}
-	u, redirectAfter, err := h.users.OIDCResolve(c.Request.Context(), req.PendingToken, req.Action)
-	if err != nil {
-		switch {
-		case errors.Is(err, usersvc.ErrOIDCPendingInvalid):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC decision expired. Please sign in again."})
-		case errors.Is(err, usersvc.ErrOIDCActionInvalid):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid OIDC decision"})
-		case errors.Is(err, usersvc.ErrOIDCEmailConflict):
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-		case errors.Is(err, usersvc.ErrNotImplemented):
-			c.JSON(http.StatusNotImplemented, gin.H{"error": "OIDC not configured"})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-	h.writeToken(c, http.StatusOK, u, redirectAfter)
 }
 
 func (h *AuthHandler) OIDCBindExisting(c *gin.Context) {

@@ -74,7 +74,7 @@ Each entry maps to `openspec/specs/<key>/spec.md`.
 - `user-accounts` — portal account model, register / login / change-pw / bind-email.
 - `unified-login` — single `/login` route, role auto-fallback, login/register tabs.
 - `email-verification` — 6-digit code, 10-min TTL, 60s send cooldown.
-- `oidc-providers` — listing endpoint + login-page button row. (OIDC start/callback handlers are 501 stubs in v1.)
+- `oidc-providers` — listing endpoint, login-page button row, and OIDC start/callback account completion.
 
 ### Fleet operations
 - `node-management` — node CRUD, scheduled probe, drain.

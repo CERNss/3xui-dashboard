@@ -938,52 +938,6 @@ func (s *Service) linkOIDCToUser(ctx context.Context, userID int64, args ...any)
 	return &OIDCLoginResult{User: got, RedirectAfter: redirectAfter}, nil
 }
 
-func (s *Service) resolveOIDCPending(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
-	p := s.oidcPending.take(strings.TrimSpace(pendingToken))
-	if p == nil {
-		return nil, "", ErrOIDCPendingInvalid
-	}
-	var existing *model.User
-	var err error
-	if p.existingUserID > 0 {
-		existing, err = s.users.Get(ctx, p.existingUserID)
-		if err != nil {
-			return nil, "", err
-		}
-		if existing == nil || existing.Email == nil || !strings.EqualFold(*existing.Email, p.email) {
-			return nil, "", ErrOIDCPendingInvalid
-		}
-	}
-	switch action {
-	case "bind":
-		if existing == nil {
-			return nil, "", ErrOIDCPendingInvalid
-		}
-		if existing.PasswordHash == "" || existing.PasswordHash == model.DisabledPasswordHash {
-			return nil, "", ErrInvalidCredentials
-		}
-		updates := map[string]any{}
-		if p.emailVerified && !existing.EmailVerified && strings.EqualFold(*existing.Email, p.email) {
-			updates["email_verified"] = true
-		}
-		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
-			return nil, "", err
-		}
-		if _, err := s.LinkOIDCIdentityToUser(ctx, existing.ID, p.providerKey, p.sub, p.email, p.emailVerified); err != nil {
-			return nil, "", err
-		}
-	case "recreate":
-		return nil, "", ErrOIDCActionInvalid
-	default:
-		return nil, "", ErrOIDCActionInvalid
-	}
-	u, err := s.users.Get(ctx, existing.ID)
-	if err != nil {
-		return nil, "", err
-	}
-	return u, p.redirectAfter, nil
-}
-
 // verifyIDToken parses, fetches JWKS, verifies signature, and
 // validates iss/aud/exp. Returns the token claims as a map.
 func (s *Service) verifyIDToken(ctx context.Context, raw string, oidc config.OIDC, disco oidcDiscovery) (jwt.MapClaims, error) {

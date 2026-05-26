@@ -78,26 +78,6 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, e
 	return &u, nil
 }
 
-// GetByOIDCSubject returns the user matching the legacy default OIDC
-// provider subject, or (nil, nil) on miss. New code should prefer
-// FindOIDCIdentity plus Get.
-func (r *UserRepo) GetByOIDCSubject(ctx context.Context, sub string) (*model.User, error) {
-	if sub == "" {
-		return nil, nil
-	}
-	var u model.User
-	if err := r.db.WithContext(ctx).
-		Joins("JOIN user_oidc_identities i ON i.user_id = users.id").
-		Where("i.provider_key = ? AND i.subject = ?", "default", sub).
-		First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("UserRepo.GetByOIDCSubject: %w", err)
-	}
-	return &u, nil
-}
-
 // GetBySubID returns the user owning a public sub_id link, or
 // (nil, nil) on miss. Used by the central /sub/:subId handler.
 func (r *UserRepo) GetBySubID(ctx context.Context, subID string) (*model.User, error) {
@@ -270,6 +250,25 @@ func (r *UserRepo) ListOIDCIdentities(ctx context.Context, userID int64) ([]mode
 		return nil, fmt.Errorf("UserRepo.ListOIDCIdentities: %w", err)
 	}
 	return rows, nil
+}
+
+// ListOIDCIdentitiesByUserIDs returns identities grouped by user id.
+func (r *UserRepo) ListOIDCIdentitiesByUserIDs(ctx context.Context, userIDs []int64) (map[int64][]model.UserOIDCIdentity, error) {
+	out := make(map[int64][]model.UserOIDCIdentity, len(userIDs))
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	var rows []model.UserOIDCIdentity
+	if err := r.db.WithContext(ctx).
+		Where("user_id IN ?", userIDs).
+		Order("user_id ASC, provider_key ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("UserRepo.ListOIDCIdentitiesByUserIDs: %w", err)
+	}
+	for _, row := range rows {
+		out[row.UserID] = append(out[row.UserID], row)
+	}
+	return out, nil
 }
 
 // FindOIDCIdentity returns the identity matching provider+subject, or
