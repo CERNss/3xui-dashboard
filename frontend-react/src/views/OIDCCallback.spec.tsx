@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { portalAuthApi } from '@/api/portal/auth'
 import '@/i18n'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import OIDCCallback, { classifyOidcError } from './OIDCCallback'
 
 const portalState = vi.hoisted(() => ({
@@ -45,13 +46,12 @@ function LocationProbe() {
 }
 
 function renderCallback(initialEntry = '/oidc/callback?code=abc&state=xyz') {
-  return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <Routes>
-        <Route path="/oidc/callback" element={<OIDCCallback />} />
-        <Route path="*" element={<LocationProbe />} />
-      </Routes>
-    </MemoryRouter>,
+  return renderWithProviders(
+    <Routes>
+      <Route path="/oidc/callback" element={<OIDCCallback />} />
+      <Route path="*" element={<LocationProbe />} />
+    </Routes>,
+    { initialEntries: [initialEntry] },
   )
 }
 

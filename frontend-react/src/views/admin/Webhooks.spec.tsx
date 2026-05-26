@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Webhook, WebhookDelivery } from '@/api/admin/webhooks'
 import { adminWebhooksApi } from '@/api/admin/webhooks'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Webhooks from './Webhooks'
 
 const createMutateAsync = vi.fn()
@@ -52,15 +52,7 @@ vi.mock('@/api/admin/webhooks', async (importOriginal) => {
 })
 
 function renderWebhooks(props?: { embedded?: boolean }) {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Webhooks {...props} />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Webhooks {...props} />)
 }
 
 beforeEach(() => {
@@ -109,11 +101,7 @@ describe('Webhooks', () => {
     const { rerender } = renderWebhooks()
     expect(screen.getByRole('heading', { name: 'Webhooks', level: 2 })).toBeInTheDocument()
 
-    rerender(
-      <QueryClientProvider client={new QueryClient()}>
-        <Webhooks embedded />
-      </QueryClientProvider>,
-    )
+    rerender(<Webhooks embedded />)
     expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Webhooks', level: 4 })).toBeInTheDocument()
   })
@@ -139,6 +127,38 @@ describe('Webhooks', () => {
         }),
       ),
     )
+  })
+
+  it('renders enabled event tags and endpoint URL', () => {
+    renderWebhooks()
+
+    expect(screen.getByText('Receiver')).toBeInTheDocument()
+    expect(screen.getByText('https://example.test/hook')).toBeInTheDocument()
+    expect(screen.getByText('user.created, order.paid')).toBeInTheDocument()
+  })
+
+  it('validates header parsing before save', async () => {
+    const user = userEvent.setup()
+    renderWebhooks()
+
+    await user.click(screen.getByRole('button', { name: 'New Webhook' }))
+    await user.type(screen.getByLabelText('Name'), 'Broken')
+    await user.type(screen.getByLabelText('URL'), 'https://example.test/broken')
+    await user.type(screen.getByLabelText('Headers'), 'Missing colon')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Invalid header line: Missing colon')).toBeInTheDocument()
+    expect(createMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('shows empty delivery history after lazy expansion', async () => {
+    const user = userEvent.setup()
+    expandedDeliveries = []
+    renderWebhooks()
+
+    await user.click(screen.getByRole('button', { name: 'Deliveries' }))
+
+    expect(await screen.findByText('No deliveries yet')).toBeInTheDocument()
   })
 
   it('edits, lazily expands deliveries, tests, replays, refreshes, and deletes', async () => {

@@ -165,6 +165,13 @@ describe('AlipayPayModal', () => {
     )
   })
 
+  it('shows an empty pending-order state when order is missing', () => {
+    render(<AlipayPayModal open order={null} onOpenChange={vi.fn()} />)
+
+    expect(screen.getByText('No pending order')).toBeInTheDocument()
+    expect(toDataURLMock).not.toHaveBeenCalled()
+  })
+
   it('clicking close cancels polling and emits open=false', async () => {
     vi.useFakeTimers()
     const onOpenChange = vi.fn()

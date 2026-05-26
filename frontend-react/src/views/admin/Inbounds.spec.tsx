@@ -1,11 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Inbounds from './Inbounds'
 import type { FleetInbound, FleetResult, Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const setEnableMutateAsync = vi.fn()
 const removeMutateAsync = vi.fn()
@@ -62,12 +62,7 @@ function makeFleetRow(overrides: Partial<FleetInbound> = {}): FleetInbound {
 }
 
 function renderInbounds() {
-  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Inbounds />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Inbounds />)
 }
 
 beforeEach(() => {

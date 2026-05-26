@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Nodes from './Nodes'
 import type { Node } from '@/api/admin/nodes'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createMutateAsync = vi.fn()
 const updateMutateAsync = vi.fn()
@@ -68,15 +68,7 @@ function mockMatchMedia(matches: boolean) {
 }
 
 function renderNodes() {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Nodes />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Nodes />)
 }
 
 beforeEach(() => {
@@ -134,6 +126,15 @@ describe('Nodes', () => {
     expect(screen.getByText('12.3% / 45.6%')).toBeInTheDocument()
   })
 
+  it('renders status summary counts for online offline and disabled nodes', () => {
+    renderNodes()
+
+    expect(screen.getByText('Showing 2 node(s)')).toBeInTheDocument()
+    expect(screen.getByText('Online 1')).toBeInTheDocument()
+    expect(screen.getByText('Offline 0')).toBeInTheDocument()
+    expect(screen.getByText('Disabled 1')).toBeInTheDocument()
+  })
+
   it('renders the same node facts as cards on mobile', () => {
     mockMatchMedia(true)
     renderNodes()
@@ -161,6 +162,29 @@ describe('Nodes', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('sends area province scheme and status filters after debounce', async () => {
+    const user = userEvent.setup()
+    renderNodes()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Filter area' }))
+    await user.click(await screen.findByTitle('Singapore'))
+    fireEvent.change(screen.getByLabelText('Filter province'), { target: { value: 'Singapore' } })
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Filter scheme' }))
+    await user.click(await screen.findByTitle('HTTP'))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Filter status' }))
+    const disabledOptions = await screen.findAllByTitle('Disabled')
+    await user.click(disabledOptions[disabledOptions.length - 1])
+
+    await waitFor(() =>
+      expect(useNodesListMock).toHaveBeenLastCalledWith({
+        area: 'sg',
+        province: 'Singapore',
+        scheme: 'http',
+        status: 'disabled',
+      }),
+    )
   })
 
   it('creates a node from quick panel URL and validates port range', async () => {
@@ -195,6 +219,18 @@ describe('Nodes', () => {
         }),
       ),
     )
+  })
+
+  it('renders the empty state and opens create from the empty action', async () => {
+    const user = userEvent.setup()
+    nodes = []
+    renderNodes()
+
+    expect(screen.getByText('No nodes')).toBeInTheDocument()
+    const emptyState = screen.getByText('No nodes').closest('.ant-empty')
+    expect(emptyState).toBeInTheDocument()
+    await user.click(within(emptyState as HTMLElement).getByRole('button', { name: 'New Node' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('edits, toggles, probes, refreshes, and deletes nodes', async () => {
@@ -273,5 +309,29 @@ describe('Nodes', () => {
         expect.objectContaining({ name: 'Import Edge', host: 'import.example.com', api_token: 'tok' }),
       ),
     )
+  })
+
+  it('shows import errors for invalid JSON and missing nodes array', async () => {
+    renderNodes()
+
+    const invalidFile = new File(['{not-json'], 'invalid.json', { type: 'application/json' })
+    Object.defineProperty(invalidFile, 'text', {
+      value: vi.fn().mockResolvedValue('{not-json'),
+    })
+    fireEvent.change(screen.getByLabelText('Import nodes file'), { target: { files: [invalidFile] } })
+
+    expect(await screen.findByText('Import file must be valid JSON.')).toBeInTheDocument()
+    expect(createMutateAsync).not.toHaveBeenCalled()
+
+    const missingNodesFile = new File([JSON.stringify({ items: [] })], 'missing-nodes.json', {
+      type: 'application/json',
+    })
+    Object.defineProperty(missingNodesFile, 'text', {
+      value: vi.fn().mockResolvedValue(JSON.stringify({ items: [] })),
+    })
+    fireEvent.change(screen.getByLabelText('Import nodes file'), { target: { files: [missingNodesFile] } })
+
+    expect(await screen.findByText('Import file must contain a nodes array.')).toBeInTheDocument()
+    expect(createMutateAsync).not.toHaveBeenCalled()
   })
 })

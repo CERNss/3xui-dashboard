@@ -1,11 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { App } from 'antd'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { portalProfileApi } from '@/api/portal/profile'
 import type { LoginMethodsResponse, UserProfile } from '@/api/portal/profile'
 import '@/i18n'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Profile from './Profile'
 
 const updateProfileMutateAsync = vi.fn()
@@ -90,14 +89,7 @@ function makeMethods(overrides: Partial<LoginMethodsResponse> = {}): LoginMethod
 }
 
 function renderProfile() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <App>
-        <Profile />
-      </App>
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Profile />)
 }
 
 beforeEach(() => {
@@ -223,5 +215,18 @@ describe('Portal Profile', () => {
       }),
     )
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/link')
+  })
+
+  it('falls back to the legacy single OIDC method shape', () => {
+    methods = {
+      email: { bound: true, email: 'alice@example.com', verified: true },
+      oidc: { enabled: true, bound: true, name: 'Legacy SSO', icon: '' },
+      oidc_providers: [],
+    }
+    renderProfile()
+
+    expect(screen.getByText('Legacy SSO')).toBeInTheDocument()
+    expect(screen.getAllByText('Linked').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /unlink/i })).not.toBeInTheDocument()
   })
 })

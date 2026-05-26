@@ -1,11 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { portalBillingApi, type Order, type Plan } from '@/api/portal/billing'
 import type { UserProfile } from '@/api/portal/profile'
 import '@/i18n'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Orders from './Orders'
 
 let orders: Order[] = []
@@ -70,14 +69,7 @@ function makeOrder(overrides: Partial<Order> = {}): Order {
 }
 
 function renderOrders() {
-  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <Orders />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Orders />)
 }
 
 beforeEach(() => {
@@ -189,13 +181,7 @@ describe('Portal Orders', () => {
     expect(screen.getByText('Plan #99')).toBeInTheDocument()
 
     orders = []
-    rerender(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}>
-        <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-          <Orders />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    )
+    rerender(<Orders />)
     expect(screen.getByText('No orders yet')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/portal/plans')
   })

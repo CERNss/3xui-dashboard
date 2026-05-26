@@ -1,12 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Order, PaymentMethod, Plan } from '@/api/portal/billing'
 import type { UserProfile } from '@/api/portal/profile'
 import '@/i18n'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Plans from './Plans'
 
 const purchaseMutateAsync = vi.fn()
@@ -73,16 +73,12 @@ function LocationProbe() {
 }
 
 function renderPlans() {
-  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/portal/plans']} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <Routes>
-          <Route path="/portal/plans" element={<Plans />} />
-          <Route path="/portal/orders" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+  return renderWithProviders(
+    <Routes>
+      <Route path="/portal/plans" element={<Plans />} />
+      <Route path="/portal/orders" element={<LocationProbe />} />
+    </Routes>,
+    { initialPath: '/portal/plans' },
   )
 }
 
@@ -219,5 +215,13 @@ describe('Portal Plans', () => {
     expect(within(card).getByText(/100 GB/)).toBeInTheDocument()
     expect(within(card).getByText('30 days valid')).toBeInTheDocument()
     expect(within(card).getByText('Up to 2 IPs')).toBeInTheDocument()
+  })
+
+  it('renders an explicit empty state when no enabled plans exist', () => {
+    plans = [makePlan({ enabled: false })]
+    renderPlans()
+
+    expect(screen.getByText('No plans yet')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Buy now' })).not.toBeInTheDocument()
   })
 })

@@ -1,8 +1,8 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminAuditApi, type AdminAction } from '@/api/admin/audit'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import AuditLog from './AuditLog'
 
 vi.mock('@/api/admin/audit', () => ({
@@ -32,12 +32,7 @@ function makeAction(overrides: Partial<AdminAction> = {}): AdminAction {
 }
 
 function renderAuditLog() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <AuditLog />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<AuditLog />)
 }
 
 beforeEach(() => {

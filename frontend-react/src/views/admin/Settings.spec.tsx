@@ -1,9 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SettingItem } from '@/api/admin/settings'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Settings from './Settings'
 
 const setMutateAsync = vi.fn()
@@ -45,18 +45,11 @@ function item(partial: Partial<SettingItem> & Pick<SettingItem, 'key' | 'label' 
 }
 
 function renderSettings(initialPath = '/admin/settings') {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/admin/settings" element={<Settings />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+  return renderWithProviders(
+    <Routes>
+      <Route path="/admin/settings" element={<Settings />} />
+    </Routes>,
+    { initialPath },
   )
 }
 
@@ -127,6 +120,36 @@ describe('Settings', () => {
     await waitFor(() => expect(clearMutateAsync).toHaveBeenCalledWith('subscription_remark_model'))
   })
 
+  it('keeps plain site settings on the general tab without brand or OIDC rows', async () => {
+    const { container } = renderSettings()
+
+    expect(screen.getByRole('heading', { name: 'Site settings' })).toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="site_name"]')).toBeInTheDocument()
+    expect(screen.getByLabelText('Site name')).toHaveValue('Acme')
+    expect(container.querySelector('[data-setting-key="brand_title"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="oidc_issuer"]')).not.toBeInTheDocument()
+  })
+
+  it('keeps registration and OIDC settings on the security auth tab without brand rows', async () => {
+    const { container } = renderSettings('/admin/settings?tab=securityAuth')
+
+    expect(screen.getByRole('heading', { name: 'Security & auth' })).toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="public_registration_enabled"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="oidc_issuer"]')).toBeInTheDocument()
+    expect(screen.getByLabelText('Public registration enabled')).toHaveValue('true')
+    expect(screen.getByLabelText('OIDC issuer')).toHaveValue('https://auth.example.test')
+    expect(container.querySelector('[data-setting-key="brand_title"]')).not.toBeInTheDocument()
+  })
+
+  it('keeps new-user defaults on the user defaults tab', async () => {
+    const { container } = renderSettings('/admin/settings?tab=userDefaults')
+
+    expect(screen.getByRole('heading', { name: 'User defaults' })).toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="new_user_initial_balance_cents"]')).toBeInTheDocument()
+    expect(screen.getByLabelText('New-user initial balance')).toHaveValue(100)
+    expect(container.querySelector('[data-setting-key="public_registration_enabled"]')).not.toBeInTheDocument()
+  })
+
   it('ports data collection min/max behavior and renders backend-added dataCollection keys', async () => {
     settings.push(item({ key: 'ops_collect_max_jitter_seconds', label: 'Max jitter seconds', group: 'data_collection', type: 'int', value: '3' }))
     const user = userEvent.setup()
@@ -149,10 +172,37 @@ describe('Settings', () => {
     await waitFor(() => expect(setMutateAsync).toHaveBeenCalledWith({ key: 'ops_collect_enabled', value: 'false' }))
   })
 
+  it('sends SMTP tests from the messages tab', async () => {
+    const user = userEvent.setup()
+    renderSettings('/admin/settings?tab=messages')
+
+    await user.type(screen.getByLabelText('SMTP test recipient'), 'ops@example.test')
+    await user.click(screen.getByRole('button', { name: /Send test/ }))
+
+    await waitFor(() => expect(smtpMutateAsync).toHaveBeenCalledWith('ops@example.test'))
+  })
+
   it('renders notifications as a thin embedded Webhooks wrapper', async () => {
     renderSettings('/admin/settings?tab=notifications')
 
     expect(screen.getByTestId('embedded-webhooks')).toHaveTextContent('embedded webhooks')
+  })
+
+  it('refreshes settings from the page header action', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an empty state when the selected tab has no settings', async () => {
+    settings = [item({ key: 'site_name', label: 'Site name', group: 'other', type: 'string', value: 'Acme' })]
+    renderSettings('/admin/settings?tab=userDefaults')
+
+    expect(screen.getByRole('heading', { name: 'User defaults' })).toBeInTheDocument()
+    expect(screen.getByText('No settings in this section')).toBeInTheDocument()
   })
 
   it('uploads favicon through the brand icon composite using an image-only file input', async () => {

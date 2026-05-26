@@ -1,11 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Plans from './Plans'
 import type { AdminPlan } from '@/api/admin/plans'
 import type { ProvisioningPool } from '@/api/admin/provisioningPools'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createMutateAsync = vi.fn()
 const updateMutateAsync = vi.fn()
@@ -41,15 +41,7 @@ vi.mock('@/hooks/queries/admin/provisioningPools', () => ({
 }))
 
 function renderPlans() {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Plans />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Plans />)
 }
 
 beforeEach(() => {

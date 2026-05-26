@@ -112,18 +112,18 @@
 
 ## 13. P6 — Tests
 
-- [ ] 13.1 Port the 13 admin view specs (Status, Stats, Overview, Plans, ProvisioningPools, Nodes, Users, Webhooks, Settings, Orders, InboundEditorModal, OpsMonitor, AuditLog, settings/DataCollectionSettings — actually 14 once the sub-folder spec is counted)
-- [ ] 13.2 Port the 3 portal view specs (`Plans`, `Profile`, plus any other present at P6 entry)
-- [ ] 13.3 Port `views/Login.spec.ts` → `Login.spec.tsx`
-- [ ] 13.4 Port the 4 shared-component specs (`AccountMenu`, `EmptyState`, `Skeleton`, plus the `AlipayPayModal` portal-modal spec). Drop `ConfirmModal.spec.ts` — component no longer exists on the React side (per P1, replaced by `Modal.confirm`)
-- [ ] 13.5 Port `components/layout/AdminLayout.spec.ts` → `AdminLayout.spec.tsx`
-- [ ] 13.6 Port `router/index.spec.ts` → equivalent React spec covering ProtectedRoute redirect cases (anonymous-admin / default-entry-no-next / portal-session-does-not-satisfy-admin)
-- [ ] 13.7 Drop `composables/useConfirm.spec.ts` — composable removed per P1; add to the parity script's exclusion list (no React counterpart expected)
-- [ ] 13.8 Wrap each spec's `render` call in `QueryClientProvider` + `MemoryRouter` helper (extract to `src/test-utils/renderWithProviders.tsx`)
+- [x] 13.1 Port the 13 admin view specs (Status, Stats, Overview, Plans, ProvisioningPools, Nodes, Users, Webhooks, Settings, Orders, InboundEditorModal, OpsMonitor, AuditLog, settings/DataCollectionSettings — actually 14 once the sub-folder spec is counted)
+- [x] 13.2 Port the 3 portal view specs (`Plans`, `Profile`, plus any other present at P6 entry)
+- [x] 13.3 Port `views/Login.spec.ts` → `Login.spec.tsx`
+- [x] 13.4 Port the 4 shared-component specs (`AccountMenu`, `EmptyState`, `Skeleton`, plus the `AlipayPayModal` portal-modal spec). Drop `ConfirmModal.spec.ts` — component no longer exists on the React side (per P1, replaced by `Modal.confirm`)
+- [x] 13.5 Port `components/layout/AdminLayout.spec.ts` → `AdminLayout.spec.tsx`
+- [x] 13.6 Port `router/index.spec.ts` → equivalent React spec covering ProtectedRoute redirect cases (anonymous-admin / default-entry-no-next / portal-session-does-not-satisfy-admin)
+- [x] 13.7 Drop `composables/useConfirm.spec.ts` — composable removed per P1; add to the parity script's exclusion list (no React counterpart expected)
+- [x] 13.8 Wrap each spec's `render` call in `QueryClientProvider` + `MemoryRouter` helper (extract to `src/test-utils/renderWithProviders.tsx`)
 - [ ] 13.9 Use `vi.mock('@/api/...')` for axios mocking (same pattern as Vue tree)
-- [ ] 13.10 Update `e2e/smoke.spec.ts` selectors to match React DOM output; add `data-testid` attributes where stable selectors are needed
-- [ ] 13.11 Verify test-count parity: every Vue `.spec.ts` (except the documented exclusion) has a React `.spec.tsx` with ≥ as many `it(...)` blocks
-- [ ] 13.12 `npm run typecheck` and `npm run test` both pass in `frontend-react/`
+- [x] 13.10 Update `e2e/smoke.spec.ts` selectors to match React DOM output; add `data-testid` attributes where stable selectors are needed
+- [x] 13.11 Verify test-count parity: every Vue `.spec.ts` (except the documented exclusion) has a React `.spec.tsx` with ≥ as many `it(...)` blocks
+- [x] 13.12 `npm run typecheck` and `npm run test` both pass in `frontend-react/`
 
 ## 14. P7 — Cutover
 

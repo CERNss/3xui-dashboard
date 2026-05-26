@@ -194,7 +194,19 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
     const values = await form.validateFields().catch(() => null)
     if (!values) return
 
-    const payload = formToInput(values)
+    let payload: WebhookInput
+    try {
+      payload = formToInput(values)
+    } catch (err) {
+      form.setFields([
+        {
+          name: 'headers_text',
+          errors: [err instanceof Error ? err.message : 'Invalid headers'],
+        },
+      ])
+      return
+    }
+
     if (editing) {
       await updateWebhook.mutateAsync({ id: editing.id, patch: payload })
     } else {

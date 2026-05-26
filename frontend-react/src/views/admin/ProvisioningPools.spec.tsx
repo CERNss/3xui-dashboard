@@ -1,11 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProvisioningPools from './ProvisioningPools'
 import type { FleetResult } from '@/api/admin/inbounds'
 import type { ProvisioningPool } from '@/api/admin/provisioningPools'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createPoolMutateAsync = vi.fn()
 const updatePoolMutateAsync = vi.fn()
@@ -47,15 +47,7 @@ vi.mock('@/hooks/queries/admin/inbounds', () => ({
 }))
 
 function renderPools() {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ProvisioningPools />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<ProvisioningPools />)
 }
 
 beforeEach(() => {

@@ -9,10 +9,16 @@ export function headersToText(headers: Record<string, string>) {
 export function textToHeaders(text: string) {
   const headers: Record<string, string> = {}
   for (const line of text.split('\n')) {
+    if (!line.trim()) continue
     const index = line.indexOf(':')
-    if (index <= 0) continue
+    if (index <= 0) {
+      throw new Error(`Invalid header line: ${line}`)
+    }
     const key = line.slice(0, index).trim()
     const value = line.slice(index + 1).trim()
+    if (!key) {
+      throw new Error(`Invalid header line: ${line}`)
+    }
     if (key) headers[key] = value
   }
   return headers

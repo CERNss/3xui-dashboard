@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import NotFound from './NotFound'
 
 const adminState = vi.hoisted(() => ({ isAuthenticated: false }))
@@ -21,15 +22,14 @@ function LocationProbe() {
 }
 
 function renderNotFound(initialEntry = '/missing') {
-  return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
+  return renderWithProviders(
       <Routes>
         <Route path="/missing" element={<NotFound />} />
         <Route path="/admin/missing" element={<NotFound />} />
         <Route path="/portal/missing" element={<NotFound />} />
         <Route path="*" element={<LocationProbe />} />
-      </Routes>
-    </MemoryRouter>,
+      </Routes>,
+    { initialEntries: [initialEntry] },
   )
 }
 

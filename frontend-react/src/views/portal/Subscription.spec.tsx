@@ -1,12 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import QRCode from 'qrcode'
-import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { portalProfileApi } from '@/api/portal/profile'
 import { portalTrafficApi } from '@/api/portal/traffic'
 import '@/i18n'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Subscription from './Subscription'
 
 vi.mock('qrcode', () => ({
@@ -33,14 +32,7 @@ const trafficOwnMock = vi.mocked(portalTrafficApi.own)
 const qrMock = QRCode.toDataURL as unknown as Mock<(value: string) => Promise<string>>
 
 function renderSubscription() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <Subscription />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Subscription />)
 }
 
 function deferred<T>() {

@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { AppRouter } from './router'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 vi.mock('@/hooks/queries/branding', () => ({
   useBranding: () => ({
@@ -49,17 +49,12 @@ function LocationProbe() {
 }
 
 function renderRouter(path: string) {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <AppRouter />
-        <LocationProbe />
-      </MemoryRouter>
-    </QueryClientProvider>,
+  return renderWithProviders(
+    <>
+      <AppRouter />
+      <LocationProbe />
+    </>,
+    { initialPath: path },
   )
 }
 

@@ -1,9 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InboundEditor from './InboundEditor'
 import type { Inbound } from '@/api/admin/inbounds'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createMutateAsync = vi.fn()
 const updateMutateAsync = vi.fn()
@@ -13,20 +13,24 @@ vi.mock('@/hooks/queries/admin/inbounds', () => ({
   useUpdateInbound: () => ({ error: null, isPending: false, mutateAsync: updateMutateAsync }),
 }))
 
-function renderEditor(source?: Inbound | null) {
-  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <InboundEditor
-        open
-        mode={source ? 'edit' : 'create'}
-        nodeID={1}
-        tag={source?.tag ?? ''}
-        source={source}
-        nodes={[{ id: 1, name: 'Tokyo Node', enabled: true }]}
-        onClose={vi.fn()}
-      />
-    </QueryClientProvider>,
+function renderEditor(
+  source?: Inbound | null,
+  options: {
+    nodeID?: number | null
+    nodes?: Array<{ id: number; name: string; enabled: boolean }>
+    onClose?: () => void
+  } = {},
+) {
+  return renderWithProviders(
+    <InboundEditor
+      open
+      mode={source ? 'edit' : 'create'}
+      nodeID={options.nodeID ?? 1}
+      tag={source?.tag ?? ''}
+      source={source}
+      nodes={options.nodes ?? [{ id: 1, name: 'Tokyo Node', enabled: true }]}
+      onClose={options.onClose ?? vi.fn()}
+    />,
   )
 }
 
@@ -54,6 +58,8 @@ function makeInbound(overrides: Partial<Inbound> = {}): Inbound {
 }
 
 beforeEach(() => {
+  createMutateAsync.mockClear()
+  updateMutateAsync.mockClear()
   createMutateAsync.mockResolvedValue(makeInbound())
   updateMutateAsync.mockResolvedValue(makeInbound())
 })
@@ -152,5 +158,87 @@ describe('InboundEditor', () => {
     expect(payload.body).toEqual(expect.objectContaining({ remark: 'Create inbound', port: 8443 }))
     expect(JSON.parse(payload.body.streamSettings).wsSettings.path).toBe('/socket')
     expect(JSON.parse(payload.body.sniffing).destOverride).toContain('http')
+  })
+
+  it('validates required remark and port before creating', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.clear(screen.getByLabelText('Port'))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText('Remark is required')).toBeInTheDocument()
+    expect(await screen.findByText('Port is required')).toBeInTheDocument()
+    expect(createMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('hides Stream and Sniffing tabs for WireGuard and Hysteria with protocol info', () => {
+    renderEditor(makeInbound({ protocol: 'wireguard', settings: JSON.stringify({ peers: [], secretKey: 'wg-secret' }) }))
+
+    expect(screen.getByText('WireGuard hides Stream and Sniffing because those settings do not apply.')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Stream' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Sniffing' })).not.toBeInTheDocument()
+
+    cleanup()
+    renderEditor(makeInbound({ protocol: 'hysteria', settings: JSON.stringify({ auth: 'auth-token', obfs: 'obfs-token' }) }))
+
+    expect(screen.getByText('Hysteria uses mandatory TLS and fixed hysteria stream settings.')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Stream' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Sniffing' })).not.toBeInTheDocument()
+  })
+
+  it('submits raw Advanced JSON overrides when enabled', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByLabelText('Remark'), 'Advanced inbound')
+    await user.click(screen.getByRole('tab', { name: 'Advanced' }))
+    await user.click(screen.getByLabelText('Override settings JSON'))
+    await user.click(screen.getByLabelText('Override streamSettings JSON'))
+    await user.click(screen.getByLabelText('Override sniffing JSON'))
+
+    const rawSettings = { raw: true, clients: [{ email: 'raw@example.com' }] }
+    const rawStream = { network: 'grpc', security: 'tls', grpcSettings: { serviceName: 'raw-grpc' } }
+    const rawSniffing = { enabled: false, destOverride: ['quic'], metadataOnly: true, routeOnly: false }
+    fireEvent.change(screen.getByLabelText('settings'), { target: { value: JSON.stringify(rawSettings) } })
+    fireEvent.change(screen.getByLabelText('streamSettings'), { target: { value: JSON.stringify(rawStream) } })
+    fireEvent.change(screen.getByLabelText('sniffing'), { target: { value: JSON.stringify(rawSniffing) } })
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
+    const body = createMutateAsync.mock.calls[0][0].body
+    expect(JSON.parse(body.settings)).toEqual(rawSettings)
+    expect(JSON.parse(body.streamSettings)).toEqual(rawStream)
+    expect(JSON.parse(body.sniffing)).toEqual(rawSniffing)
+  })
+
+  it('marks disabled node options as disabled', async () => {
+    const user = userEvent.setup()
+    renderEditor(null, {
+      nodes: [
+        { id: 1, name: 'Tokyo Node', enabled: true },
+        { id: 2, name: 'Osaka Node', enabled: false },
+      ],
+    })
+
+    await user.click(screen.getByLabelText('Node'))
+
+    const disabledOption = await screen.findByText('Osaka Node (disabled)')
+    expect(disabledOption.closest('.ant-select-item-option')).toHaveClass('ant-select-item-option-disabled')
+  })
+
+  it('closes without running a create mutation', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    renderEditor(null, { onClose })
+
+    const closeButton = screen.getAllByRole('button', { name: 'Close' }).find((button) => button.textContent === 'Close')
+    expect(closeButton).toBeDefined()
+    await user.click(closeButton!)
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(createMutateAsync).not.toHaveBeenCalled()
+    expect(updateMutateAsync).not.toHaveBeenCalled()
   })
 })

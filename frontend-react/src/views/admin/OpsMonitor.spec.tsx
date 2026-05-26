@@ -1,9 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FleetResult } from '@/api/admin/inbounds'
 import type { Node, NodeMetricsResult } from '@/api/admin/nodes'
 import { nodesApi } from '@/api/admin/nodes'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import OpsMonitor from './OpsMonitor'
 
 let nodes: Node[] = []
@@ -37,15 +37,7 @@ vi.mock('@/api/admin/nodes', async (importOriginal) => {
 })
 
 function renderOpsMonitor() {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <OpsMonitor />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<OpsMonitor />)
 }
 
 function makeNode(partial: Partial<Node>): Node {
@@ -121,6 +113,7 @@ beforeEach(() => {
     ],
     node_errors: { 2: 'timeout' },
   }
+  vi.mocked(nodesApi.metrics).mockReset()
   vi.mocked(nodesApi.metrics).mockImplementation((id: number) => {
     if (id === 2) return Promise.reject(new Error('timeout'))
     return Promise.resolve(metrics(id))
@@ -152,5 +145,13 @@ describe('OpsMonitor', () => {
     expect(screen.getByRole('img', { name: 'Throughput line' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Duration distribution stack' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Error distribution dots' })).toBeInTheDocument()
+  })
+
+  it('excludes disabled nodes from metrics fanout', async () => {
+    renderOpsMonitor()
+
+    await waitFor(() => expect(nodesApi.metrics).toHaveBeenCalledTimes(2))
+    expect(nodesApi.metrics).not.toHaveBeenCalledWith(3, expect.anything())
+    expect(screen.getByText('Disabled')).toBeInTheDocument()
   })
 })

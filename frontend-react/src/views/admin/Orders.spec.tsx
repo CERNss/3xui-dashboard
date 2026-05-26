@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminOrdersApi, type AdminOrder } from '@/api/admin/orders'
 import { adminPlansApi } from '@/api/admin/plans'
 import { adminUsersApi } from '@/api/admin/users'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Orders from './Orders'
 
 vi.mock('@/api/admin/orders', () => ({
@@ -48,12 +48,7 @@ function makeOrder(overrides: Partial<AdminOrder> = {}): AdminOrder {
 }
 
 function renderOrders() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Orders />
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Orders />)
 }
 
 beforeEach(() => {
@@ -113,6 +108,26 @@ describe('Orders', () => {
 
     expect(screen.getByText('bob@example.com')).toBeInTheDocument()
     expect(screen.queryByText('alice@example.com')).not.toBeInTheDocument()
+  })
+
+  it('shows failed and refunded KPI counts', async () => {
+    renderOrders()
+
+    await screen.findByText('bob@example.com')
+
+    expect(screen.getByText('Completed or paid')).toBeInTheDocument()
+    expect(screen.getByText('Revenue')).toBeInTheDocument()
+    expect(screen.getAllByText('Failed').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Refunded').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('renders an empty state when there are no orders', async () => {
+    ordersListMock.mockResolvedValue({ orders: [], limit: 200, offset: 0 })
+
+    renderOrders()
+
+    expect(await screen.findByText('No orders yet.')).toBeInTheDocument()
   })
 
   it('only exposes refund for completed or paid orders and invalidates after mutation', async () => {

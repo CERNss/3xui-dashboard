@@ -1,10 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { portalProfileApi } from '@/api/portal/profile'
 import { portalTrafficApi } from '@/api/portal/traffic'
 import '@/i18n'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Usage from './Usage'
 
 vi.mock('@/api/portal/profile', () => ({
@@ -23,14 +22,7 @@ const profileGetMock = vi.mocked(portalProfileApi.get)
 const trafficOwnMock = vi.mocked(portalTrafficApi.own)
 
 function renderUsage() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <Usage />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Usage />)
 }
 
 beforeEach(() => {

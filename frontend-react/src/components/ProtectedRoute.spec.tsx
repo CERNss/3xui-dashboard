@@ -1,9 +1,10 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { screen } from '@testing-library/react'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { ProtectedRoute } from './ProtectedRoute'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 function LocationProbe() {
   const location = useLocation()
@@ -11,8 +12,7 @@ function LocationProbe() {
 }
 
 function renderGuard(initialEntry: string, area: 'admin' | 'portal' = 'admin') {
-  return render(
-    <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+  return renderWithProviders(
       <Routes>
         <Route element={<ProtectedRoute area={area} />}>
           <Route path="/admin/users" element={<div>Admin users</div>} />
@@ -21,8 +21,8 @@ function renderGuard(initialEntry: string, area: 'admin' | 'portal' = 'admin') {
           <Route path="/portal/subscription" element={<div>Portal subscription</div>} />
         </Route>
         <Route path="/login" element={<LocationProbe />} />
-      </Routes>
-    </MemoryRouter>,
+      </Routes>,
+    { initialEntries: [initialEntry] },
   )
 }
 

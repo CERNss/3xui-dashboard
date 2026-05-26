@@ -1,12 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Node } from '@/api/admin/nodes'
 import type { FleetResult } from '@/api/admin/inbounds'
 import type { AdminPlan } from '@/api/admin/plans'
 import type { AdminStats } from '@/api/admin/stats'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Overview from './Overview'
 
 const nodesRefetch = vi.fn()
@@ -127,17 +126,7 @@ function makeStats(overrides: Partial<AdminStats> = {}): AdminStats {
 }
 
 function renderOverview(defaultTab: 'status' | 'stats' = 'status') {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <Overview defaultTab={defaultTab} />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return renderWithProviders(<Overview defaultTab={defaultTab} />)
 }
 
 beforeEach(() => {
@@ -277,6 +266,52 @@ describe('Overview', () => {
     expect(screen.getByText('Recent orders')).toBeInTheDocument()
     expect(screen.getByText('alice@example.com -> Pro 30d')).toBeInTheDocument()
     expect(screen.getByText('Pro 30d')).toBeInTheDocument()
+  })
+
+  it('omits the month new users delta when current and previous month are both zero', () => {
+    stats = makeStats({
+      users: {
+        total: 0,
+        active: 0,
+        suspended: 0,
+        month_new: 0,
+        prev_month_new: 0,
+        total_balance_cents: 0,
+        avg_balance_cents: 0,
+      },
+    })
+
+    renderOverview('stats')
+
+    expect(screen.getByText('Month new users')).toBeInTheDocument()
+    expect(screen.queryByText(/vs last month/)).not.toBeInTheDocument()
+  })
+
+  it('shows empty traffic copy when node and user rankings are empty', () => {
+    stats = makeStats({ top_nodes: [], top_users: [] })
+
+    renderOverview('stats')
+
+    expect(screen.getAllByText('No traffic data')).toHaveLength(2)
+  })
+
+  it('renders stats loading skeleton cards before aggregate data is available', () => {
+    stats = undefined
+    statsLoading = true
+
+    renderOverview('stats')
+
+    expect(document.querySelectorAll('.ant-card-loading')).toHaveLength(4)
+    expect(screen.queryByText('Month new users')).not.toBeInTheDocument()
+  })
+
+  it('shows a stats query error without hiding existing aggregate stats', () => {
+    statsError = new Error('stats offline')
+
+    renderOverview('stats')
+
+    expect(screen.getByText('Stats load failed')).toBeInTheDocument()
+    expect(screen.getByText('Month new users')).toBeInTheDocument()
   })
 
   it('keeps inactive panels mounted with display none after first activation', async () => {
