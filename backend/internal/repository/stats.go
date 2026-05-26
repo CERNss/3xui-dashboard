@@ -46,10 +46,10 @@ type TrafficStats struct {
 // leaderboard. Bytes is up+down combined; the frontend renders the
 // progress bar relative to the row with the highest Bytes value.
 type TrafficRanking struct {
-	Key   string `json:"key"`             // node name or user email
+	Key   string `json:"key"` // node name or user email
 	Up    int64  `json:"up_bytes"`
 	Down  int64  `json:"down_bytes"`
-	Bytes int64  `json:"bytes"`           // up + down
+	Bytes int64  `json:"bytes"` // up + down
 }
 
 // AuditSeverity buckets recent admin actions by derived severity:
@@ -73,13 +73,13 @@ type PlanStats struct {
 // month in UTC — matches what the previous client-side computation
 // did so the headline number doesn't change shape on cut-over.
 type OrderStats struct {
-	Total         int64 `json:"total"`
-	Completed     int64 `json:"completed"`
-	Failed        int64 `json:"failed"`
-	Refunded      int64 `json:"refunded"`
-	Revenue       int64 `json:"revenue_cents"`
-	MonthCount    int64 `json:"month_count"`
-	MonthRevenue  int64 `json:"month_revenue_cents"`
+	Total        int64 `json:"total"`
+	Completed    int64 `json:"completed"`
+	Failed       int64 `json:"failed"`
+	Refunded     int64 `json:"refunded"`
+	Revenue      int64 `json:"revenue_cents"`
+	MonthCount   int64 `json:"month_count"`
+	MonthRevenue int64 `json:"month_revenue_cents"`
 }
 
 // RecentOrder is one row in the activity feed — already joined with
@@ -256,11 +256,56 @@ func groupSamples(rows []model.TrafficSample) map[trafficGroupKey][]model.Traffi
 	return grouped
 }
 
+type inboundRollupKey struct {
+	nodeID     int64
+	inboundTag string
+}
+
+// canonicalTrafficGroups returns the groups used for fleet/node totals.
+// The collector stores both inbound rollups and per-client samples for the
+// same traffic stream. Counting both would double the overview totals, so
+// prefer the coarser rollup when present and fall back to client groups only
+// for streams that have no rollup rows.
+func canonicalTrafficGroups(rows []model.TrafficSample) map[trafficGroupKey][]model.TrafficSample {
+	grouped := groupSamples(rows)
+	nodeRollups := map[int64]bool{}
+	inboundRollups := map[inboundRollupKey]bool{}
+	for k := range grouped {
+		if k.clientEmail != "" {
+			continue
+		}
+		if k.inboundTag == "" {
+			nodeRollups[k.nodeID] = true
+			continue
+		}
+		inboundRollups[inboundRollupKey{nodeID: k.nodeID, inboundTag: k.inboundTag}] = true
+	}
+
+	out := make(map[trafficGroupKey][]model.TrafficSample, len(grouped))
+	for k, samples := range grouped {
+		if nodeRollups[k.nodeID] {
+			if k.clientEmail == "" && k.inboundTag == "" {
+				out[k] = samples
+			}
+			continue
+		}
+		if k.clientEmail == "" {
+			out[k] = samples
+			continue
+		}
+		if k.inboundTag != "" && inboundRollups[inboundRollupKey{nodeID: k.nodeID, inboundTag: k.inboundTag}] {
+			continue
+		}
+		out[k] = samples
+	}
+	return out
+}
+
 // Traffic returns fleet-wide up/down totals for the month and today
 // windows. Both are computed by replaying SumDeltas semantics over
-// every (node, inbound, client) group in the window — the same
-// pipeline used by the per-client history endpoint, so numbers
-// reconcile when an operator drills in.
+// the canonical traffic groups in the window. Inbound rollups are
+// preferred over per-client rows for fleet/node totals so the same
+// bytes are not counted twice.
 //
 // Scale note: this in-Go aggregation is fine for the current sub-100
 // users / sub-million samples regime. If traffic_samples grows past
@@ -272,7 +317,7 @@ func (r *StatsRepo) Traffic(ctx context.Context, monthStart, dayStart, now time.
 	if err != nil {
 		return TrafficStats{}, err
 	}
-	mUp, mDown := sumDeltasOverGroups(groupSamples(monthly))
+	mUp, mDown := sumDeltasOverGroups(canonicalTrafficGroups(monthly))
 
 	// Today's samples are a strict subset of the month window when
 	// dayStart >= monthStart (true in production). Filter in Go to
@@ -291,7 +336,7 @@ func (r *StatsRepo) Traffic(ctx context.Context, monthStart, dayStart, now time.
 			return TrafficStats{}, err
 		}
 	}
-	tUp, tDown := sumDeltasOverGroups(groupSamples(today))
+	tUp, tDown := sumDeltasOverGroups(canonicalTrafficGroups(today))
 
 	return TrafficStats{
 		MonthUp:   mUp,
@@ -314,7 +359,7 @@ func (r *StatsRepo) TopNodes(ctx context.Context, since, now time.Time, n int) (
 	}
 	type nodeAgg struct{ up, down int64 }
 	agg := map[int64]*nodeAgg{}
-	for k, samples := range groupSamples(samples) {
+	for k, samples := range canonicalTrafficGroups(samples) {
 		if len(samples) < 2 {
 			continue
 		}

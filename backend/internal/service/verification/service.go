@@ -3,7 +3,7 @@
 // Code shape: 6 decimal digits, 10 minute TTL, single-use, scoped by
 // purpose ("register" today; password reset / email change later).
 //
-// Storage: email_verification_codes table (migration 0004). Code is
+// Storage: email_verification_codes table. Code is
 // hashed at rest so a DB leak doesn't immediately compromise pending
 // verifications.
 //

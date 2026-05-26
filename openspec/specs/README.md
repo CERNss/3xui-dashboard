@@ -108,5 +108,5 @@ Each entry maps to `openspec/specs/<key>/spec.md`.
 
 - Specs use RFC 2119 keywords (MUST, SHOULD, MAY) inside Given/When/Then scenarios.
 - File paths and identifiers use full repo-relative paths (e.g. `backend/internal/handler/user/auth.go::Register`).
-- Schema diffs cite migration filenames (e.g. `migrations/0004_email_verification_codes.up.sql`).
+- Schema specs cite the owning baseline or migration file when that detail matters.
 - When a behavior depends on config, the spec MUST name the env var.

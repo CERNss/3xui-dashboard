@@ -19,7 +19,7 @@ delegated to `user-accounts`.
 
 ## Storage
 
-Migration `migrations/0004_email_verification_codes.up.sql`:
+The baseline schema includes:
 
 ```sql
 CREATE TABLE email_verification_codes (

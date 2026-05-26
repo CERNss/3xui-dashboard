@@ -1,7 +1,7 @@
-// Package migrations holds the embedded versioned SQL files applied
-// by the repository.MigrateUp runner at startup. Adding a new
-// migration is a two-file change (NNNN_<topic>.up.sql + .down.sql);
-// the embed directive picks them up automatically.
+// Package migrations holds the embedded SQL files applied by the
+// repository.MigrateUp runner at startup. The current pre-launch schema is
+// collapsed into 0001_init; future deployed schema changes can add a new
+// NNNN_<topic>.up.sql + .down.sql pair.
 package migrations
 
 import "embed"

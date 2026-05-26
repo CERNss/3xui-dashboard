@@ -185,10 +185,10 @@ billing core.
 
 The `orders` table SHALL carry payment-provider state alongside the
 original order fields. Columns SHALL NOT be NULLable for orders
-created post-migration; the migration SHALL set defaults so
-historical balance orders read back as `payment_method='balance'`.
+created after the baseline schema; defaults ensure balance orders read
+back as `payment_method='balance'`.
 
-Columns introduced in migration `0006_orders_payment_method`:
+Columns:
 - `payment_method` (text, NOT NULL, default `'balance'`)
 - `payment_provider_order_id` (text, NOT NULL, default `''`)
 - `payment_target_url` (text, NOT NULL, default `''`)
@@ -196,11 +196,11 @@ Columns introduced in migration `0006_orders_payment_method`:
 - `provisioning_node_id` (bigint, nullable)
 - `provisioning_inbound_tag` (text, NOT NULL, default `''`)
 
-#### Scenario: Migration backfills payment_method
+#### Scenario: Balance orders default payment_method
 
-- **WHEN** migration `0006` runs against a DB with pre-existing balance orders
-- **THEN** every existing row SHALL read back with `payment_method='balance'`
-- **AND** the new gateway-specific columns SHALL be empty / NULL for those rows
+- **WHEN** a balance order is created without gateway-specific fields
+- **THEN** the row SHALL read back with `payment_method='balance'`
+- **AND** the gateway-specific columns SHALL be empty / NULL
 
 ### Requirement: Async Payment Notify Endpoints
 

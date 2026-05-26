@@ -140,8 +140,8 @@ not let a slow or failing endpoint block event producers.
 - **WHEN** a delivery times out or returns a non-2xx status
 - **THEN** the system SHALL retry with exponential backoff up to a bounded
   maximum attempt count, after which the delivery is marked failed
-- **AND** retry state is persisted (`webhook_deliveries.next_attempt_at`, set
-  by migration `0003_webhook_retry.up.sql`) so retries survive process restarts
+- **AND** retry state is persisted in `webhook_deliveries.next_attempt_at`
+  so retries survive process restarts
 
 #### Scenario: Failing webhook does not stall others
 

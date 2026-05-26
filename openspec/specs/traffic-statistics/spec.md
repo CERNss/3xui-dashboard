@@ -38,6 +38,9 @@ The system SHALL report traffic usage aggregated at node, inbound, and client le
 - **WHEN** an admin requests node-level traffic
 - **THEN** the system returns upload, download, and total bytes per node for the
   selected time range
+- **AND** when both inbound rollup samples and per-client samples exist for the
+  same inbound, the system SHALL count the inbound rollup once and SHALL NOT add
+  the client samples again
 
 #### Scenario: Per-client usage
 
