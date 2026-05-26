@@ -17,8 +17,15 @@ import (
 )
 
 // seedNodeInboundPlan sets up the prerequisites for a purchase
-// test: one mock-panel node + one inbound + one plan. Returns the
-// plan ID so the test can post against it.
+// test: one mock-panel node + one inbound + one provisioning pool
+// (with the node+inbound registered as a target) + one plan bound
+// to that pool. Returns the plan ID so the test can post against it.
+//
+// The provisioning pool wiring is mandatory: as of the pool-aware
+// billing refactor, plan.ProvisioningPoolID must be set for the
+// service to resolve a target — purchases against pool-less plans
+// short-circuit with ErrNoProvisioningTarget (409) before the
+// balance check ever runs.
 func seedNodeInboundPlan(t *testing.T, h *harness, adminTok string) (planID, nodeID int64, inboundTag string) {
 	t.Helper()
 	// Node — the e2e mockPanel serves canned responses, but the
@@ -45,17 +52,50 @@ func seedNodeInboundPlan(t *testing.T, h *harness, adminTok string) (planID, nod
 		StreamSettings: `{"network":"tcp","security":"none"}`,
 	})
 
+	poolID := seedProvisioningPool(t, h, adminTok, nodeID, inboundTag)
+
 	var plan struct{ ID int64 `json:"id"` }
 	if got := h.do(t, req{
 		method: http.MethodPost, path: "/api/admin/plans", token: adminTok,
 		body: map[string]any{
 			"name": "30d", "duration_days": 30, "traffic_limit_bytes": 0,
 			"price_cents": 500, "enabled": true,
+			"provisioning_pool_id": poolID,
 		},
 	}, &plan); got != http.StatusCreated {
 		t.Fatalf("create plan: status=%d", got)
 	}
 	return plan.ID, nodeID, inboundTag
+}
+
+// seedProvisioningPool creates a pool, adds (nodeID, inboundTag)
+// as a target on it, and returns the pool ID. The pool has no
+// protocol / port-range constraints so any inbound is accepted.
+func seedProvisioningPool(t *testing.T, h *harness, adminTok string, nodeID int64, inboundTag string) int64 {
+	t.Helper()
+	var pool struct{ ID int64 `json:"id"` }
+	if got := h.do(t, req{
+		method: http.MethodPost, path: "/api/admin/provisioning-pools", token: adminTok,
+		body: map[string]any{
+			"name": "e2e-pool", "description": "e2e test pool",
+			"enabled": true, "auto_create": false,
+			"allowed_protocols": []string{},
+		},
+	}, &pool); got != http.StatusCreated {
+		t.Fatalf("create provisioning pool: status=%d", got)
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/provisioning-pools/" + itoa(pool.ID) + "/targets",
+		token:  adminTok,
+		body: map[string]any{
+			"node_id": nodeID, "inbound_tag": inboundTag,
+			"max_clients": 0, "priority": 0, "enabled": true,
+		},
+	}, nil); got != http.StatusCreated {
+		t.Fatalf("create provisioning target: status=%d", got)
+	}
+	return pool.ID
 }
 
 // orderRow reads a single order row directly from the DB so tests

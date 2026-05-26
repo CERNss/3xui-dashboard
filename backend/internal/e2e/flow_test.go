@@ -148,6 +148,11 @@ func TestFullFlow(t *testing.T) {
 		StreamSettings: `{"network":"tcp","security":"none"}`,
 	})
 
+	// Provisioning pool the plan binds to. Without this the purchase
+	// short-circuits with ErrNoProvisioningTarget (409) before the
+	// balance check fires.
+	poolID := seedProvisioningPool(t, h, adminTok, node.ID, "vless-1")
+
 	var plan struct {
 		ID int64 `json:"id"`
 	}
@@ -156,6 +161,7 @@ func TestFullFlow(t *testing.T) {
 		body: map[string]any{
 			"name": "30d", "duration_days": 30, "traffic_limit_bytes": 0,
 			"price_cents": 500, "enabled": true,
+			"provisioning_pool_id": poolID,
 		},
 	}, &plan); got != http.StatusCreated {
 		t.Fatalf("create plan: status=%d", got)
