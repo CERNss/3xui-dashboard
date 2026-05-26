@@ -48,7 +48,7 @@ browser contexts:
    On the second run the prompt doesn't reappear because Zitadel
    remembers the dismissal.
 5. Redirect back to dashboard `/oidc/callback?code=&state=` →
-   the SPA's `OIDCCallback.vue` calls
+   the SPA's OIDC callback view calls
    `POST /api/user/auth/oidc/callback` to exchange the code.
 6. Server-side: `oidcCallbackImpl` → token exchange →
    `verifyIDToken` (JWKS fetched + RS256 verify) → users upsert
@@ -121,7 +121,7 @@ The spec drives one user. It does NOT exercise:
   `oidc_test.go`, not by this spec.
 - **Provider misconfiguration**: invalid `OIDC_REDIRECT_URL`,
   missing scopes, etc. Covered by the cfg.OIDC.Enabled() boot
-  check and the user-facing error in OIDCCallback.vue.
+  check and the user-facing error in the OIDC callback view.
 
 These are explicit T3 candidates if real-user reports surface
 any of them.

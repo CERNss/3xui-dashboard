@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # =============================================================================
-# Stage 1 — build the Vue SPA. The build output (../backend/internal/web/dist)
+# Stage 1 — build the React SPA. The build output (../backend/internal/web/dist)
 #          is consumed by stage 2 via //go:embed.
 # =============================================================================
 FROM node:22-alpine AS frontend

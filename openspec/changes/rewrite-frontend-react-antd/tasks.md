@@ -128,9 +128,9 @@
 ## 14. P7 — Cutover
 
 - [ ] 14.1 Final feature-parity audit: manually walk every route in both Vue and React versions side-by-side, file any gaps as blockers
-- [ ] 14.2 Run locale-parity script (task 4.4) — diff must be empty
-- [ ] 14.3 Run test suite + e2e smoke in `frontend-react/` — all green
-- [ ] 14.4 Commit 1 (the cutover): `rm -rf frontend && mv frontend-react frontend`; message: "🔥 cutover: Vue → React/AntD"
-- [ ] 14.5 Commit 2 (sweep): update root `Makefile` (drop `dev-react`, point `dev` and `build` at the new tree), update `README.md` (any Vue references / screenshots), update `docs/` and `deploy/` build references, update CI workflow if any
-- [ ] 14.6 Build and run the backend binary; verify `index.html` loads the React app, an admin login round-trip works, and `dist/assets/` paths resolve
+- [x] 14.2 Run locale-parity script (task 4.4) — diff must be empty
+- [x] 14.3 Run test suite + e2e smoke in `frontend-react/` — all green
+- [x] 14.4 Commit 1 (the cutover): `rm -rf frontend && mv frontend-react frontend`; message: "🔥 cutover: Vue → React/AntD"
+- [x] 14.5 Commit 2 (sweep): update root `Makefile` (drop `dev-react`, point `dev` and `build` at the new tree), update `README.md` (any Vue references / screenshots), update `docs/` and `deploy/` build references, update CI workflow if any
+- [x] 14.6 Build and run the backend binary; verify `index.html` loads the React app, an admin login round-trip works, and `dist/assets/` paths resolve
 - [ ] 14.7 Archive this OpenSpec change via `openspec archive rewrite-frontend-react-antd`

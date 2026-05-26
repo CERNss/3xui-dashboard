@@ -20,7 +20,7 @@ context: |
 
   Tech stack:
   - Backend: Go 1.26, Gin, GORM, PostgreSQL, JWT (golang-jwt/v5).
-  - Frontend: Vue 3 + TypeScript + Vite + Tailwind CSS + Pinia + vue-router.
+  - Frontend: React 18 + TypeScript + Vite + AntD 5 + Zustand + TanStack Query + React Router + react-i18next.
   - Frontend is embedded into the Go binary via go:embed and served as an SPA.
 
   Roles:

@@ -19,13 +19,13 @@
 /backend/internal/web/dist/*
 !/backend/internal/web/dist/.gitkeep
 
-# --- Node / Vue ---
+# --- Node / frontend ---
 node_modules/
 .npm/
 .pnpm-store/
 /frontend/dist/
 *.tsbuildinfo
-# vue-tsc -b emits these from vite.config.ts even with noEmit; keep them out.
+# TypeScript declaration builds can emit these from vite.config.ts; keep them out.
 /frontend/vite.config.js
 /frontend/vite.config.d.ts
 

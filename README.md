@@ -174,8 +174,8 @@ Stubbed in v1 but the config slot is present:
 | Target            | What it does |
 |-------------------|--------------|
 | `make build`      | Build SPA + Go binary into `./3xui-dashboard` |
-| `make dev`        | Vite dev server + Go server, both with hot reload |
-| `make test`       | `go test ./...` + `vue-tsc --noEmit` |
+| `make dev`        | React Vite dev server on `:5174` + Go server, both with hot reload |
+| `make test`       | `go test ./...` + React TypeScript check + Vitest suite |
 | `make lint`       | `go vet` + ESLint |
 | `make docker-build` / `make docker-up` / `make docker-down` | Container lifecycle |
 
@@ -202,8 +202,9 @@ frontend/
   src/
     api/{admin,portal}/  # axios-backed API client modules
     components/layout/   # AdminLayout / PortalLayout / AuthLayout
-    router/              # admin + portal route trees + auth guards
-    stores/              # adminAuth + portalAuth + app
+    hooks/queries/       # TanStack Query wrappers
+    router.tsx           # React Router admin + portal route tree
+    stores/              # Zustand persisted auth/app/theme stores
     views/{admin,portal}/  # pages
 
 deploy/
@@ -215,9 +216,11 @@ docs/
   3xui-node-reference.md  # authoritative 3x-ui API + wire-format notes
 ```
 
-## Status
+## Frontend Stack
 
-This is the initial bootstrap. See `openspec/changes/bootstrap-central-panel/tasks.md`
-for the line-by-line ship/deferred list.
+The production frontend is React 18 + TypeScript + Vite + AntD 5.
+Client state uses Zustand, server state uses TanStack Query, routing
+uses React Router, and locale wiring uses react-i18next/i18next. The
+Vite build writes into `backend/internal/web/dist/` for Go embedding.
 
 Co-authored with [Claude Code](https://claude.com/claude-code).
