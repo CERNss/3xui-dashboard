@@ -296,6 +296,27 @@ func (s *Service) ConsumeToken(ctx context.Context, email string, purpose Purpos
 	return nil
 }
 
+// CheckToken validates a scoped verification token without consuming it.
+// Callers use this to preflight non-token inputs first, then call
+// ConsumeToken immediately before the protected mutation.
+func (s *Service) CheckToken(ctx context.Context, email string, purpose Purpose, token string) error {
+	_ = ctx
+	email = normalizeEmail(email)
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ErrTokenInvalid
+	}
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	now := time.Now()
+	s.sweepTokensLocked(now)
+	row, ok := s.tokens[token]
+	if !ok || row.ExpiresAt.Before(now) || row.Email != email || row.Purpose != purpose {
+		return ErrTokenInvalid
+	}
+	return nil
+}
+
 func (s *Service) sweepTokensLocked(now time.Time) {
 	for token, row := range s.tokens {
 		if row.ExpiresAt.Before(now) {

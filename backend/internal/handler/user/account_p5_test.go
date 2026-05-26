@@ -45,7 +45,8 @@ func setupP5Harness(t *testing.T) *p5Harness {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := &config.Config{
-		DB: config.DB{URL: dbURL, MaxOpenConns: 5, MaxIdleConns: 2},
+		DB:                 config.DB{URL: dbURL, MaxOpenConns: 5, MaxIdleConns: 2},
+		PublicRegistration: true,
 		OIDC: config.OIDC{
 			Issuer:       "https://idp.example.com",
 			ClientID:     "client",
@@ -84,7 +85,7 @@ func setupP5Harness(t *testing.T) *p5Harness {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	apiUser := engine.Group("/api/user")
-	NewAuthHandler(userService, authService, verifyService, cfg.OIDC, true).RegisterRoutes(apiUser)
+	NewAuthHandler(userService, authService, verifyService, true).RegisterRoutes(apiUser)
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireActiveUser(authService, userRepo))
 	NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 
@@ -181,6 +182,29 @@ func TestP5ChangeEmailRequiresVerificationToken(t *testing.T) {
 	}
 	if out.Email == nil || *out.Email != "new@example.com" || !out.EmailVerified {
 		t.Fatalf("email not verified: %+v", out)
+	}
+}
+
+func TestP5OIDCCreateAccountDoesNotConsumeTokenWhenPendingInvalid(t *testing.T) {
+	h := setupP5Harness(t)
+	code := seedCode(t, h.db, "new@example.com", verification.PurposeOIDCCreateAccount)
+	confirmed, err := h.verify.Confirm(context.Background(), "new@example.com", code, verification.PurposeOIDCCreateAccount)
+	if err != nil {
+		t.Fatalf("confirm code: %v", err)
+	}
+
+	status := h.doJSON(t, http.MethodPost, "/api/user/auth/oidc/create-account", "", gin.H{
+		"pending_token":      "missing",
+		"display_name":       "New User",
+		"email":              "new@example.com",
+		"password":           "password123",
+		"verification_token": confirmed.Token,
+	}, nil)
+	if status != http.StatusBadRequest {
+		t.Fatalf("invalid pending status = %d", status)
+	}
+	if err := h.verify.CheckToken(context.Background(), "new@example.com", verification.PurposeOIDCCreateAccount, confirmed.Token); err != nil {
+		t.Fatalf("verification token should remain reusable after preflight failure: %v", err)
 	}
 }
 

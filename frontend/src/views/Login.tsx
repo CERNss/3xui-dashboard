@@ -25,6 +25,11 @@ function localPath(value: string | null, fallback: string) {
   }
 }
 
+function portalPath(value: string | null, fallback = '/portal/subscription') {
+  const path = localPath(value, fallback)
+  return path === '/portal' || path.startsWith('/portal/') ? path : fallback
+}
+
 function providerLabel(provider: OIDCProvider) {
   return provider.name || 'OIDC'
 }
@@ -45,7 +50,8 @@ export function Login() {
   const [cooldown, setCooldown] = useState(0)
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search])
-  const nextPath = localPath(params.get('next'), '/admin/status')
+  const adminNextPath = localPath(params.get('next'), '/admin/status')
+  const oidcNextPath = portalPath(params.get('next'))
 
   useEffect(() => {
     let cancelled = false
@@ -74,7 +80,7 @@ export function Login() {
     try {
       const res = await adminLogin.mutateAsync(values)
       setAdminSession(res.token, res.username)
-      navigate(nextPath, { replace: true })
+      navigate(adminNextPath, { replace: true })
     } catch (e) {
       setError(formatError(e, t('auth.loginFailed', { defaultValue: 'Login failed' })))
       setCooldown(3)
@@ -88,7 +94,7 @@ export function Login() {
         window.location.assign(provider.login_url)
         return
       }
-      const res = await oidcStart.mutateAsync({ redirectAfter: nextPath, providerKey: provider.key })
+      const res = await oidcStart.mutateAsync({ redirectAfter: oidcNextPath, providerKey: provider.key })
       window.location.assign(res.authorize_url)
     } catch (e) {
       setError(formatError(e, t('auth.oidcStarting', { defaultValue: 'Could not start OIDC login' })))

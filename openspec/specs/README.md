@@ -71,7 +71,7 @@ Each entry maps to `openspec/specs/<key>/spec.md`.
 ### Identity & access
 - `auth-bootstrap` — env-supplied admin credential, ADMIN_PASSWORD auto-generation.
 - `admin-auth` — `/api/admin/auth/login`, admin JWT (audience `admin`).
-- `user-accounts` — portal account model, register / login / change-pw / bind-email.
+- `user-accounts` — portal account model, register / login / change-pw / verified email change.
 - `unified-login` — single `/login` route, role auto-fallback, login/register tabs.
 - `email-verification` — 6-digit code, 10-min TTL, 60s send cooldown.
 - `oidc-providers` — listing endpoint, login-page button row, and OIDC start/callback account completion.

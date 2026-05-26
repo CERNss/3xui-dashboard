@@ -102,8 +102,15 @@ per provider beneath the admin login form, separated by a divider.
   - A horizontal divider with the SSO label
   - One button labelled with the provider name
 - **AND** clicking the button SHALL call `POST /api/user/auth/oidc/start`
-  with `{provider_key:"default", redirect_after:<safe next path>}`
+  with `{provider_key:"default", redirect_after:<safe portal next path>}`
 - **AND** the browser SHALL navigate to the returned `authorize_url`
+
+#### Scenario: SSO defaults to portal redirect
+
+- **GIVEN** the login view is opened without a portal `next` path
+- **WHEN** a user starts OIDC from the shared login page
+- **THEN** `redirect_after` SHALL default to `/portal/subscription`
+- **AND** admin-only `next` paths SHALL NOT be passed into OIDC start
 
 #### Scenario: Multiple providers (future-proofing)
 
@@ -139,6 +146,13 @@ flow with PKCE.
 - **THEN** the system SHALL exchange the code for tokens, validate the ID token signature, issuer, audience, and expiration, and read subject/email claims
 - **AND** if the provider subject is already linked to a local user, the response SHALL be a user-audience JWT
 
+#### Scenario: DB-backed provider callback does not require default OIDC
+
+- **GIVEN** a provider row exists in `oidc_providers` and the env/runtime `default` provider is disabled
+- **WHEN** callback state identifies that provider key
+- **THEN** the callback SHALL resolve issuer/client/secret/redirect values from the provider row
+- **AND** the token exchange SHALL complete without requiring default OIDC config
+
 #### Scenario: Callback returns pending account completion
 
 - **WHEN** the provider subject is not linked to a local user
@@ -156,6 +170,7 @@ flow with PKCE.
 - **WHEN** the user chooses to create a new local account from a pending OIDC callback
 - **THEN** completion SHALL use `POST /api/user/auth/oidc/create-account`
 - **AND** the handler SHALL require a display name, password, and email-verification token for `oidc_create_account`
+- **AND** the service SHALL reject account creation when public registration is disabled
 
 ## Implementation notes
 

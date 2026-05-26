@@ -79,8 +79,6 @@ export const portalProfileApi = {
         new_password: newPassword,
       })
       .then((r) => r.data),
-  bindEmail: (email: string) =>
-    portalClient.post<{ status: string }>('/bind-email', { email }).then((r) => r.data),
   startOIDCLink: (providerKey: string, redirectAfter?: string) =>
     portalClient
       .post<{ authorize_url: string }>('/oidc/link/start', {

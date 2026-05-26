@@ -121,21 +121,6 @@ func (s *oidcPendingSessions) put(token string, p *oidcPending) {
 	s.m[token] = p
 }
 
-func (s *oidcPendingSessions) take(token string) *oidcPending {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sweepLocked()
-	p, ok := s.m[token]
-	if !ok {
-		return nil
-	}
-	delete(s.m, token)
-	if p.expiresAt.Before(time.Now()) {
-		return nil
-	}
-	return p
-}
-
 func (s *oidcPendingSessions) get(token string) *oidcPending {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -396,18 +381,6 @@ func (s *Service) ListOIDCProviders(ctx context.Context, userID int64) ([]OIDCPr
 	return out, nil
 }
 
-// ListLinkedOIDCIdentities returns all provider identities linked to a
-// local user account.
-func (s *Service) ListLinkedOIDCIdentities(ctx context.Context, userID int64) ([]model.UserOIDCIdentity, error) {
-	return s.users.ListOIDCIdentities(ctx, userID)
-}
-
-// FindOIDCIdentityByProviderSubject returns the account identity for
-// an OIDC callback's provider subject pair.
-func (s *Service) FindOIDCIdentityByProviderSubject(ctx context.Context, providerKey, subject string) (*model.UserOIDCIdentity, error) {
-	return s.users.FindOIDCIdentity(ctx, providerKey, subject)
-}
-
 // LinkOIDCIdentityToUser links a verified provider identity to an
 // existing user for callback/account-completion flows.
 func (s *Service) LinkOIDCIdentityToUser(ctx context.Context, userID int64, providerKey, subject, providerEmail string, providerEmailVerified bool) (*model.UserOIDCIdentity, error) {
@@ -652,8 +625,11 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, oidc config.OIDC, code, 
 	}
 	if p, err := s.getOIDCProvider(ctx, providerKey); err == nil {
 		oidc = oidcFromProvider(*p)
-	} else if providerKey != defaultOIDCProviderKey {
+	} else if providerKey != defaultOIDCProviderKey || !errors.Is(err, ErrOIDCProviderNotFound) {
 		return nil, err
+	}
+	if !oidc.Enabled() {
+		return nil, ErrNotImplemented
 	}
 	provider := providerFromOIDC(providerKey, oidc)
 	if err := s.ensureOIDCProvider(ctx, provider); err != nil {

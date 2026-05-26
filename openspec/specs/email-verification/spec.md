@@ -1,7 +1,7 @@
 # email-verification
 
-Short-lived 6-digit email codes used to gate portal registration (and
-future flows like password reset).
+Short-lived 6-digit email codes used to gate portal registration,
+profile email changes, and OIDC account completion.
 
 ## Purpose & boundaries
 
@@ -10,8 +10,8 @@ of the email they're registering with. This module owns:
 
 - The code lifecycle: generate, send, verify, consume.
 - The storage schema and rate-limit policy.
-- The HTTP surface (`POST /api/user/auth/send-code`) and the
-  `register` extension that consumes the code.
+- The HTTP surfaces for public registration/OIDC account completion
+  and authenticated profile email change.
 - The dev-mode fallback when SMTP is not configured.
 
 Actual SMTP transport is delegated to `mailer`. User-row creation is
@@ -25,7 +25,7 @@ The baseline schema includes:
 CREATE TABLE email_verification_codes (
     id              BIGSERIAL PRIMARY KEY,
     email           TEXT        NOT NULL,
-    purpose         TEXT        NOT NULL,        -- 'register' (more later)
+    purpose         TEXT        NOT NULL,        -- 'register', 'change_email', 'oidc_create_account'
     code_hash       TEXT        NOT NULL,        -- sha256(code) hex
     expires_at      TIMESTAMPTZ NOT NULL,
     sent_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -189,9 +189,32 @@ register so dev workflows are not blocked by missing mail infrastructure.
 - **AND** the mailer SHALL log at INFO level: subject, to, body (containing the code)
 - **AND** the endpoint SHALL respond `204` so the SPA's UX is unchanged
 
+### Requirement: Scoped token flows
+
+The system SHALL support start/confirm/token verification for
+`change_email` and `oidc_create_account` in addition to register codes.
+
+#### Scenario: Public auth verification purpose is restricted
+
+- **WHEN** a client calls `/api/user/auth/email-verification/start` or `/confirm`
+- **THEN** the accepted purposes SHALL be `register` and `oidc_create_account`
+- **AND** `change_email` SHALL be rejected on the public auth surface
+
+#### Scenario: Account verification purpose is authenticated
+
+- **WHEN** an authenticated user calls `/api/user/email-verification/start` or `/confirm`
+- **THEN** `change_email` SHALL be accepted for profile email changes
+- **AND** the returned verification token SHALL be consumed by `/api/user/change-email`
+
+#### Scenario: OIDC create-account uses a verified local email
+
+- **WHEN** OIDC pending account completion submits a local email
+- **THEN** the frontend SHALL confirm an `oidc_create_account` code and submit the resulting verification token to `/api/user/auth/oidc/create-account`
+- **AND** the service SHALL validate the pending OIDC decision and public-registration/domain controls before creating the user
+
 ## Frontend behavior
 
-`frontend/src/views/Login.vue` in register mode:
+`frontend/src/views/Login.tsx` in register mode:
 
 - Calls `portalAuthApi.sendCode(email)` when user clicks "发送验证码"
 - Starts a 60-second countdown after a successful send; the send button

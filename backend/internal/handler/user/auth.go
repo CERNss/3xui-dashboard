@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
@@ -25,11 +24,7 @@ type AuthHandler struct {
 // NewAuthHandler wires the handler. `smtpOn` controls whether the
 // register endpoint enforces a verification code: in dev (SMTP off)
 // the code field is optional so testing doesn't require a mail server.
-//
-// `oidcCfg` lets the providers endpoint expose the operator's configured
-// OIDC IdP (display name + icon) so the login page can render the
-// "使用 X 登录" button. Empty config → empty list → button hides.
-func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, oidcCfg config.OIDC, smtpOn bool) *AuthHandler {
+func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, smtpOn bool) *AuthHandler {
 	return &AuthHandler{users: users, auth: a, verify: v, smtpOn: smtpOn}
 }
 
@@ -447,16 +442,25 @@ func (h *AuthHandler) OIDCCreateAccount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if err := h.verify.ConsumeToken(c.Request.Context(), req.Email, verification.PurposeOIDCCreateAccount, req.VerificationToken); err != nil {
+	if err := h.verify.CheckToken(c.Request.Context(), req.Email, verification.PurposeOIDCCreateAccount, req.VerificationToken); err != nil {
 		h.writeVerificationError(c, err)
 		return
 	}
-	u, redirectAfter, err := h.users.OIDCCreateAccount(c.Request.Context(), usersvc.OIDCCreateAccountInput{
+	input := usersvc.OIDCCreateAccountInput{
 		PendingToken: req.PendingToken,
 		DisplayName:  req.DisplayName,
 		Email:        req.Email,
 		Password:     req.Password,
-	})
+	}
+	if err := h.users.ValidateOIDCCreateAccount(c.Request.Context(), input); err != nil {
+		h.writeOIDCCompletionError(c, err)
+		return
+	}
+	if err := h.verify.ConsumeToken(c.Request.Context(), req.Email, verification.PurposeOIDCCreateAccount, req.VerificationToken); err != nil {
+		h.writeVerificationError(c, err)
+		return
+	}
+	u, redirectAfter, err := h.users.OIDCCreateAccount(c.Request.Context(), input)
 	if err != nil {
 		h.writeOIDCCompletionError(c, err)
 		return
@@ -492,7 +496,7 @@ type oidcProviderMeta struct {
 
 func parseVerificationPurpose(raw string) (verification.Purpose, bool) {
 	switch verification.Purpose(raw) {
-	case verification.PurposeRegister, verification.PurposeChangeEmail, verification.PurposeOIDCCreateAccount:
+	case verification.PurposeRegister, verification.PurposeOIDCCreateAccount:
 		return verification.Purpose(raw), true
 	default:
 		return "", false
@@ -526,6 +530,8 @@ func (h *AuthHandler) writeOIDCCompletionError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, usersvc.ErrDomainNotAllowed):
 		c.JSON(http.StatusForbidden, gin.H{"error": "email domain not allowed"})
+	case errors.Is(err, usersvc.ErrRegistrationOff):
+		c.JSON(http.StatusForbidden, gin.H{"error": "public registration is disabled"})
 	case errors.Is(err, usersvc.ErrEmailTaken):
 		c.JSON(http.StatusConflict, gin.H{"error": "email already in use"})
 	case errors.Is(err, usersvc.ErrOIDCEmailConflict):

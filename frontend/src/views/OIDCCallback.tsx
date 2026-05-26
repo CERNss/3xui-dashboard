@@ -19,6 +19,7 @@ type ErrorKind =
   | 'accountSuspended'
   | 'emailUnverified'
   | 'notConfigured'
+  | 'registrationClosed'
   | 'unknown'
   | 'invalidEntry'
 
@@ -37,6 +38,7 @@ const oidcErrorMessages: Record<ErrorKind, string> = {
   emailUnverified: 'This OIDC provider did not return a verified email.',
   invalidEntry: 'This callback URL is missing code or state.',
   notConfigured: 'OIDC login is not configured.',
+  registrationClosed: 'Public registration is disabled.',
   stateInvalid: 'This login link expired or failed the state check. Start again.',
   unknown: 'OIDC login failed.',
 }
@@ -119,6 +121,9 @@ export function classifyOidcError(error: unknown): TypedOidcError {
   }
   if (status === 403 && lower.includes('suspended')) {
     return { kind: 'accountSuspended', status, body }
+  }
+  if (status === 403 && lower.includes('registration')) {
+    return { kind: 'registrationClosed', status, body }
   }
   if (status === 501) {
     return { kind: 'notConfigured', status, body }

@@ -3,13 +3,22 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -103,6 +112,103 @@ func seedOIDCIdentity(t *testing.T, svc *Service, userID int64, providerKey, sub
 	}
 }
 
+type oidcFakeIDP struct {
+	t      *testing.T
+	key    *rsa.PrivateKey
+	kid    string
+	server *httptest.Server
+
+	tokenRequests int
+	lastForm      url.Values
+}
+
+func newOIDCFakeIDP(t *testing.T, clientID, subject, email string, emailVerified bool) *oidcFakeIDP {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	idp := &oidcFakeIDP{t: t, key: key, kid: "test-key"}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		issuer := idp.server.URL
+		_ = json.NewEncoder(w).Encode(oidcDiscovery{
+			AuthorizationEndpoint: issuer + "/authorize",
+			TokenEndpoint:         issuer + "/token",
+			JWKSURI:               issuer + "/jwks",
+			Issuer:                issuer,
+		})
+	})
+	mux.HandleFunc("/jwks", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(jwksDoc{Keys: []jwksKey{rsaPublicJWK(idp.kid, &key.PublicKey)}})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		idp.tokenRequests++
+		idp.lastForm = cloneValues(r.PostForm)
+		now := time.Now()
+		raw, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss":            idp.server.URL,
+			"aud":            clientID,
+			"sub":            subject,
+			"email":          email,
+			"email_verified": emailVerified,
+			"iat":            now.Unix(),
+			"exp":            now.Add(time.Hour).Unix(),
+		}).SignedString(key)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(oidcTokenResponse{
+			AccessToken: "access",
+			IDToken:     raw,
+			TokenType:   "Bearer",
+			ExpiresIn:   3600,
+		})
+	})
+	idp.server = httptest.NewServer(mux)
+	t.Cleanup(idp.server.Close)
+	return idp
+}
+
+func rsaPublicJWK(kid string, key *rsa.PublicKey) jwksKey {
+	n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
+	eBytes := big.NewInt(int64(key.E)).Bytes()
+	return jwksKey{
+		Kid: kid,
+		Kty: "RSA",
+		Alg: "RS256",
+		Use: "sig",
+		N:   n,
+		E:   base64.RawURLEncoding.EncodeToString(eBytes),
+	}
+}
+
+func mustQueryParam(t *testing.T, rawURL, name string) string {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse url %q: %v", rawURL, err)
+	}
+	value := u.Query().Get(name)
+	if value == "" {
+		t.Fatalf("missing query param %q in %q", name, rawURL)
+	}
+	return value
+}
+
+func cloneValues(values url.Values) url.Values {
+	out := make(url.Values, len(values))
+	for key, items := range values {
+		out[key] = append([]string(nil), items...)
+	}
+	return out
+}
+
 func requireIdentity(t *testing.T, svc *Service, providerKey, subject string) *model.UserOIDCIdentity {
 	t.Helper()
 	identity, err := svc.users.FindOIDCIdentity(context.Background(), providerKey, subject)
@@ -160,8 +266,68 @@ func TestEffectiveOIDC_UsesRuntimeSettings(t *testing.T) {
 	}
 }
 
+func TestOIDCCallback_DBProviderWorksWithoutDefaultOIDC(t *testing.T) {
+	_, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	svc.cfg.OIDC = config.OIDC{}
+
+	idp := newOIDCFakeIDP(t, "db-client", "sub-db", "provider@example.com", true)
+	if err := svc.users.UpsertOIDCProvider(ctx, &model.OIDCProvider{
+		ProviderKey:  "db-sso",
+		DisplayName:  "DB SSO",
+		Issuer:       idp.server.URL,
+		ClientID:     "db-client",
+		ClientSecret: "db-secret",
+		RedirectURL:  "https://dashboard.example.com/oidc/callback",
+		Scopes:       model.StringSlice{"openid", "email"},
+		Enabled:      true,
+	}); err != nil {
+		t.Fatalf("seed db provider: %v", err)
+	}
+
+	authURL, err := svc.OIDCStartForProvider(ctx, "db-sso", "/portal/subscription")
+	if err != nil {
+		t.Fatalf("start db provider: %v", err)
+	}
+	state := mustQueryParam(t, authURL, "state")
+
+	res, err := svc.OIDCCallback(ctx, "auth-code", state)
+	if err != nil {
+		t.Fatalf("callback db provider: %v", err)
+	}
+	if res.Pending == nil || res.Pending.ProviderKey != "db-sso" {
+		t.Fatalf("expected pending decision for db-sso, got %+v", res)
+	}
+	if idp.tokenRequests != 1 {
+		t.Fatalf("token requests = %d, want 1", idp.tokenRequests)
+	}
+	if got := idp.lastForm.Get("client_id"); got != "db-client" {
+		t.Fatalf("client_id = %q", got)
+	}
+	if got := idp.lastForm.Get("client_secret"); got != "db-secret" {
+		t.Fatalf("client_secret = %q", got)
+	}
+}
+
+func TestOIDCCallback_DefaultWithoutOIDCConfigReturnsNotImplemented(t *testing.T) {
+	_, svc := setupOIDCDB(t)
+	ctx := context.Background()
+	svc.cfg.OIDC = config.OIDC{}
+	svc.oidcSessions.put("default-state", &oidcState{
+		verifier:      "verifier",
+		redirectAfter: "/portal/subscription",
+		expiresAt:     time.Now().Add(time.Minute),
+	})
+
+	_, err := svc.OIDCCallback(ctx, "auth-code", "default-state")
+	if !errors.Is(err, ErrNotImplemented) {
+		t.Fatalf("want ErrNotImplemented, got %v", err)
+	}
+}
+
 func TestUpsertOIDC_UnlinkedSubjectReturnsPendingCreate(t *testing.T) {
 	_, svc := setupOIDCDB(t)
+	svc.cfg.PublicRegistration = true
 	ctx := context.Background()
 
 	res, err := svc.upsertOIDCUser(ctx, "sub-new-1", "provider@example.com", true, "/portal")
@@ -184,6 +350,7 @@ func TestUpsertOIDC_UnlinkedSubjectReturnsPendingCreate(t *testing.T) {
 
 func TestOIDCCreateAccount_CreatesLocalUserAndIdentityWithDifferentEmail(t *testing.T) {
 	_, svc := setupOIDCDB(t)
+	svc.cfg.PublicRegistration = true
 	ctx := context.Background()
 	res, err := svc.upsertOIDCUser(ctx, "sub-new-2", "provider@example.com", true, "/portal/profile")
 	if err != nil {
@@ -223,6 +390,29 @@ func TestOIDCCreateAccount_CreatesLocalUserAndIdentityWithDifferentEmail(t *test
 	}
 	if identity.ProviderEmail != "provider@example.com" || !identity.ProviderEmailVerified {
 		t.Fatalf("provider email not stored: %+v", identity)
+	}
+}
+
+func TestOIDCCreateAccount_RequiresPublicRegistration(t *testing.T) {
+	_, svc := setupOIDCDB(t)
+	svc.cfg.PublicRegistration = false
+	ctx := context.Background()
+	res, err := svc.upsertOIDCUser(ctx, "sub-registration-off", "provider@example.com", true, "/portal")
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	_, _, err = svc.OIDCCreateAccount(ctx, OIDCCreateAccountInput{
+		PendingToken: res.Pending.Token,
+		DisplayName:  "Blocked",
+		Email:        "blocked@example.com",
+		Password:     "password123",
+	})
+	if !errors.Is(err, ErrRegistrationOff) {
+		t.Fatalf("want ErrRegistrationOff, got %v", err)
+	}
+	if got := svc.oidcPending.get(res.Pending.Token); got == nil {
+		t.Fatal("pending decision should remain available after registration gate rejection")
 	}
 }
 

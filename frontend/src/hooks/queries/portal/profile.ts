@@ -61,16 +61,6 @@ export function useChangePassword() {
   })
 }
 
-export function useBindEmail() {
-  const queryClient = useQueryClient()
-  const handleError = useMutationErrorHandler()
-  return useMutation({
-    mutationFn: (email: string) => portalProfileApi.bindEmail(email),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
-    onError: (error) => handleError(error),
-  })
-}
-
 export function useStartOidcLink() {
   const handleError = useMutationErrorHandler()
   return useMutation({

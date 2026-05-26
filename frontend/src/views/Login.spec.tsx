@@ -158,8 +158,18 @@ describe('Login', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Dynamic SSO' }))
 
-    await waitFor(() => expect(oidcStartMock).toHaveBeenCalledWith('/admin/users', 'dynamic'))
+    await waitFor(() => expect(oidcStartMock).toHaveBeenCalledWith('/portal/subscription', 'dynamic'))
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/start')
+  })
+
+  it('preserves portal next for OIDC start', async () => {
+    providersMock.mockResolvedValue([{ key: 'dynamic', name: 'Dynamic SSO', login_url: '' }])
+    oidcStartMock.mockResolvedValue({ authorize_url: 'https://idp.example/start' })
+    renderLogin('/login?next=%2Fportal%2Forders%3Ftab%3Dactive')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Dynamic SSO' }))
+
+    await waitFor(() => expect(oidcStartMock).toHaveBeenCalledWith('/portal/orders?tab=active', 'dynamic'))
   })
 
   it('honors next after successful login', async () => {
