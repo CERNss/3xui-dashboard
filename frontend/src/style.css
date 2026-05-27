@@ -6,6 +6,8 @@
 :root {
   --app-bg: #f4f7fb;
   --app-text: #1f2937;
+  --admin-shell-content-padding-block: 24px;
+  --admin-shell-content-padding-inline: 64px;
   --admin-shell-header-height: 76px;
   font-family: Geist, "DM Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -271,7 +273,7 @@ body {
   margin: 0;
   min-height: 0;
   overflow: auto;
-  padding: 24px;
+  padding: var(--admin-shell-content-padding-block) var(--admin-shell-content-padding-inline);
 }
 
 .admin-topbar-heading {
@@ -537,6 +539,8 @@ body {
 
 @media (max-width: 920px) {
   :root {
+    --admin-shell-content-padding-block: 20px;
+    --admin-shell-content-padding-inline: 20px;
     --admin-shell-header-height: 68px;
   }
 
@@ -552,6 +556,11 @@ body {
 }
 
 @media (max-width: 680px) {
+  :root {
+    --admin-shell-content-padding-block: 16px;
+    --admin-shell-content-padding-inline: 16px;
+  }
+
   .admin-topbar-subtitle.ant-typography,
   .admin-topbar-account-copy {
     display: none;
@@ -721,7 +730,7 @@ body {
   --config-list-table-header-height: 55px;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--admin-shell-header-height) - 48px);
+  height: calc(100vh - var(--admin-shell-header-height) - (var(--admin-shell-content-padding-block) * 2));
   min-height: 0;
   overflow: hidden;
 }

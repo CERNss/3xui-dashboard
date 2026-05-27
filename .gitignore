@@ -44,12 +44,16 @@ Thumbs.db
 *.swp
 *.swo
 
-# --- Claude Code per-user settings (commands/ and skills/ are team-shared) ---
-.claude/settings.local.json
-.claude/memory/
+# --- Claude Code local state (commands/ and skills/ are team-shared) ---
+.claude/*
+!.claude/commands/
+!.claude/commands/**
+!.claude/skills/
+!.claude/skills/**
 
 # --- Agent tooling (skill definitions imported by openspec-* commands) ---
 # Skill bundles live at the operator's home dir, not in this project.
+.agent/
 .agents/
 
 # --- Logs ---
@@ -62,6 +66,7 @@ coverage/
 *.coverprofile
 
 # --- Browser / Playwright test artifacts ---
+.playwright/
 .playwright-mcp/
 playwright-report/
 blob-report/
