@@ -1,7 +1,7 @@
 # user-accounts
 
-End-user account lifecycle: register, login, change password, bind
-email, OIDC linkage, admin moderation, and the client→user ownership
+End-user account lifecycle: register, login, change password, verified
+email change, OIDC linkage, admin moderation, and the client→user ownership
 mapping that vanilla 3x-ui lacks.
 
 ## Purpose & boundaries
@@ -11,9 +11,10 @@ the `users` table. Adjacent modules:
 
 - **`admin-auth`** — the single administrator (never in this table).
 - **`email-verification`** — the 6-digit code service that gates register.
-- **`unified-login`** — the SPA chrome that presents login + register.
-- **`oidc-providers`** — listing endpoint; OIDC start/callback flow is a
-  separate planned change.
+- **`unified-login`** — the SPA chrome that presents admin password login
+  and portal OIDC start.
+- **`oidc-providers`** — provider listing, OIDC start/callback, and
+  account-completion endpoints.
 - **`client-provisioning`** — owns the `client_ownerships` table on the
   fleet side; this module owns the user side of that relation.
 
@@ -75,13 +76,13 @@ registration.
 
 - **WHEN** public registration is enabled
 - **THEN** the registration endpoint accepts the flow described above
-- **AND** the portal's "注册" tab SHALL be available in the unified login UI
+- **AND** OIDC create-account completion MAY create new users subject to the same controls
 
 #### Scenario: Registration disabled
 
 - **WHEN** public registration is disabled and a client calls `/api/user/auth/register`
 - **THEN** the system SHALL respond HTTP 403 with `ErrRegistrationOff`
-- **AND** the portal SHALL hide the "注册" tab (or surface a "registration closed" message)
+- **AND** OIDC create-account completion SHALL also be rejected
 
 #### Scenario: Existing accounts can still log in
 
@@ -89,10 +90,11 @@ registration.
 - **THEN** the switch SHALL affect only account creation
 - **AND** existing users SHALL still be able to log in via email/password and OIDC normally
 
-#### Scenario: OIDC unaffected by the switch
+#### Scenario: OIDC account creation follows the switch
 
 - **WHEN** public registration is disabled
-- **THEN** OIDC login SHALL still be able to provision a first-time account, unless OIDC auto-provisioning is itself separately disabled
+- **THEN** OIDC login for already linked identities and bind-existing completion SHALL still work
+- **AND** OIDC create-account completion SHALL be rejected with HTTP 403
 
 ### Requirement: Email Domain Allowlist
 
@@ -102,13 +104,13 @@ configurable set of allowed domain suffixes (env
 
 #### Scenario: Allowlist configured
 
-- **WHEN** an allowlist is configured (e.g. `company.com,edu.cn`) and a visitor registers or binds an email whose `@<domain>` is in the allowlist (case-insensitive)
+- **WHEN** an allowlist is configured (e.g. `company.com,edu.cn`) and a visitor registers or changes to an email whose `@<domain>` is in the allowlist (case-insensitive)
 - **THEN** the operation SHALL be permitted
 
 #### Scenario: Disallowed domain rejected
 
 - **WHEN** the allowlist is configured and an email's domain is not in it
-- **THEN** registration or email binding SHALL be rejected with `ErrDomainNotAllowed` surfaced as HTTP 403
+- **THEN** registration or email change SHALL be rejected with `ErrDomainNotAllowed` surfaced as HTTP 403
 - **AND** the error message SHALL name the allowed domains so the user knows which to use
 
 #### Scenario: Allowlist empty means unrestricted
@@ -121,35 +123,23 @@ configurable set of allowed domain suffixes (env
 - **WHEN** an OIDC login presents an email whose domain is not in a configured allowlist
 - **THEN** the system SHALL reject the login (or provision the account without an email) rather than storing a disallowed email
 
-### Requirement: Email Address Binding
+### Requirement: Verified Email Change
 
-The system SHALL allow an authenticated user to bind an email address
-to their account — in particular an OIDC-provisioned account that has
-no email, or a user adding a secondary verified email.
+The system SHALL allow an authenticated user to change their local
+login email only after proving ownership through the email-verification
+flow.
 
-#### Scenario: Bind an email
+#### Scenario: Change email with verification token
 
-- **WHEN** an authenticated user submits an email address to the bind endpoint, the domain passes the allowlist, and the email is not already used by another account
-- **THEN** the system SHALL associate the email with the user's account
-
-#### Scenario: Bind requires verification when SMTP is enabled
-
-- **WHEN** SMTP is enabled and a user requests to bind an email
-- **THEN** the system SHALL send a verification message (via `email-verification` with a future `PurposeBindEmail` value) and mark the email `verified=true` only after the user confirms the code
-
-> Note: As of this change, only `PurposeRegister` is implemented. Bind
-> still completes with `verified=false` until the verification flow is
-> extended to the bind path — tracked as a future change.
-
-#### Scenario: Bind without verification when SMTP is disabled
-
-- **WHEN** SMTP is disabled and a user binds an email
-- **THEN** the system SHALL record the email as `verified=false` and complete the bind without sending a message
+- **WHEN** an authenticated user confirms an email-verification code for `purpose="change_email"` and submits the returned verification token to `/api/user/change-email`
+- **AND** the domain passes the allowlist and the email is not already used by another account
+- **THEN** the system SHALL update `users.email`
+- **AND** mark `email_verified=true`
 
 #### Scenario: Email already in use
 
-- **WHEN** a user tries to bind an email that already belongs to another account
-- **THEN** the bind SHALL be rejected with HTTP 409
+- **WHEN** a user tries to change to an email that already belongs to another account
+- **THEN** the change SHALL be rejected with HTTP 409
 
 ### Requirement: Email/Password Login
 
@@ -159,7 +149,7 @@ user-only endpoint.
 #### Scenario: Valid user login
 
 - **WHEN** a user POSTs correct `{email, password}` to `/api/user/auth/login`
-- **THEN** the system SHALL respond HTTP 200 with a JWT whose audience is `user`, plus `user_id` and `email`
+- **THEN** the system SHALL respond HTTP 200 with a JWT whose audience is `user`, plus response fields `user_id` and `email`
 
 #### Scenario: Invalid user login
 
@@ -172,51 +162,28 @@ user-only endpoint.
 - **THEN** the system SHALL respond HTTP 403 with `ErrUserSuspended` surfaced
 - **AND** no JWT SHALL be issued
 
-### Requirement: Standard OIDC Login (planned)
+### Requirement: OIDC Linkage Belongs To User Accounts
 
-The system SHALL support end-user login through a standard OIDC
-provider using the Authorization Code flow with PKCE.
+The user model SHALL support linking an external OIDC subject to a local user
+while keeping provider HTTP flow details in `oidc-providers`.
 
-> Note: v1 ships the discovery surface only (see `oidc-providers`).
-> The start / callback / token-exchange handlers respond HTTP 501 until
-> the dedicated OIDC change lands. Scenarios below describe the target
-> behavior so the test plan stays stable across that change.
+#### Scenario: Returning OIDC identity maps to a user
 
-#### Scenario: OIDC configured from environment
+- **WHEN** an OIDC callback resolves a provider subject already linked to a local account
+- **THEN** the system SHALL issue a user-audience JWT for that account
+- **AND** SHALL NOT create a duplicate user row.
 
-- **WHEN** `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL` are all set
-- **THEN** the system SHALL expose the OIDC login button via `GET /api/user/auth/oidc/providers` (see `oidc-providers`)
+#### Scenario: Existing local email requires password proof before binding
 
-#### Scenario: Authorization request
+- **WHEN** an OIDC callback presents an email already owned by a local account but not linked to that provider subject
+- **THEN** the account-completion flow SHALL require the existing local password before linking the identity
+- **AND** the system SHALL NOT expose a passwordless OIDC resolve endpoint.
 
-- **WHEN** a user starts OIDC login at `POST /api/user/auth/oidc/start`
-- **THEN** the system SHALL generate `state` and PKCE values, store them in short-lived cookies, and redirect the browser to the provider's authorize endpoint with `openid` scope
+#### Scenario: New OIDC account follows account policy
 
-#### Scenario: Callback exchanges code
-
-- **WHEN** the provider redirects back with a matching `state` and an authorization code
-- **THEN** the system SHALL exchange the code (with the PKCE verifier) for tokens, validate the ID token signature against JWKS and its issuer/audience/expiry, and read the subject and email claims
-
-#### Scenario: First OIDC login provisions an account
-
-- **WHEN** a user completes OIDC login with an email claim and no account exists for that email
-- **THEN** the system SHALL create a `users` row using that email, link the OIDC subject to it, and issue a user-audience JWT
-
-#### Scenario: Returning OIDC user
-
-- **WHEN** a user completes OIDC login and the OIDC subject is already linked to the same email account
-- **THEN** the system SHALL log them into the existing account without creating a duplicate
-
-#### Scenario: Existing email requires account decision
-
-- **WHEN** an OIDC login presents an email that already belongs to an account not linked to that OIDC subject
-- **THEN** the callback SHALL return a short-lived pending decision rather than silently linking or creating a duplicate
-- **AND** the frontend SHALL ask whether to bind the OIDC login to the existing account or recreate/reset that email identity
-
-#### Scenario: Missing OIDC email is rejected
-
-- **WHEN** an OIDC login succeeds at the provider but the ID token does not include an email claim
-- **THEN** the dashboard SHALL reject the login because email is the unique user identity
+- **WHEN** OIDC account completion creates a new local user
+- **THEN** it SHALL respect public-registration and email-domain controls
+- **AND** store a local password hash when the completion flow collects a password.
 
 ### Requirement: User Password Management
 
@@ -233,10 +200,11 @@ password.
 - **WHEN** an authenticated user submits their current and a new password
 - **THEN** the system SHALL verify the current password and update the stored hash
 
-#### Scenario: OIDC-only account has no password
+#### Scenario: OIDC-created account has a password
 
-- **WHEN** a user who registered solely through OIDC opens password settings
-- **THEN** the portal SHALL offer to set an initial password (no current-password prompt)
+- **WHEN** a user completes OIDC create-account
+- **THEN** the account SHALL store a local bcrypt password hash
+- **AND** future password changes SHALL require the current password
 
 ### Requirement: User Token Audience
 
@@ -246,7 +214,8 @@ grant admin access.
 #### Scenario: User token audience
 
 - **WHEN** any user-portal JWT is issued (email/password or OIDC)
-- **THEN** the claims SHALL include `user_id`, audience `user`, and an `exp` timestamp
+- **THEN** the JWT claims SHALL include `sub` set to the user id string, audience `user`, and an `exp` timestamp
+- **AND** the response body SHALL include `user_id` for frontend state
 
 #### Scenario: Protected user route
 
@@ -262,7 +231,7 @@ user accounts.
 #### Scenario: Admin lists users
 
 - **WHEN** the admin calls `GET /api/admin/users`
-- **THEN** the system SHALL return a paginated list with id, email, auth method (oidc / password / both), balance, linked client identity, and status
+- **THEN** the system SHALL return a paginated list with id, email, `oidc_linked`, balance, linked client identity, and status
 
 #### Scenario: Admin suspends a user
 

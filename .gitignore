@@ -6,7 +6,6 @@
 *.dylib
 *.test
 *.out
-/.cache/
 /3xui-dashboard
 /backend/bin/
 /backend/data/
@@ -44,17 +43,12 @@ Thumbs.db
 *.swp
 *.swo
 
-# --- Claude Code local state (commands/ and skills/ are team-shared) ---
-.claude/*
-!.claude/commands/
-!.claude/commands/**
-!.claude/skills/
-!.claude/skills/**
-
-# --- Agent tooling (skill definitions imported by openspec-* commands) ---
-# Skill bundles live at the operator's home dir, not in this project.
-.agent/
-.agents/
+# --- Local agent / tool state ---
+/.cache/
+/.agent/
+/.agents/
+/.claude/
+/.playwright/
 
 # --- Logs ---
 *.log

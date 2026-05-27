@@ -209,7 +209,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	messagesSvc := messages.New(mailerSvc, notifyLogRepo, bus, userRepo, ownershipRepo, logger)
 	messagesSvc.Start()
 	verifyService := verification.New(db, messagesSvc, logger)
-	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.OIDC, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
+	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)

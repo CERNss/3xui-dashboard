@@ -29,11 +29,6 @@ func RequireAdmin(a *auth.Service) gin.HandlerFunc {
 	return requireAudience(a, auth.AudAdmin)
 }
 
-// RequireUser is the portal-side equivalent of RequireAdmin.
-func RequireUser(a *auth.Service) gin.HandlerFunc {
-	return requireAudience(a, auth.AudUser)
-}
-
 // RequireActiveUser verifies a user JWT and then checks the current
 // database row is still active. It prevents a suspended account from
 // continuing to use an old, otherwise-valid JWT until expiry.
@@ -101,8 +96,8 @@ func verifyBearerClaims(c *gin.Context, a *auth.Service, want string) bool {
 }
 
 // Claims pulls the verified claims out of the Gin context. Safe to
-// call from any handler protected by RequireAdmin/RequireUser; the
-// middleware guarantees presence.
+// call from any handler protected by RequireAdmin/RequireActiveUser;
+// the middleware guarantees presence.
 func Claims(c *gin.Context) *auth.Claims {
 	v, ok := c.Get(ContextKey)
 	if !ok {

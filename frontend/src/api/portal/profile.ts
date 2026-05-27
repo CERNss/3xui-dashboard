@@ -9,7 +9,6 @@ export interface UserProfile {
   id: number
   email?: string | null
   display_name?: string | null
-  oidc_subject?: string | null
   email_verified: boolean
   status: 'active' | 'suspended'
   balance_cents: number
@@ -26,7 +25,7 @@ export interface EmailLoginMethod {
 export interface OIDCProviderLink {
   key?: string
   provider_key?: string
-  name: string
+  name?: string
   display_name?: string
   icon?: string | null
   icon_url?: string | null
@@ -39,12 +38,6 @@ export interface OIDCProviderLink {
 export interface LoginMethodsResponse {
   email: EmailLoginMethod
   oidc_providers: OIDCProviderLink[]
-  oidc?: {
-    enabled: boolean
-    bound: boolean
-    name?: string
-    icon?: string
-  }
 }
 
 export const portalProfileApi = {
@@ -75,8 +68,6 @@ export const portalProfileApi = {
         new_password: newPassword,
       })
       .then((r) => r.data),
-  bindEmail: (email: string) =>
-    portalClient.post<{ status: string }>('/bind-email', { email }).then((r) => r.data),
   startOIDCLink: (providerKey: string, redirectAfter?: string) =>
     portalClient
       .post<{ authorize_url: string }>('/oidc/link/start', {

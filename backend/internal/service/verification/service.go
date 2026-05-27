@@ -3,7 +3,7 @@
 // Code shape: 6 decimal digits, 10 minute TTL, single-use, scoped by
 // purpose ("register" today; password reset / email change later).
 //
-// Storage: email_verification_codes table (migration 0004). Code is
+// Storage: email_verification_codes table. Code is
 // hashed at rest so a DB leak doesn't immediately compromise pending
 // verifications.
 //
@@ -283,6 +283,27 @@ func (s *Service) ConsumeToken(ctx context.Context, email string, purpose Purpos
 	}
 	delete(s.tokens, token)
 	if row.ExpiresAt.Before(now) || row.Email != email || row.Purpose != purpose {
+		return ErrTokenInvalid
+	}
+	return nil
+}
+
+// CheckToken validates a scoped verification token without consuming it.
+// Callers use this to preflight non-token inputs first, then call
+// ConsumeToken immediately before the protected mutation.
+func (s *Service) CheckToken(ctx context.Context, email string, purpose Purpose, token string) error {
+	_ = ctx
+	email = normalizeEmail(email)
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ErrTokenInvalid
+	}
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	now := time.Now()
+	s.sweepTokensLocked(now)
+	row, ok := s.tokens[token]
+	if !ok || row.ExpiresAt.Before(now) || row.Email != email || row.Purpose != purpose {
 		return ErrTokenInvalid
 	}
 	return nil

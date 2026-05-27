@@ -173,14 +173,6 @@ func (s *Service) collectOneWithPolicy(ctx context.Context, n NodeRef, now time.
 	return s.persistTrafficSnapshot(ctx, n, snap, now)
 }
 
-func (s *Service) collectOne(ctx context.Context, n NodeRef, now time.Time) error {
-	snap, err := s.fetchTrafficSnapshot(ctx, n)
-	if err != nil {
-		return err
-	}
-	return s.persistTrafficSnapshot(ctx, n, snap, now)
-}
-
 func (s *Service) fetchTrafficSnapshot(ctx context.Context, n NodeRef) (*runtime.TrafficSnapshot, error) {
 	r, err := s.rt.Get(ctx, n.ID)
 	if err != nil {
@@ -331,16 +323,6 @@ func (s *Service) UsageForUser(ctx context.Context, userID int64, from, to time.
 // ownership.
 func (s *Service) HistoryForOwnership(ctx context.Context, o *model.ClientOwnership, from, to time.Time, bucket time.Duration) ([]BucketPoint, error) {
 	rows, err := s.samples.ChronologicalForClient(ctx, o.NodeID, o.InboundTag, o.ClientEmail, from, to)
-	if err != nil {
-		return nil, err
-	}
-	return BucketDeltas(rows, bucket.Nanoseconds()), nil
-}
-
-// HistoryForInbound returns time-bucketed usage points for an
-// inbound (sum over all clients).
-func (s *Service) HistoryForInbound(ctx context.Context, nodeID int64, inboundTag string, from, to time.Time, bucket time.Duration) ([]BucketPoint, error) {
-	rows, err := s.samples.ChronologicalForInbound(ctx, nodeID, inboundTag, from, to)
 	if err != nil {
 		return nil, err
 	}

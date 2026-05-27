@@ -40,7 +40,6 @@ var (
 	ErrOIDCEmailMismatch    = errors.New("oidc: email does not match current account")
 	ErrOIDCEmailUnverified  = errors.New("oidc: verified email claim is required")
 	ErrOIDCPendingInvalid   = errors.New("oidc: pending decision invalid or expired")
-	ErrOIDCActionInvalid    = errors.New("oidc: invalid account decision")
 	ErrOIDCProviderRequired = errors.New("oidc: provider key is required")
 	ErrOIDCProviderNotFound = errors.New("oidc: provider not found")
 )
@@ -53,7 +52,7 @@ type Service struct {
 	cfg      *config.Config
 	log      *slog.Logger
 
-	// OIDC state — only used when cfg.OIDC.Enabled().
+	// OIDC state for env/runtime and provider-backed OIDC flows.
 	oidcSessions     *oidcSessions
 	oidcPending      *oidcPendingSessions
 	oidcHTTP         *http.Client
@@ -162,7 +161,6 @@ type LoginInput struct {
 // user's profile page.
 type LoginMethods struct {
 	Email LoginMethodEmail   `json:"email"`
-	OIDC  LoginMethodOIDC    `json:"oidc"`
 	OIDCs []OIDCProviderView `json:"oidc_providers,omitempty"`
 }
 
@@ -170,13 +168,6 @@ type LoginMethodEmail struct {
 	Bound    bool   `json:"bound"`
 	Email    string `json:"email,omitempty"`
 	Verified bool   `json:"verified"`
-}
-
-type LoginMethodOIDC struct {
-	Enabled bool   `json:"enabled"`
-	Bound   bool   `json:"bound"`
-	Name    string `json:"name,omitempty"`
-	Icon    string `json:"icon,omitempty"`
 }
 
 type OIDCProviderView struct {
@@ -202,6 +193,11 @@ type OIDCCreateAccountInput struct {
 	DisplayName  string `json:"display_name"`
 	Email        string `json:"email"`
 	Password     string `json:"password"`
+}
+
+type AdminUserView struct {
+	model.User
+	OIDCLinked bool `json:"oidc_linked"`
 }
 
 // UpdateProfile updates profile metadata that does not participate in
@@ -272,31 +268,6 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword,
 	return s.users.Update(ctx, userID, map[string]any{"password_hash": string(hash)})
 }
 
-// BindEmail attaches an email to an existing (OIDC-only) account.
-// Domain allowlist is checked. SMTP delivery / verification is not
-// implemented in v1 — the email is stored with email_verified=false
-// and a follow-up will add the verification flow.
-func (s *Service) BindEmail(ctx context.Context, userID int64, email string) error {
-	email = strings.TrimSpace(strings.ToLower(email))
-	if _, err := mail.ParseAddress(email); err != nil {
-		return ErrInvalidEmail
-	}
-	if !s.emailDomainAllowed(ctx, email) {
-		return ErrDomainNotAllowed
-	}
-	existing, err := s.users.GetByEmail(ctx, email)
-	if err != nil {
-		return err
-	}
-	if existing != nil && existing.ID != userID {
-		return ErrEmailTaken
-	}
-	return s.users.Update(ctx, userID, map[string]any{
-		"email":          email,
-		"email_verified": false,
-	})
-}
-
 // ChangeEmailVerified updates the local login email after the caller
 // has already verified ownership via the email-verification service.
 func (s *Service) ChangeEmailVerified(ctx context.Context, userID int64, email string) (*model.User, error) {
@@ -346,17 +317,6 @@ func (s *Service) LoginMethods(ctx context.Context, userID int64) (*LoginMethods
 		return nil, err
 	}
 	out.OIDCs = providers
-	if len(providers) > 0 {
-		out.OIDC.Enabled = true
-		out.OIDC.Name = providers[0].DisplayName
-		out.OIDC.Icon = providers[0].IconURL
-		for _, p := range providers {
-			if p.Linked {
-				out.OIDC.Bound = true
-				break
-			}
-		}
-	}
 	return out, nil
 }
 
@@ -397,7 +357,7 @@ func (s *Service) RotateSubID(ctx context.Context, userID int64) (string, error)
 	return newID, nil
 }
 
-// ---- OIDC stubs ----------------------------------------------------------
+// ---- OIDC login ----------------------------------------------------------
 
 // OIDCStart generates a state + PKCE verifier, stashes them in the
 // in-memory session store, and returns the IDP's authorize URL.
@@ -444,31 +404,7 @@ func (s *Service) OIDCLinkStart(ctx context.Context, userID int64, redirectAfter
 // this OIDC subject yet, the caller gets a pending decision instead
 // of a silent auto-link.
 func (s *Service) OIDCCallback(ctx context.Context, code, state string) (*OIDCLoginResult, error) {
-	oidc, err := s.effectiveOIDC(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !oidc.Enabled() {
-		return nil, ErrNotImplemented
-	}
-	return s.oidcCallbackImpl(ctx, oidc, code, state)
-}
-
-// OIDCResolve finalizes a pending OIDC account decision returned by
-// OIDCCallback. action is one of:
-//   - bind: link this OIDC subject to the existing email account.
-//   - recreate: reset that email account's login identity to OIDC
-//     (password removed, subscription id rotated) while keeping the
-//     same canonical email row.
-func (s *Service) OIDCResolve(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
-	oidc, err := s.effectiveOIDC(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	if !oidc.Enabled() {
-		return nil, "", ErrNotImplemented
-	}
-	return s.resolveOIDCPending(ctx, pendingToken, action)
+	return s.oidcCallbackImpl(ctx, config.OIDC{}, code, state)
 }
 
 // OIDCBindExisting links a pending verified provider identity to an
@@ -522,30 +458,9 @@ func (s *Service) OIDCBindExisting(ctx context.Context, in OIDCBindExistingInput
 // pending OIDC callback. The local email may differ from the provider
 // email; the handler verifies local email ownership before calling.
 func (s *Service) OIDCCreateAccount(ctx context.Context, in OIDCCreateAccountInput) (*model.User, string, error) {
-	if _, err := s.effectiveOIDC(ctx); err != nil {
-		return nil, "", err
-	}
-	pendingToken := strings.TrimSpace(in.PendingToken)
-	p := s.oidcPending.get(pendingToken)
-	if p == nil {
-		return nil, "", ErrOIDCPendingInvalid
-	}
-	email := strings.TrimSpace(strings.ToLower(in.Email))
-	if _, err := mail.ParseAddress(email); err != nil {
-		return nil, "", ErrInvalidEmail
-	}
-	if !s.emailDomainAllowed(ctx, email) {
-		return nil, "", ErrDomainNotAllowed
-	}
-	if len(in.Password) < 8 {
-		return nil, "", ErrPasswordTooShort
-	}
-	existing, err := s.users.GetByEmail(ctx, email)
+	p, pendingToken, email, err := s.validateOIDCCreateAccount(ctx, in)
 	if err != nil {
 		return nil, "", err
-	}
-	if existing != nil {
-		return nil, "", ErrEmailTaken
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -588,10 +503,48 @@ func (s *Service) OIDCCreateAccount(ctx context.Context, in OIDCCreateAccountInp
 	return u, p.redirectAfter, nil
 }
 
-// OIDCConfig returns the current effective OIDC config for UI metadata.
-// Runtime settings override env values; empty settings fall back to env.
-func (s *Service) OIDCConfig(ctx context.Context) (config.OIDC, error) {
-	return s.effectiveOIDC(ctx)
+// ValidateOIDCCreateAccount checks pending state, local email, password,
+// and registration gates without mutating. Handlers use it before
+// consuming the one-time email verification token.
+func (s *Service) ValidateOIDCCreateAccount(ctx context.Context, in OIDCCreateAccountInput) error {
+	_, _, _, err := s.validateOIDCCreateAccount(ctx, in)
+	return err
+}
+
+func (s *Service) validateOIDCCreateAccount(ctx context.Context, in OIDCCreateAccountInput) (*oidcPending, string, string, error) {
+	if _, err := s.effectiveOIDC(ctx); err != nil {
+		return nil, "", "", err
+	}
+	pendingToken := strings.TrimSpace(in.PendingToken)
+	p := s.oidcPending.get(pendingToken)
+	if p == nil {
+		return nil, "", "", ErrOIDCPendingInvalid
+	}
+	email := strings.TrimSpace(strings.ToLower(in.Email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, "", "", ErrInvalidEmail
+	}
+	if !s.emailDomainAllowed(ctx, email) {
+		return nil, "", "", ErrDomainNotAllowed
+	}
+	if len(in.Password) < 8 {
+		return nil, "", "", ErrPasswordTooShort
+	}
+	allowed, err := s.publicRegistrationEnabled(ctx)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if !allowed {
+		return nil, "", "", ErrRegistrationOff
+	}
+	existing, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if existing != nil {
+		return nil, "", "", ErrEmailTaken
+	}
+	return p, pendingToken, email, nil
 }
 
 // ---- Admin ----------------------------------------------------------------
@@ -741,8 +694,27 @@ func (s *Service) AdminUpdate(ctx context.Context, userID int64, in AdminUpdateI
 }
 
 // AdminList returns paged user rows for the admin console.
-func (s *Service) AdminList(ctx context.Context, limit, offset int) ([]model.User, error) {
-	return s.users.List(ctx, limit, offset)
+func (s *Service) AdminList(ctx context.Context, limit, offset int) ([]AdminUserView, error) {
+	rows, err := s.users.List(ctx, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	userIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		userIDs = append(userIDs, row.ID)
+	}
+	identitiesByUser, err := s.users.ListOIDCIdentitiesByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AdminUserView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, AdminUserView{
+			User:       row,
+			OIDCLinked: len(identitiesByUser[row.ID]) > 0,
+		})
+	}
+	return out, nil
 }
 
 // AdminDelete removes a user. ON DELETE CASCADE on the FK takes

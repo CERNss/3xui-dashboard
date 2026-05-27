@@ -33,7 +33,6 @@ vi.mock('@/api/portal/auth', () => ({
     oidcCallback: vi.fn(),
     oidcProviders: vi.fn().mockResolvedValue([]),
     registrationPolicy: vi.fn().mockResolvedValue({ email_verification_required: false }),
-    oidcResolve: vi.fn(),
     oidcStart: vi.fn(),
   },
 }))

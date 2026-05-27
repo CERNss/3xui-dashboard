@@ -31,23 +31,6 @@ func (r *TrafficSampleRepo) InsertBatch(ctx context.Context, rows []model.Traffi
 	return nil
 }
 
-// LatestForClient returns the most recent sample for the (node,
-// inbound, client) triple, or (nil, nil) on miss.
-func (r *TrafficSampleRepo) LatestForClient(ctx context.Context, nodeID int64, inboundTag, email string) (*model.TrafficSample, error) {
-	var row model.TrafficSample
-	q := r.db.WithContext(ctx).
-		Where("node_id = ? AND inbound_tag = ? AND client_email = ?", nodeID, inboundTag, email).
-		Order("taken_at DESC").
-		Limit(1)
-	if err := q.First(&row).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("TrafficSample.LatestForClient: %w", err)
-	}
-	return &row, nil
-}
-
 // ChronologicalForClient returns samples for one client between from
 // and to, oldest-first. Used by HistoryBuckets and delta walks.
 func (r *TrafficSampleRepo) ChronologicalForClient(ctx context.Context, nodeID int64, inboundTag, email string, from, to time.Time) ([]model.TrafficSample, error) {
@@ -63,26 +46,6 @@ func (r *TrafficSampleRepo) ChronologicalForClient(ctx context.Context, nodeID i
 	q = q.Order("taken_at ASC")
 	if err := q.Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("TrafficSample.ChronologicalForClient: %w", err)
-	}
-	return rows, nil
-}
-
-// ChronologicalForNode returns every inbound-level sample for a node
-// between from and to (client_email IS NULL filters to inbound-only
-// rows). Oldest-first.
-func (r *TrafficSampleRepo) ChronologicalForInbound(ctx context.Context, nodeID int64, inboundTag string, from, to time.Time) ([]model.TrafficSample, error) {
-	var rows []model.TrafficSample
-	q := r.db.WithContext(ctx).
-		Where("node_id = ? AND inbound_tag = ? AND client_email IS NULL", nodeID, inboundTag)
-	if !from.IsZero() {
-		q = q.Where("taken_at >= ?", from)
-	}
-	if !to.IsZero() {
-		q = q.Where("taken_at <= ?", to)
-	}
-	q = q.Order("taken_at ASC")
-	if err := q.Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("TrafficSample.ChronologicalForInbound: %w", err)
 	}
 	return rows, nil
 }

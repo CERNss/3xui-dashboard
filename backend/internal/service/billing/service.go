@@ -491,9 +491,8 @@ func (s *Service) PurchaseViaPayment(ctx context.Context, in PurchaseViaPaymentI
 
 	// Capture the provisioning target on the order so the
 	// confirmation path can create the client without asking the
-	// caller again. Dedicated columns (migration 0007) — earlier
-	// versions stuffed this into ErrorMessage but that overloaded
-	// the column.
+	// caller again. Earlier versions stuffed this into ErrorMessage
+	// but that overloaded the column.
 	order := &model.Order{
 		UserID:                 user.ID,
 		PlanID:                 plan.ID,

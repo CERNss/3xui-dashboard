@@ -1,162 +1,131 @@
 # unified-login
 
-A single `/login` route handles both admin and portal sign-in, plus
-self-serve portal registration, in one consistent SPA chrome.
+The single `/login` SPA entry for administrator password login and portal OIDC
+start.
 
-## Purpose & boundaries
+## Purpose & Boundaries
 
-Operators and portal users share the same email-shaped account format,
-so we cannot route by URL alone (the historical `/admin/login` vs
-`/portal/login` split required users to know their role in advance).
-This module defines:
+This module defines the frontend route and navigation rules for the shared
+auth entry. It does not define token issuance or credential verification:
 
-- The unified `/login` SPA route (frontend).
-- The auto-detection logic that picks which auth endpoint to call.
-- The login/register tab switch on the same page.
-- Old role-specific entry URLs are not registered.
+- Admin password authentication is owned by `admin-auth`.
+- Portal account APIs are owned by `user-accounts`.
+- OIDC provider discovery, start, callback, and completion are owned by
+  `oidc-providers`.
+- Email verification mechanics are owned by `email-verification`.
 
-Token issuance and credential checking are out of scope — those live
-in `admin-auth`, `user-accounts`, and (for registration) `email-verification`.
+## Frontend Route Topology
 
-## Frontend route topology
-
-Defined in `frontend/src/router/index.ts`:
+Defined in `frontend/src/router.tsx`:
 
 ```
-/                          → redirect /admin
-/login                     → views/Login.vue
-/admin/*                   → AdminLayout, meta.requiresAdmin
-/portal/*                  → PortalLayout, meta.requiresUser
+/                 -> redirect /admin
+/login            -> AuthLayout + Login
+/oidc/callback    -> AuthLayout + OIDCCallback
+/admin/*          -> ProtectedRoute(area="admin") + AdminLayout
+/portal/*         -> ProtectedRoute(area="portal") + PortalLayout
+*                 -> AuthLayout + NotFound
 ```
-
-The 401 axios interceptor (`api/client/factory.ts`) redirects to
-`/login` with `?next=...`; unified login uses the target area only
-to choose attempt order and post-login navigation.
 
 ## Requirements
 
-### Requirement: Single login route serves both roles
+### Requirement: Login Route Uses Admin Password Form
 
-The system SHALL provide a unified `/login` SPA route that authenticates
-users into either the admin console or the portal based solely on the
-credentials presented.
+The system SHALL provide `/login` as the only password-login page in the SPA,
+and that form SHALL target admin authentication.
 
-#### Scenario: Admin email + password lands the user in /admin
+#### Scenario: Admin credentials accepted
 
-- **GIVEN** the operator has configured `ADMIN_USERNAME=alice@example.com` and a known `ADMIN_PASSWORD`
-- **WHEN** the user submits the login form with `alice@example.com` and that password
-- **THEN** the SPA SHALL store the admin token in `adminAuthStore`
-- **AND** navigate to `/admin`
-- **AND** SHALL NOT call the portal login endpoint
+- **WHEN** the user submits username and password on `/login`
+- **THEN** `Login.tsx` SHALL call the admin login mutation
+- **AND** on success SHALL store the admin token in `useAdminAuthStore`
+- **AND** navigate to the safe admin `next` path or `/admin/status`.
 
-#### Scenario: Portal user falls back after admin 401
+#### Scenario: Admin login fails
 
-- **GIVEN** the user `bob@example.com` is a portal user, not the admin
-- **WHEN** the user submits the login form
-- **THEN** the SPA SHALL attempt `POST /api/admin/auth/login` first
-- **AND** on a 400/401/403/404 response, SHALL attempt `POST /api/user/auth/login` with the same credentials
-- **AND** on success, store the user token in `portalAuthStore` and navigate to `/portal`
+- **WHEN** the admin login mutation rejects
+- **THEN** the page SHALL render the formatted error inline
+- **AND** SHALL start a short retry cooldown before another submit is accepted.
 
-#### Scenario: Both endpoints reject the credentials
+### Requirement: Login Route Renders OIDC Provider Buttons
 
-- **WHEN** neither admin nor portal recognizes the credentials
-- **THEN** the SPA SHALL display "邮箱或密码错误"
-- **AND** SHALL NOT redirect or clear the form fields
+The login page SHALL also expose configured portal SSO providers below the
+admin password form.
 
-#### Scenario: Network or 5xx aborts the fallback
+#### Scenario: Providers hidden when unavailable
 
-- **WHEN** the first attempt yields a network error or HTTP 5xx
-- **THEN** the SPA SHALL NOT fall back to the second endpoint
-- **AND** SHALL display the message returned by `utils/format.ts::formatError(e)`
+- **GIVEN** `GET /api/user/auth/oidc/providers` returns `[]` or fails
+- **WHEN** `/login` renders
+- **THEN** no SSO divider or provider buttons SHALL be shown.
 
-### Requirement: Login/register tabs share the same view
+#### Scenario: Provider starts portal SSO
 
-The system SHALL expose a tab control at the top of `views/Login.vue`
-that toggles between "登录" and "注册" without leaving the route.
+- **GIVEN** at least one OIDC provider is returned
+- **WHEN** the user clicks a provider button
+- **THEN** `Login.tsx` SHALL call the OIDC start mutation with the provider key
+- **AND** navigate the browser to the returned `authorize_url`.
 
-#### Scenario: User switches from 登录 to 注册
+### Requirement: `next` Is Sanitized Per Auth Area
 
-- **WHEN** the user clicks the 注册 tab
-- **THEN** the form SHALL show additional fields: 确认密码, verification code
-- **AND** clear any prior error state
-- **AND** clear the verification code field (do not preserve across mode switches)
+The system SHALL accept only local paths in `next` query parameters and SHALL
+not let one auth area redirect into the other through SSO.
 
-#### Scenario: Registration mode never targets admin
+#### Scenario: Admin next path
 
-- **WHEN** the user submits the form in 注册 mode
-- **THEN** the SPA SHALL call `POST /api/user/auth/register` exclusively
-- **AND** SHALL NOT attempt admin auth — admin is bootstrapped via env, not self-served
+- **GIVEN** `/login?next=/admin/users`
+- **WHEN** admin password login succeeds
+- **THEN** the SPA SHALL navigate to `/admin/users`.
 
-#### Scenario: Initial mode honors ?mode=register
+#### Scenario: Unsafe admin next path
 
-- **WHEN** the route is loaded with `?mode=register`
-- **THEN** the 注册 tab SHALL be active on first render
+- **GIVEN** `/login?next=https://evil.example/path`
+- **WHEN** admin password login succeeds
+- **THEN** the SPA SHALL navigate to `/admin/status`.
 
-### Requirement: `?next=` is honored when role matches
+#### Scenario: OIDC next path
 
-The system SHALL respect a `next` query parameter after successful login,
-but ONLY when it points into the area the authenticated role can access.
+- **GIVEN** `/login?next=/portal/orders`
+- **WHEN** OIDC start runs
+- **THEN** `redirect_after` SHALL be `/portal/orders`.
 
-#### Scenario: Admin redirected back to /admin/inbounds after 401
+#### Scenario: Admin path is not passed to OIDC
 
-- **GIVEN** an admin's session expired while viewing `/admin/inbounds`
-- **WHEN** the axios interceptor redirects to `/login?next=%2Fadmin%2Finbounds`
-- **AND** the user re-authenticates as admin
-- **THEN** the SPA SHALL navigate to `/admin/inbounds`
+- **GIVEN** `/login?next=/admin/status`
+- **WHEN** OIDC start runs
+- **THEN** `redirect_after` SHALL fall back to `/portal/subscription`.
 
-#### Scenario: Portal user blocked from admin next
+### Requirement: Old Role-Specific Auth Entry Routes Are Absent
 
-- **GIVEN** the URL is `/login?next=%2Fadmin%2Fstatus`
-- **WHEN** the user logs in with portal credentials (admin attempt 401, portal succeeds)
-- **THEN** the SPA SHALL navigate to `/portal` (not `/admin/status`)
-- **AND** SHALL NOT raise an error — silently sidesteps the mismatched next
-
-### Requirement: Old role-specific entry URLs are absent
-
-The system SHALL NOT register role-specific login, registration, or
-dashboard alias routes. The unified login page is the only auth entry.
+The SPA SHALL NOT register separate role-specific auth entry routes.
 
 #### Scenario: Old admin login URL
 
-- **WHEN** a request lands on `/admin/login`
-- **THEN** the router SHALL render the 404 route
+- **WHEN** the browser opens `/admin/login`
+- **THEN** the route SHALL resolve through the admin route tree and render NotFound when unauthenticated handling does not intercept it.
 
-#### Scenario: Old portal login URL
+#### Scenario: Old portal auth URLs
 
-- **WHEN** a request lands on `/portal/login`
-- **THEN** the router SHALL render the 404 route
+- **WHEN** the browser opens `/portal/login` or `/portal/register`
+- **THEN** the route SHALL not render a dedicated login or registration page.
 
-#### Scenario: Old dashboard/register aliases
+### Requirement: Admin And Portal Sessions Remain Independent
 
-- **WHEN** a request lands on `/admin/dashboard`, `/portal/dashboard`, or `/portal/register`
-- **THEN** the router SHALL render the 404 route
+The frontend SHALL store admin and portal sessions in separate Zustand stores.
 
-### Requirement: Independent admin and portal sessions
+#### Scenario: Portal OIDC does not clear admin session
 
-The system SHALL store admin and portal tokens in separate stores so
-a single browser may be simultaneously authenticated as both.
+- **GIVEN** an admin token exists in `useAdminAuthStore`
+- **WHEN** a portal OIDC callback stores a portal token
+- **THEN** the admin token SHALL remain available until explicit admin logout or expiry.
 
-#### Scenario: Operator who is also a portal user
+#### Scenario: Admin login does not clear portal session
 
-- **GIVEN** the operator has signed in with admin credentials
-- **WHEN** the operator signs in again with portal credentials
-- **THEN** `adminAuthStore.token` and `portalAuthStore.token` SHALL coexist in localStorage
-- **AND** the admin console SHALL remain accessible without re-authentication
+- **GIVEN** a portal token exists in `usePortalAuthStore`
+- **WHEN** admin password login succeeds
+- **THEN** the portal token SHALL remain available until explicit portal logout or expiry.
 
-## Implementation notes
+## Out of Scope
 
-- Attempt order is hard-coded admin-first (not heuristic) because both
-  account formats are emails. The 1 wasted request per portal sign-in is
-  acceptable for a self-hosted small-fleet deployment.
-- `tryRole(role, account, password)` in `views/Login.vue` returns:
-  - `true` on success (store updated as side effect)
-  - `false` on 400/401/403/404 → fall through to the next role
-  - throws on 5xx / network errors → caller surfaces via `formatError`
-
-## Out of scope
-
-- The visual chrome of the login page — see `layouts-and-chrome` (AuthLayout).
-- Email verification mechanics — see `email-verification`.
-- OIDC providers list at the bottom of the form — see `oidc-providers`.
-- Backend admin/login implementation — see `admin-auth`.
-- Backend register/login implementation — see `user-accounts`.
+- Portal password login UI.
+- Portal self-registration UI.
+- OIDC callback account completion UI, covered by `oidc-providers`.

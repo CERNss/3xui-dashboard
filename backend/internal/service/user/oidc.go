@@ -121,21 +121,6 @@ func (s *oidcPendingSessions) put(token string, p *oidcPending) {
 	s.m[token] = p
 }
 
-func (s *oidcPendingSessions) take(token string) *oidcPending {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sweepLocked()
-	p, ok := s.m[token]
-	if !ok {
-		return nil
-	}
-	delete(s.m, token)
-	if p.expiresAt.Before(time.Now()) {
-		return nil
-	}
-	return p
-}
-
 func (s *oidcPendingSessions) get(token string) *oidcPending {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -396,18 +381,6 @@ func (s *Service) ListOIDCProviders(ctx context.Context, userID int64) ([]OIDCPr
 	return out, nil
 }
 
-// ListLinkedOIDCIdentities returns all provider identities linked to a
-// local user account.
-func (s *Service) ListLinkedOIDCIdentities(ctx context.Context, userID int64) ([]model.UserOIDCIdentity, error) {
-	return s.users.ListOIDCIdentities(ctx, userID)
-}
-
-// FindOIDCIdentityByProviderSubject returns the account identity for
-// an OIDC callback's provider subject pair.
-func (s *Service) FindOIDCIdentityByProviderSubject(ctx context.Context, providerKey, subject string) (*model.UserOIDCIdentity, error) {
-	return s.users.FindOIDCIdentity(ctx, providerKey, subject)
-}
-
 // LinkOIDCIdentityToUser links a verified provider identity to an
 // existing user for callback/account-completion flows.
 func (s *Service) LinkOIDCIdentityToUser(ctx context.Context, userID int64, providerKey, subject, providerEmail string, providerEmailVerified bool) (*model.UserOIDCIdentity, error) {
@@ -652,8 +625,11 @@ func (s *Service) oidcCallbackImpl(ctx context.Context, oidc config.OIDC, code, 
 	}
 	if p, err := s.getOIDCProvider(ctx, providerKey); err == nil {
 		oidc = oidcFromProvider(*p)
-	} else if providerKey != defaultOIDCProviderKey {
+	} else if providerKey != defaultOIDCProviderKey || !errors.Is(err, ErrOIDCProviderNotFound) {
 		return nil, err
+	}
+	if !oidc.Enabled() {
+		return nil, ErrNotImplemented
 	}
 	provider := providerFromOIDC(providerKey, oidc)
 	if err := s.ensureOIDCProvider(ctx, provider); err != nil {
@@ -936,52 +912,6 @@ func (s *Service) linkOIDCToUser(ctx context.Context, userID int64, args ...any)
 		return nil, err
 	}
 	return &OIDCLoginResult{User: got, RedirectAfter: redirectAfter}, nil
-}
-
-func (s *Service) resolveOIDCPending(ctx context.Context, pendingToken, action string) (*model.User, string, error) {
-	p := s.oidcPending.take(strings.TrimSpace(pendingToken))
-	if p == nil {
-		return nil, "", ErrOIDCPendingInvalid
-	}
-	var existing *model.User
-	var err error
-	if p.existingUserID > 0 {
-		existing, err = s.users.Get(ctx, p.existingUserID)
-		if err != nil {
-			return nil, "", err
-		}
-		if existing == nil || existing.Email == nil || !strings.EqualFold(*existing.Email, p.email) {
-			return nil, "", ErrOIDCPendingInvalid
-		}
-	}
-	switch action {
-	case "bind":
-		if existing == nil {
-			return nil, "", ErrOIDCPendingInvalid
-		}
-		if existing.PasswordHash == "" || existing.PasswordHash == model.DisabledPasswordHash {
-			return nil, "", ErrInvalidCredentials
-		}
-		updates := map[string]any{}
-		if p.emailVerified && !existing.EmailVerified && strings.EqualFold(*existing.Email, p.email) {
-			updates["email_verified"] = true
-		}
-		if err := s.users.Update(ctx, existing.ID, updates); err != nil {
-			return nil, "", err
-		}
-		if _, err := s.LinkOIDCIdentityToUser(ctx, existing.ID, p.providerKey, p.sub, p.email, p.emailVerified); err != nil {
-			return nil, "", err
-		}
-	case "recreate":
-		return nil, "", ErrOIDCActionInvalid
-	default:
-		return nil, "", ErrOIDCActionInvalid
-	}
-	u, err := s.users.Get(ctx, existing.ID)
-	if err != nil {
-		return nil, "", err
-	}
-	return u, p.redirectAfter, nil
 }
 
 // verifyIDToken parses, fetches JWKS, verifies signature, and

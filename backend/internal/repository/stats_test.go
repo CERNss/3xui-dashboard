@@ -310,6 +310,40 @@ func TestStatsRepo_Traffic_CounterResetCountsFullSample(t *testing.T) {
 	}
 }
 
+func TestStatsRepo_Traffic_PrefersInboundRollupOverClientSamples(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	nodeID := seedNode(t, db, "edge-hk")
+	inbound := "reality-in"
+	alice := "alice@example.com"
+	bob := "bob@example.com"
+
+	dayStart := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	monthStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	now := dayStart.Add(time.Hour)
+
+	// The collector stores both an inbound rollup and per-client rows for
+	// the same counters. Fleet totals must use the rollup once, not rollup
+	// plus every client row.
+	seedSample(t, db, nodeID, &inbound, nil, 0, 0, dayStart.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, nil, 1000, 2000, dayStart.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &alice, 0, 0, dayStart.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &alice, 400, 900, dayStart.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &bob, 0, 0, dayStart.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &bob, 600, 1100, dayStart.Add(2*time.Minute))
+
+	got, err := NewStatsRepo(db).Traffic(ctx, monthStart, dayStart, now)
+	if err != nil {
+		t.Fatalf("Traffic: %v", err)
+	}
+	if got.TodayUp != 1000 || got.TodayDown != 2000 {
+		t.Errorf("today = %d/%d, want inbound rollup 1000/2000 without double counting clients", got.TodayUp, got.TodayDown)
+	}
+	if got.MonthUp != 1000 || got.MonthDown != 2000 {
+		t.Errorf("month = %d/%d, want inbound rollup 1000/2000 without double counting clients", got.MonthUp, got.MonthDown)
+	}
+}
+
 func TestStatsRepo_TopNodes_RanksByTotalBytes(t *testing.T) {
 	db := setupStatsDB(t)
 	ctx := context.Background()
@@ -345,6 +379,35 @@ func TestStatsRepo_TopNodes_RanksByTotalBytes(t *testing.T) {
 	}
 	if got[2].Key != "edge-uk" || got[2].Bytes != 100 {
 		t.Errorf("rank2 = %+v, want edge-uk/100", got[2])
+	}
+}
+
+func TestStatsRepo_TopNodes_PrefersInboundRollupOverClientSamples(t *testing.T) {
+	db := setupStatsDB(t)
+	ctx := context.Background()
+	nodeID := seedNode(t, db, "edge-hk")
+	inbound := "reality-in"
+	alice := "alice@example.com"
+	bob := "bob@example.com"
+	since := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	now := since.Add(time.Hour)
+
+	seedSample(t, db, nodeID, &inbound, nil, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, nil, 1000, 2000, since.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &alice, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &alice, 400, 900, since.Add(2*time.Minute))
+	seedSample(t, db, nodeID, &inbound, &bob, 0, 0, since.Add(time.Minute))
+	seedSample(t, db, nodeID, &inbound, &bob, 600, 1100, since.Add(2*time.Minute))
+
+	got, err := NewStatsRepo(db).TopNodes(ctx, since, now, 6)
+	if err != nil {
+		t.Fatalf("TopNodes: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d rows, want 1: %+v", len(got), got)
+	}
+	if got[0].Key != "edge-hk" || got[0].Up != 1000 || got[0].Down != 2000 || got[0].Bytes != 3000 {
+		t.Errorf("rank0 = %+v, want edge-hk up=1000 down=2000 bytes=3000 without double counting clients", got[0])
 	}
 }
 

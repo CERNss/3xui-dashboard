@@ -86,6 +86,26 @@ func TestVerifyToken_ExpiredTokenRejected(t *testing.T) {
 	}
 }
 
+func TestVerifyToken_RejectsMissingExpiry(t *testing.T) {
+	s := newTestSvc()
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   Issuer,
+			Subject:  "admin",
+			Audience: jwt.ClaimStrings{AudAdmin},
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+		},
+		Username: "admin",
+	})
+	signed, err := tok.SignedString(s.secret)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	if _, err := s.VerifyToken(signed, AudAdmin); !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("expected ErrInvalidToken for missing exp, got %v", err)
+	}
+}
+
 func TestVerifyToken_BadSignatureRejected(t *testing.T) {
 	s := newTestSvc()
 	other := New("different-secret", time.Hour, "admin", "letmein")

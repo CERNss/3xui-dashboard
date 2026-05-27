@@ -102,7 +102,7 @@ The system SHALL ship with the following jobs registered by
 - **WHEN** `app.Build` finishes wiring
 - **THEN** a job with id `webhook.retry` and cadence `@every 10s` SHALL be registered
 - **AND** it SHALL pull `webhook_deliveries` rows where `status='pending' AND next_attempt_at <= now()` and re-issue them with exponential backoff
-- **AND** the partial index `webhook_deliveries_due` from migration `0003_webhook_retry.up.sql` SHALL be used by the planner
+- **AND** the partial index `webhook_deliveries_due` from the baseline schema SHALL be used by the planner
 
 ## Out of scope
 

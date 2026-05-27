@@ -7,7 +7,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/cern/3xui-dashboard/internal/config"
-	"github.com/cern/3xui-dashboard/internal/model"
 )
 
 func newCfg(public bool, allowlist ...string) *config.Config {
@@ -99,36 +98,6 @@ func TestRegister_EmailVerifiedFollowsInput(t *testing.T) {
 	}
 	if unverified.EmailVerified {
 		t.Error("expected email_verified=false by default")
-	}
-}
-
-func TestBindEmail_StoresUnverified(t *testing.T) {
-	_, svc := setupOIDCDB(t)
-	ctx := context.Background()
-	u := &model.User{
-		SubID:        "bind-email-sub-id",
-		Status:       model.UserStatusActive,
-		PasswordHash: model.DisabledPasswordHash,
-	}
-	if err := svc.users.Create(ctx, u); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-
-	if err := svc.BindEmail(ctx, u.ID, "bind@example.com"); err != nil {
-		t.Fatalf("bind email: %v", err)
-	}
-	got, err := svc.users.Get(ctx, u.ID)
-	if err != nil {
-		t.Fatalf("get user: %v", err)
-	}
-	if got.Email == nil || *got.Email != "bind@example.com" {
-		t.Fatalf("email not bound: %v", got.Email)
-	}
-	if got.EmailVerified {
-		t.Error("expected bind email to leave email_verified=false")
-	}
-	if got.PasswordHash == "" {
-		t.Fatal("password_hash invariant should stay non-empty")
 	}
 }
 

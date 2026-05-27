@@ -1,208 +1,131 @@
 # design-system
 
-The token taxonomy that backs every UI surface — fonts, palette, spacing,
-radii, shadows, motion. Single source of truth:
-`frontend/tailwind.config.js` + `frontend/src/style.css`.
+The visual language and reusable UI rules for the React/Ant Design SPA:
+typography, theme tokens, density, focus, motion, and shared primitives.
 
-## Purpose & boundaries
+## Purpose & Boundaries
 
-Without enforced tokens, AI-generated UI drifts into "template look":
-Inter font, purple gradients, card-on-card stacks, bouncy animations.
-This module pins the language Linear/Vercel/Sub2API-grade UI requires.
+This module defines how UI should look and be assembled. Theme state is owned
+by `theme-system`; app wiring is owned by `frontend-platform-react`.
 
-References that shaped the current values: Marzban (dark Xray panel),
-Xboard (Shadcn-based admin), Sub2API (dark grid + brand-tinted name),
-集换社 (login page with bold accent heading + secondary auth row).
+The current frontend uses AntD tokens plus `frontend/src/style.css`.
 
-## Tokens
+## Sources
 
-### Typography
-
-Self-hosted via `@fontsource/geist-sans` and `@fontsource/geist-mono`
-(no Google Fonts runtime dep). Imported in `main.ts`.
-
-| Stack | Value |
-|---|---|
-| `font-sans` | Geist, DM Sans, Inter, Apple system, PingFang SC, Microsoft YaHei, sans-serif |
-| `font-mono` | Geist Mono, JetBrains Mono, ui-monospace, SFMono-Regular, Menlo |
-
-`font-feature-settings: 'cv02','cv03','cv04','cv11','ss01'` on `body`
-enables Geist's stylistic alternates (rounder `g`, etc.).
-
-### Font scale (CRITICAL — bumped one notch from Tailwind defaults)
-
-| Token | Size | Purpose |
-|---|---|---|
-| `text-eyebrow` | 11px | Uppercase eyebrows / sectioned-nav headers |
-| `text-2xs` | 12px | Dense table meta, breadcrumb-like info |
-| `text-xs` | **13px** (was 12) | Smaller body / captions |
-| `text-body-sm` | 14px | Denser body alt |
-| `text-sm` | **15px** (was 14) | Body baseline for admin views |
-| `text-base` | 16px | (rarely used directly) |
-| `text-body-md` | 16px | Sub-headings, brand-name slots |
-| `text-lg` | 18px | Small section heads |
-| `text-xl` | 20px | Modal titles |
-| `text-2xl` | 24px (`-0.01em`) | Page H1 |
-| `text-3xl` | 30px (`-0.015em`) | Large H1 |
-| `text-display-sm` | 32px (`-0.015em` `weight 600`) | KPI big number |
-| `text-display-md` | 40px (`-0.02em` `weight 600`) | Hero |
-
-Magic `text-[Npx]` arbitrary values are forbidden in admin views (every
-instance has been refactored to one of the above; future code SHALL use
-the named tokens).
-
-### Color palette (HEX — OKLCH deferred)
-
-All three palettes have a `0/50/100/.../950` ladder.
-
-| Palette | Anchor `500` | Use |
-|---|---|---|
-| `accent-*` | `#14b8a6` (teal) | Primary brand. Restrained — used for active states, primary CTAs in dark mode, icons. |
-| `primary-*` | `#6366f1` (indigo) | Semantic only — secondary signal (e.g. download arrow). |
-| `surface-*` | warm stone (`#fafaf9` → `#0c0a09`) | Backgrounds and borders. Tinted away from pure gray. |
-| `ink-*` | cool near-black (`#0c0e12` peak) | Primary CTAs in light mode, headings. |
-
-Tailwind's neutral `red/amber/violet/pink` are also used for semantic
-states (error/warn/Reality protocol/decorative).
-
-### Spacing & layout
-
-- All padding/margin SHALL use 4px-multiples — no `13px` etc.
-- Max content width: `max-w-page` = 1500px (matches `AdminLayout`).
-- Card padding: `p-5` (small) / `p-8` (modals).
-- Card gap in grids: `gap-3` (compact) / `gap-4` (KPI strip).
-
-### Border radius
-
-Bumped from Tailwind defaults — cards feel softer:
-
-| Token | Value | Tailwind default | Notes |
-|---|---|---|---|
-| `rounded` | 8px | 4px | Inputs |
-| `rounded-lg` | 8px (no change) | 8px | Small chips, icon buttons |
-| `rounded-xl` | **14px** | 12px | Inputs / buttons |
-| `rounded-2xl` | **18px** | 16px | Cards |
-| `rounded-3xl` | 24px (no change) | 24px | Avatar tiles |
-| `rounded-full` | full | full | Pills |
-
-### Shadow
-
-Premium-UI principle: depth from contrast, not stacked drop shadows.
-
-| Token | Value | When |
-|---|---|---|
-| `shadow-hairline` | inset 1px ring of surface-200 | Card "border" when no border declared |
-| `shadow-card` | `0 1px 2px rgba(15,23,42,.04)` | Resting state on colored bg only |
-| `shadow-card-hover` | small lift | Hover on cards |
-| `shadow-elevated` | bigger lift | Modals only |
-| `shadow-rail` | `inset 2px 0 0 accent-600` | Active sidebar item (left bar) |
-| `shadow-focus` | `0 0 0 3px accent-500/25` | Keyboard focus ring |
-
-### Motion
-
-| Token | Value |
-|---|---|
-| `ease-brand` | `cubic-bezier(0.16, 1, 0.3, 1)` (Vercel-style spring-out) |
-| `animate-fade-in` | 0.2s ease-brand |
-| `animate-slide-up` | 0.24s ease-brand |
-| `animate-scale-in` | 0.22s ease-brand (modal entry) |
-| `animate-shimmer` | 1.4s linear infinite (skeleton) |
-
-Durations cap at 600ms. Bounce/elastic curves are forbidden.
-
-`prefers-reduced-motion: reduce` kills every animation + transition
-(set in `style.css` `@layer base`).
+```
+frontend/src/theme.ts     - AntD light/dark ThemeConfig and breakpoints
+frontend/src/style.css    - global CSS, shell classes, focus/motion rules
+frontend/src/components/common/
+frontend/src/components/layout/
+```
 
 ## Requirements
 
-### Requirement: Typeface is exclusively Geist (with system fallbacks)
+### Requirement: Typography Uses Geist With System Fallbacks
 
-The system SHALL use Geist as the primary typeface in admin and portal
-SPAs. Arial / system-ui / Inter MUST NOT be the active rendered face
-when Geist is available.
+The system SHALL use Geist Sans and Geist Mono as the primary UI typefaces.
 
-#### Scenario: Geist loads via fontsource
+#### Scenario: Fontsource imports
 
-- **WHEN** `main.ts` executes
-- **THEN** `@fontsource/geist-sans` weights 400/500/600/700 SHALL be imported
-- **AND** the `font-sans` Tailwind stack SHALL list `Geist` first
+- **WHEN** `frontend/src/style.css` is loaded
+- **THEN** it SHALL import `@fontsource/geist-sans` and `@fontsource/geist-mono`
+- **AND** the root font stack SHALL list Geist before system and CJK fallbacks.
 
-### Requirement: No magic font sizes in admin views
+#### Scenario: Code typography
 
-The system SHALL use named font-size tokens. Arbitrary `text-[Npx]`
-classes SHALL NOT appear in files under `frontend/src/views/admin/` or
-`frontend/src/components/layout/`.
+- **WHEN** IDs, tokens, ports, or JSON-like values render in monospace
+- **THEN** they SHALL use the Geist Mono stack defined by the design system.
 
-#### Scenario: Code review check
+### Requirement: AntD Theme Tokens Are The Color Source
 
-- **WHEN** linting a PR that touches admin views
-- **THEN** any new `text-[\d+px]` pattern SHALL be replaced with the
-  matching scale token (e.g. `text-2xs` for 12px) before merge
+The system SHALL express primary visual color through AntD `ThemeConfig`
+tokens in `frontend/src/theme.ts`.
 
-### Requirement: Cards never nest visually
+#### Scenario: Light theme tokens
 
-The system SHALL avoid card-on-card-on-card stacks. A bordered
-`rounded-2xl` surface SHALL NOT contain another bordered `rounded-2xl`
-surface unless visually separated by ≥16px gap.
+- **WHEN** `lightTheme` is active
+- **THEN** AntD primary/link/info colors SHALL use the configured blue palette
+- **AND** backgrounds/borders SHALL use the light shell palette from `theme.ts`.
 
-#### Scenario: KPI strip on Status / Inbounds
+#### Scenario: Dark theme tokens
 
-- **WHEN** the page renders the KPI strip
-- **THEN** each card SHALL sit directly on the page background (no wrapping card)
-- **AND** the strip SHALL be a flat grid with `gap-3` or `gap-4`
+- **WHEN** `darkTheme` is active
+- **THEN** the theme SHALL use AntD `darkAlgorithm`
+- **AND** backgrounds, borders, text, and active states SHALL come from the dark token set.
 
-### Requirement: Single accent color in normal states
+#### Scenario: Component overrides
 
-The system SHALL NOT scatter rainbow color across KPI cards. The
-`accent-*` palette is the only allowed coloring for KPI icon containers,
-active sidebar items, primary CTAs (dark mode), and chart highlights.
+- **WHEN** AntD Cards, Buttons, Inputs, Layout, Menu, Segmented, Tables, or Tabs render
+- **THEN** component-level overrides in `theme.ts` SHALL provide the app-specific selected, border, hover, and focus colors.
 
-#### Scenario: Status page KPI cards
+### Requirement: Layout Density Is Stable
 
-- **WHEN** the Status page renders 4 KPI cards
-- **THEN** each card's icon tile SHALL be `bg-accent-50 text-accent-600` (light) or `bg-accent-950/40 text-accent-300` (dark)
-- **AND** semantic differentiation SHALL come from the icon glyph, not the background tint
+Operational pages SHALL be dense enough for repeated use while preserving clear
+scan paths.
 
-### Requirement: Primary CTAs are ink-toned in light mode
+#### Scenario: Page content padding
 
-The system SHALL render primary CTAs as `bg-ink-900` (cool near-black)
-in light mode and `bg-accent-600` in dark mode (where ink would be
-invisible).
+- **WHEN** admin or portal content renders
+- **THEN** layout components SHALL provide stable padding that does not depend on child loading states
+- **AND** mobile/narrow shells SHALL leave room for drawers or bottom navigation.
 
-#### Scenario: "Add node" button on Nodes page
+#### Scenario: Tables and repeated lists
 
-- **WHEN** the page is in light mode
-- **THEN** the button background SHALL be `bg-ink-900` with `hover:bg-ink-800`
-- **AND** the text SHALL be white
-- **AND** in dark mode, the same button SHALL be `bg-accent-600 hover:bg-accent-500`
+- **WHEN** resource tables render
+- **THEN** columns, row actions, and empty states SHALL preserve stable dimensions during loading/refetching where practical.
 
-### Requirement: Focus is always visible
+### Requirement: Focus Is Always Visible
 
-The system SHALL render a 2px outlined focus ring on all keyboard-focused
-interactive elements. The ring SHALL NOT be removed by `outline: none`.
+Interactive controls SHALL retain a visible keyboard focus state.
 
-#### Scenario: Tab through form
+#### Scenario: Keyboard navigation
 
-- **WHEN** the user presses Tab repeatedly to traverse inputs
-- **THEN** each focused element SHALL show a 2px solid `accent-500` outline at 2px offset
-- **AND** the rule SHALL be a global `:focus-visible` (defined in `style.css`)
+- **WHEN** the user tabs through sidebar actions, buttons, inputs, menus, or custom switches
+- **THEN** the focused element SHALL show a visible focus indicator
+- **AND** CSS SHALL NOT remove focus outlines without providing an equivalent indicator.
 
-### Requirement: prefers-reduced-motion is respected
+### Requirement: Motion Respects User Preference
 
-The system SHALL disable all animations and transitions when the user
-has `prefers-reduced-motion: reduce` set at the OS level.
+The system SHALL keep transitions short and disable them for reduced-motion
+users.
 
-#### Scenario: Reduced-motion user opens a modal
+#### Scenario: Reduced motion
 
-- **WHEN** the modal mounts and would normally `animate-scale-in`
-- **THEN** the animation SHALL run with effectively 0 duration
-- **AND** the final visual state SHALL be the same
+- **GIVEN** the user has `prefers-reduced-motion: reduce`
+- **WHEN** layout, drawer, modal, or hover transitions would run
+- **THEN** the UI SHALL reduce or remove animation duration while preserving final visual state.
 
-## Out of scope
+### Requirement: Shared Primitives Prevent Drift
 
-- OKLCH color expressions (deferred — Tailwind v3 has rough ergonomics
-  for OKLCH+alpha; revisit when Tailwind v4 lands).
-- Per-tenant white-labeling (operator can replace logo + brand name
-  via env, but not the palette).
-- Accessibility audit beyond focus rings + reduced motion (full WCAG
-  2.2 contrast audit is a separate spec).
+Common UI patterns SHALL be factored into shared React components before they
+are copied across multiple views.
+
+#### Scenario: Page header
+
+- **WHEN** a page needs a title/subtitle/action row
+- **THEN** it SHALL use `components/common/PageHeader.tsx`.
+
+#### Scenario: Refresh affordance
+
+- **WHEN** a page provides manual refresh
+- **THEN** it SHALL use `components/common/RefreshButton.tsx` or an equivalent shared wrapper.
+
+#### Scenario: Responsive list/table
+
+- **WHEN** multiple pages need a table on desktop and card/list layout on narrow viewports
+- **THEN** they SHOULD use `components/common/ResponsiveListTable.tsx`.
+
+### Requirement: Avoid Decorative Noise
+
+Admin and portal surfaces SHALL remain work-focused.
+
+#### Scenario: Operational view composition
+
+- **WHEN** admin pages render resource data
+- **THEN** they SHALL avoid nested decorative cards, unrelated gradients, and one-off ornamental elements
+- **AND** visual emphasis SHALL come from hierarchy, spacing, AntD tokens, and iconography.
+
+## Out of Scope
+
+- Per-tenant custom palettes.
+- Full WCAG audit beyond the focus, contrast-by-token, and reduced-motion requirements here.

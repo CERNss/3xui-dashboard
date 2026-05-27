@@ -20,7 +20,7 @@ func newRouter() (*gin.Engine, *auth.Service) {
 		cl := Claims(c)
 		c.JSON(http.StatusOK, gin.H{"sub": cl.Subject})
 	})
-	r.GET("/api/user/whoami", RequireUser(s), func(c *gin.Context) {
+	r.GET("/api/user/whoami", requireAudience(s, auth.AudUser), func(c *gin.Context) {
 		cl := Claims(c)
 		c.JSON(http.StatusOK, gin.H{"sub": cl.Subject})
 	})

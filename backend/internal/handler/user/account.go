@@ -13,7 +13,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/verification"
 )
 
-// AccountHandler serves /api/user/profile, /change-password, /bind-email.
+// AccountHandler serves authenticated /api/user account endpoints.
 type AccountHandler struct {
 	users  *usersvc.Service
 	repo   *repository.UserRepo
@@ -34,7 +34,6 @@ func (h *AccountHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/email-verification/confirm", h.EmailVerificationConfirm)
 	rg.POST("/change-email", h.ChangeEmail)
 	rg.POST("/change-password", h.ChangePassword)
-	rg.POST("/bind-email", h.BindEmail)
 	rg.POST("/oidc/link/start", h.OIDCLinkStart)
 	rg.POST("/rotate-sub-id", h.RotateSubID)
 }
@@ -127,10 +126,6 @@ func (h *AccountHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-type bindEmailRequest struct {
-	Email string `json:"email" binding:"required"`
 }
 
 type accountEmailVerificationRequest struct {
@@ -226,33 +221,6 @@ func (h *AccountHandler) ChangeEmail(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, u)
-}
-
-// BindEmail attaches an email to the authenticated user's account.
-func (h *AccountHandler) BindEmail(c *gin.Context) {
-	userID, ok := h.subject(c)
-	if !ok {
-		return
-	}
-	var req bindEmailRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-	if err := h.users.BindEmail(c.Request.Context(), userID, req.Email); err != nil {
-		switch {
-		case errors.Is(err, usersvc.ErrInvalidEmail):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, usersvc.ErrDomainNotAllowed):
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		case errors.Is(err, usersvc.ErrEmailTaken):
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // OIDCLinkStart starts provider binding for the authenticated user.

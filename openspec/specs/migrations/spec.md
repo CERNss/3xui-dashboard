@@ -10,33 +10,39 @@ Migrations are flat-file SQL (`migrations/NNNN_<slug>.up.sql` +
 `migrations/embed.go::go:embed`. The runner is golang-migrate with
 the `iofs` driver. Pure SQL — no GORM AutoMigrate at startup.
 
-Adjacent: every module that touches the schema cites its migration
-filename (e.g. `email-verification` references
-`0004_email_verification_codes.up.sql`).
+Because the project has not been launched yet, pre-launch schema work
+is collapsed into `0001_init`. Once a deployed database exists, future
+schema changes should add a new numbered pair instead of editing
+already-applied SQL.
 
 ## Current migrations
 
 | Version | File | Purpose |
 |---|---|---|
-| 0001 | `0001_init.up.sql` | Initial tables: `users`, `nodes`, `client_ownerships`, `traffic_samples`, `plans`, `orders`, `balance_logs`, `webhooks`, `webhook_deliveries`, `settings`. Includes partial unique indexes (`users(LOWER(email)) WHERE email IS NOT NULL`, `users(oidc_subject) WHERE oidc_subject IS NOT NULL`, `users(sub_id)`, `client_ownerships(node_id, inbound_tag, client_email)`, `orders(idempotency_key)`) and traffic-query indexes (`traffic_samples(node_id, taken_at)`, partial client/inbound). |
-| 0002 | `0002_node_scheme.up.sql` | Adds `nodes.scheme` (`http` / `https`) with default `https`. |
-| 0003 | `0003_webhook_retry.up.sql` | Adds `webhook_deliveries.next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()` + partial index `webhook_deliveries_due ON (status, next_attempt_at) WHERE status='pending'` so the retry job's lookup is O(due rows). |
-| 0004 | `0004_email_verification_codes.up.sql` | Adds `email_verification_codes` table for the `email-verification` flow. Two indexes: `..._active (email, purpose, sent_at DESC)` for the 60s cooldown lookup, and partial `..._unconsumed (email, purpose, expires_at) WHERE consumed_at IS NULL` for Consume. |
+| 0001 | `0001_init.up.sql` | Baseline schema for the current app: users and OIDC identities, nodes, client ownerships, traffic samples, provisioning pools, plans, orders/payment columns, balance logs, webhooks/deliveries with persistent retry, email verification codes, notification log, WireGuard peers, admin actions, and settings. |
 
 ## Requirements
 
 ### Requirement: Migrations Are Pure SQL + Embedded
 
-The system SHALL persist every schema change as a numbered SQL file
-pair under `backend/migrations/`, and SHALL embed them into the
-binary at compile time via `migrations/embed.go`.
+The system SHALL persist schema state as numbered SQL file pairs under
+`backend/migrations/`, and SHALL embed them into the binary at compile
+time via `migrations/embed.go`.
 
 #### Scenario: New migration follows the naming convention
 
+- **GIVEN** the project has a deployed database that cannot be recreated from scratch
 - **WHEN** a new schema change ships
 - **THEN** the change SHALL add two files: `NNNN_<descriptive-slug>.up.sql` and `NNNN_<descriptive-slug>.down.sql`
 - **AND** `NNNN` SHALL be the next free integer (zero-padded to four digits)
 - **AND** the `.up.sql` SHALL include a comment block explaining the schema's intent (the *why*, not the *what*)
+
+#### Scenario: Pre-launch schema change updates the baseline
+
+- **GIVEN** the project has not been formally launched
+- **WHEN** a schema change is required
+- **THEN** the change MAY update `0001_init.up.sql` and `0001_init.down.sql` directly
+- **AND** it SHALL keep the baseline internally consistent for fresh databases
 
 #### Scenario: Migrations embedded for distribution
 
@@ -60,7 +66,7 @@ docker-compose race tolerance.
 #### Scenario: Partial database
 
 - **GIVEN** a database already at version 2
-- **WHEN** the dashboard with versions 0001-0004 in the embed starts
+- **WHEN** the dashboard with versions 0001-0004 in the embed starts after launch
 - **THEN** `MigrateUp` SHALL apply 0003 and 0004 only
 - **AND** SHALL NOT re-run 0001 / 0002
 

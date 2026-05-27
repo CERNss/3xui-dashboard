@@ -10,7 +10,7 @@ export interface AdminUser {
   balance_cents: number
   auto_renew: boolean
   sub_id: string
-  oidc_subject?: string | null
+  oidc_linked?: boolean
   created_at: string
   updated_at: string
   // Optional — backend may not have wired this column yet.

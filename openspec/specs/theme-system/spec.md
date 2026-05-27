@@ -1,144 +1,104 @@
 # theme-system
 
-Light/dark theme with system-preference fallback and per-user override
-persisted in localStorage.
+Light/dark/system theme state for the React SPA, persisted client-side and
+applied through AntD `ConfigProvider` plus the `<html>` `dark` class.
 
-## Purpose & boundaries
+## Purpose & Boundaries
 
-Both admin and portal SPAs need to:
-- Render in the user's preferred OS theme on first visit.
-- Let the user override that choice from inside the app.
-- Persist the override across reloads.
-- Avoid the "light flash" before the chosen theme is applied.
+The theme system decides which visual theme is active and where users can
+change it. Token values are owned by `design-system`.
 
-The theme system is purely client-side — no server roundtrip. Backend
-templates / emails (if any) do not honor it.
+## State Machine
 
-## State machine
-
-Tracked in `frontend/src/stores/theme.ts` (Pinia store):
+Tracked in `frontend/src/stores/theme.ts` with Zustand:
 
 ```
-            ┌─ localStorage has 'dark' ─► dark
-readInitial ┼─ localStorage has 'light' ► light
-            │                              ▲
-            └─ no entry ───────────────────┤
-                            │              │
-              prefers-color-scheme: dark?  │
-                  yes → dark               │
-                  no  → light              │
-                                           │
-                                           │
-        toggle() ─► flip + persist + class▼
-                    ▲                      │
-        ┌───────────┴─── user clicks sidebar/topbar theme icon
+localStorage["cp.theme"] in {"light","dark","system"}
+       │
+       ├─ "light"  -> resolvedTheme "light"
+       ├─ "dark"   -> resolvedTheme "dark"
+       └─ "system" or missing -> matchMedia("(prefers-color-scheme: dark)")
+
+toggle() flips the resolved light/dark state and persists the explicit mode.
+setMode("system") restores OS-following behavior.
 ```
-
-## Storage key
-
-`cp.theme` in `localStorage` — single string, `"dark"` or `"light"`. Any
-other value (or missing) triggers the system-preference fallback.
 
 ## Requirements
 
-### Requirement: First-visit theme follows OS preference
+### Requirement: Initial Theme Resolves Before First Paint Where Possible
 
-The system SHALL default to the OS's `prefers-color-scheme` setting on
-first visit, before any user interaction.
+The system SHALL initialize theme state from localStorage and OS preference as
+the SPA starts.
 
-#### Scenario: First visit on a dark-mode macOS
+#### Scenario: Stored explicit theme
 
-- **GIVEN** localStorage has no `cp.theme` entry
-- **AND** the browser reports `prefers-color-scheme: dark`
-- **WHEN** the SPA bootstraps via `main.ts`
-- **THEN** `useThemeStore().init()` SHALL apply `class="dark"` to `<html>` before mount
-- **AND** the first paint SHALL render in dark mode (no light flash)
+- **GIVEN** localStorage contains `cp.theme = "dark"`
+- **WHEN** `useThemeStore` initializes
+- **THEN** `mode` SHALL be `dark`
+- **AND** `resolvedTheme` SHALL be `dark`
+- **AND** the `<html>` element SHALL have class `dark` after initialization.
 
-#### Scenario: First visit on a light-mode OS
+#### Scenario: Stored system mode
 
-- **GIVEN** no localStorage entry and `prefers-color-scheme: light`
-- **WHEN** the SPA bootstraps
-- **THEN** the `<html>` tag SHALL NOT have the `dark` class
-- **AND** Tailwind's default (light) palette SHALL apply
+- **GIVEN** localStorage contains `cp.theme = "system"`
+- **WHEN** `useThemeStore` initializes
+- **THEN** `resolvedTheme` SHALL follow `window.matchMedia("(prefers-color-scheme: dark)")`.
 
-#### Scenario: First visit on a no-preference browser
+#### Scenario: Missing storage
 
-- **WHEN** `window.matchMedia` is undefined OR doesn't match `prefers-color-scheme: dark`
-- **THEN** the system SHALL default to light
+- **GIVEN** no supported `cp.theme` value exists
+- **WHEN** the SPA initializes
+- **THEN** `mode` SHALL default to `system`.
 
-### Requirement: User override persists across reloads
+### Requirement: Theme Applies Through AntD And HTML Class
 
-When the user toggles the theme inside the app, the choice SHALL persist
-to localStorage and win over the OS preference on subsequent loads.
+The system SHALL apply the active theme to AntD and to global CSS hooks.
 
-#### Scenario: User toggles from light to dark
+#### Scenario: Root provider chooses theme config
 
-- **GIVEN** the SPA is currently rendering in light mode
-- **WHEN** the user clicks the "深色模式" item in the sidebar/topbar
-- **THEN** `useThemeStore().toggle()` SHALL flip the in-memory theme to dark
-- **AND** SHALL write `"dark"` to `localStorage.cp.theme`
-- **AND** SHALL toggle the `dark` class on `<html>` in the same tick
+- **WHEN** `resolvedTheme` is `dark`
+- **THEN** `main.tsx` SHALL pass `darkTheme` to AntD `ConfigProvider`
+- **AND** when `resolvedTheme` is `light`, it SHALL pass `lightTheme`.
 
-#### Scenario: Reload after override
+#### Scenario: HTML dark class
 
-- **GIVEN** the user previously persisted `"dark"`
-- **AND** the OS preference is now light
-- **WHEN** the SPA bootstraps
-- **THEN** `readInitial()` SHALL return `"dark"` (localStorage wins over OS)
+- **WHEN** theme mode changes
+- **THEN** `stores/theme.ts::applyToHtml` SHALL toggle `document.documentElement.classList` so global CSS can style shell backgrounds.
 
-### Requirement: Toggle is only available post-authentication
+### Requirement: User Override Persists Across Reloads
 
-The system SHALL NOT show a theme toggle on the pre-login pages.
-Pre-login pages SHALL render whatever theme `init()` chose; user can
-adjust only after entering the app.
+User-driven theme changes SHALL persist to localStorage.
 
-#### Scenario: Login page chrome
+#### Scenario: Toggle from light to dark
 
-- **WHEN** the user is on `/login`
-- **THEN** there SHALL be no theme toggle anywhere on the page (top-right was removed)
-- **AND** the page SHALL still respect the active theme (dark/light styles cascade)
+- **GIVEN** `resolvedTheme` is `light`
+- **WHEN** the user activates the theme toggle
+- **THEN** the store SHALL persist `cp.theme = "dark"`
+- **AND** AntD tokens and the `<html>` class SHALL update without replacing the route tree.
 
-#### Scenario: Toggle in admin sidebar
+#### Scenario: Toggle from dark to light
 
-- **WHEN** the user is on any `/admin/*` route
-- **THEN** the sidebar SHALL contain a labeled nav-style row:
-  `[icon] 浅色模式` if currently dark, `[icon] 深色模式` if currently light
-  (label shows the mode they would SWITCH TO — matches Sub2API convention)
-- **AND** the row SHALL sit above the user/logout footer block
+- **GIVEN** `resolvedTheme` is `dark`
+- **WHEN** the user activates the theme toggle
+- **THEN** the store SHALL persist `cp.theme = "light"`.
 
-#### Scenario: Toggle in portal topbar
+### Requirement: Theme Toggle Is Post-Auth Chrome
 
-- **WHEN** the user is on any `/portal/*` route
-- **THEN** the topbar SHALL contain a small icon-only theme toggle
-  between the nav links and the logout button
+The system SHALL expose theme controls from authenticated shells, not as a
+primary auth-page workflow.
 
-### Requirement: Theme tokens cascade through Tailwind dark variants
+#### Scenario: Admin shell
 
-All UI components SHALL use Tailwind's `dark:` variant exclusively to
-express dark-mode styling — no `:root.dark` raw CSS overrides except
-the global body background in `style.css`.
+- **WHEN** an admin route renders
+- **THEN** `AdminLayout` SHALL provide a sidebar theme toggle action.
 
-#### Scenario: Component palette swap
+#### Scenario: Portal shell
 
-- **WHEN** a component declares e.g. `bg-surface-0 dark:bg-surface-900`
-- **THEN** toggling the `dark` class on `<html>` SHALL switch the rendered background without re-rendering the component
+- **WHEN** a portal route renders
+- **THEN** PortalLayout MAY expose theme switching as part of authenticated portal chrome.
 
-## Implementation notes
+## Out of Scope
 
-- `applyToHtml(theme)` in `stores/theme.ts` is the single mutation point
-  for the `<html>` class. Both `init()` and `set()` call it.
-- `init()` is called in `main.ts` BEFORE `app.mount('#app')` to avoid the
-  flash-of-wrong-theme during hydration.
-- Style sheet `style.css` already sets `:root.dark body` background as a
-  belt-and-suspenders default; component-level `dark:` variants cover
-  the rest.
-
-## Out of scope
-
-- Per-component theme overrides (e.g. "always dark sidebar even in light
-  mode") — not needed today.
-- Automatic theme switching on OS-preference change while the SPA is
-  running (would require a `matchMedia` listener; current behavior: OS
-  preference is only consulted on first load before any localStorage
-  override exists).
-- Persisting the theme server-side to mirror across devices.
+- Server-side theme persistence.
+- Per-component theme overrides outside AntD/theme CSS.
+- Live OS preference listeners after the app is already running.

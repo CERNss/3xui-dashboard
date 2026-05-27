@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { adminAuthApi } from '@/api/admin/auth'
 import { portalAuthApi, type OIDCProvider, type UserTokenResponse } from '@/api/portal/auth'
+import { useOidcStart } from '@/hooks/queries/portal/auth'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import { formatError } from '@/utils/format'
@@ -68,6 +69,7 @@ export function Login() {
   const navigate = useNavigate()
   const setAdminSession = useAdminAuthStore((state) => state.setSession)
   const setPortalSession = usePortalAuthStore((state) => state.setSession)
+  const oidcStart = useOidcStart()
   const [loginForm] = Form.useForm<LoginFormValues>()
   const [registerForm] = Form.useForm<RegisterFormValues>()
   const [providers, setProviders] = useState<OIDCProvider[]>([])
@@ -76,7 +78,6 @@ export function Login() {
   const [signingIn, setSigningIn] = useState(false)
   const [registering, setRegistering] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
-  const [startingOidc, setStartingOidc] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [codeCooldown, setCodeCooldown] = useState(0)
   const [verificationRequired, setVerificationRequired] = useState(false)
@@ -206,17 +207,15 @@ export function Login() {
 
   async function startOidc(provider: OIDCProvider) {
     setError(null)
-    setStartingOidc(true)
     try {
       if (provider.login_url && /^https?:\/\//i.test(provider.login_url)) {
         window.location.assign(provider.login_url)
         return
       }
-      const res = await portalAuthApi.oidcStart(portalNextPath, provider.key)
+      const res = await oidcStart.mutateAsync({ redirectAfter: portalNextPath, providerKey: provider.key })
       window.location.assign(res.authorize_url)
     } catch (e) {
       setError(formatError(e, t('auth.oidcStarting')))
-      setStartingOidc(false)
     }
   }
 
@@ -252,7 +251,7 @@ export function Login() {
                     loading={signingIn}
                     onOidcStart={startOidc}
                     onSubmit={submitLogin}
-                    oidcLoading={startingOidc}
+                    oidcLoading={oidcStart.isPending}
                     providers={providers}
                     t={t}
                   />

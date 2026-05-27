@@ -217,16 +217,4 @@ describe('Portal Profile', () => {
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/link')
   })
 
-  it('falls back to the legacy single OIDC method shape', () => {
-    methods = {
-      email: { bound: true, email: 'alice@example.com', verified: true },
-      oidc: { enabled: true, bound: true, name: 'Legacy SSO', icon: '' },
-      oidc_providers: [],
-    }
-    renderProfile()
-
-    expect(screen.getByText('Legacy SSO')).toBeInTheDocument()
-    expect(screen.getAllByText('Linked').length).toBeGreaterThan(0)
-    expect(screen.queryByRole('button', { name: /unlink/i })).not.toBeInTheDocument()
-  })
 })

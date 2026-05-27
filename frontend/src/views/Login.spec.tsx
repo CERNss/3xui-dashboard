@@ -253,6 +253,28 @@ describe('Login', () => {
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/start')
   })
 
+  it('preserves portal next for OIDC start', async () => {
+    providersMock.mockResolvedValue([{ key: 'dynamic', name: 'Dynamic SSO', login_url: '' }])
+    oidcStartMock.mockResolvedValue({ authorize_url: 'https://idp.example/start' })
+    renderLogin('/login?next=%2Fportal%2Forders%3Ftab%3Dactive')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Dynamic SSO' }))
+
+    await waitFor(() => expect(oidcStartMock).toHaveBeenCalledWith('/portal/orders?tab=active', 'dynamic'))
+  })
+
+  it('honors admin next after successful login', async () => {
+    adminLoginMock.mockResolvedValue({ token: 'admin-jwt', username: 'root', expires_at: 1 })
+    renderLogin('/login?next=%2Fadmin%2Fusers')
+
+    const panel = currentPanel()
+    await userEvent.type(within(panel).getByLabelText('Email'), 'root@example.com')
+    await userEvent.type(within(panel).getByLabelText('Password'), 'secret')
+    await userEvent.click(within(panel).getByRole('button', { name: /sign in/i }))
+
+    expect(await screen.findByTestId('location')).toHaveTextContent('/admin/users')
+  })
+
   it('switches visible translations when locale changes', async () => {
     await i18n.changeLanguage('en')
     useAppStore.getState().setLocale('en-US')

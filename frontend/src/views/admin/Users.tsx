@@ -167,8 +167,8 @@ export default function Users() {
       if (statusFilter !== 'all' && user.status !== statusFilter) return false
       if (verifiedFilter === 'verified' && !user.email_verified) return false
       if (verifiedFilter === 'unverified' && user.email_verified) return false
-      if (registerFilter === 'oidc' && !user.oidc_subject) return false
-      if (registerFilter === 'email' && user.oidc_subject) return false
+      if (registerFilter === 'oidc' && !user.oidc_linked) return false
+      if (registerFilter === 'email' && user.oidc_linked) return false
       if (!normalized) return true
       return (
         (user.email || '').toLowerCase().includes(normalized) ||
@@ -359,7 +359,7 @@ export default function Users() {
           <Space wrap>
             <Typography.Text strong>{user.email || '—'}</Typography.Text>
             {userVerifiedTag(user)}
-            {user.oidc_subject ? <Tag color="blue">OIDC</Tag> : <Tag>{t('admin.users.auth.email')}</Tag>}
+            {user.oidc_linked ? <Tag color="blue">OIDC</Tag> : <Tag>{t('admin.users.auth.email')}</Tag>}
           </Space>
           <Typography.Text type="secondary">{user.sub_id.slice(0, 12)}...</Typography.Text>
         </Space>
@@ -621,7 +621,7 @@ export default function Users() {
               <Space wrap>
                 <Typography.Text strong>{user.email || '—'}</Typography.Text>
                 {userVerifiedTag(user)}
-                {user.oidc_subject ? <Tag color="blue">OIDC</Tag> : <Tag>{t('admin.users.auth.email')}</Tag>}
+                {user.oidc_linked ? <Tag color="blue">OIDC</Tag> : <Tag>{t('admin.users.auth.email')}</Tag>}
               </Space>
               <Typography.Text type="secondary">#{user.id} · {user.sub_id.slice(0, 12)}...</Typography.Text>
               <Typography.Text>{t('admin.users.column.balance')}: {formatYuan(user.balance_cents)}</Typography.Text>
