@@ -1,127 +1,184 @@
 # settings
 
-The runtime-mutable key/value store that backs admin toggles which
-shouldn't require a restart to change (public-registration flag,
-domain allowlist, traffic warning thresholds, expiry warning days).
+The runtime-mutable key/value system that backs admin settings, public branding,
+OIDC runtime configuration, subscription templates, and data-collection knobs.
 
-## Purpose & boundaries
+## Purpose & Boundaries
 
-`settings` lives in a Postgres table; values are TEXT and coerced via
-typed helpers at the read site. The repository (`internal/repository/setting.go`)
-is the only writer; admin HTTP handlers consume it via
-`SettingHandler` (`internal/handler/admin/setting.go`).
+Settings are stored in PostgreSQL as string values and interpreted through
+typed descriptors and service-level helpers. The admin HTTP surface owns
+descriptor listing, validation, updates, deletes, SMTP test, and brand-icon
+upload. Consumers such as `user-accounts`, `oidc-providers`,
+`traffic-statistics`, `subscription`, and data collectors own their runtime
+semantics.
 
-Adjacent: `user-accounts` reads `public_registration_enabled` and
-`email_domain_allowlist`; the traffic threshold settings are consumed
-by the event publishers in `traffic-statistics`.
+## Storage
 
-## Known keys
+`backend/internal/model/setting.go` defines the setting row:
 
-The system ships with the following recognized keys (admin UI gates
-edits to this list):
+```go
+type Setting struct {
+    Key       string `gorm:"primaryKey"`
+    Value     string
+    UpdatedAt time.Time
+}
+```
 
-| Key | Type | Default | Purpose |
-|---|---|---|---|
-| `public_registration_enabled` | bool | `cfg.PublicRegistration` env | Gates portal self-serve registration. |
-| `email_domain_allowlist` | string (CSV) | `cfg.EmailDomainAllowlist` env (joined) | Restricts which email domains may register / bind. |
-| `subscription_remark_model` | string | (no default; uses upstream default) | Template for link remark formatting in subscription output. |
-| `traffic_warn_pct` | int | 80 | % of limit at which `client.traffic_threshold` fires. |
-| `traffic_critical_pct` | int | 95 | % of limit at which `client.traffic_threshold` fires a second event. |
-| `expiry_warn_days` | int | 3 | Days before client expiry at which `client.expiring_soon` fires. |
+## Descriptor Groups
 
-Unrecognized keys SHALL be rejected by the admin handler so typos
-don't silently persist.
+Known setting descriptors live in `backend/internal/handler/admin/setting.go`
+and are exposed to the UI. The group field is the stable UI grouping key.
+
+| Group | Examples |
+|---|---|
+| `registration` | public registration, email verification, email domain allowlist, starter balance/plans |
+| `subscription` | remark model, Clash template YAML, sing-box template JSON, proxy group strategy, rule providers |
+| `traffic` | traffic warning/critical percentages, expiry warning days |
+| `data_collection` | node health and traffic collection enablement, interval, concurrency, timeout, retry, retention |
+| `other` | OIDC runtime values and brand title/subtitle/description/footer/icon |
+
+Unknown persisted keys MAY be returned by the list endpoint for operator
+visibility, but new first-class behavior SHOULD add a descriptor.
 
 ## Requirements
 
 ### Requirement: Key/Value Persistence
 
-The system SHALL persist settings in the `settings` table with `(key,
-value, updated_at)` columns, where key is the primary key.
+The system SHALL persist settings in the `settings` table with `(key, value,
+updated_at)` semantics.
 
 #### Scenario: Get a missing key
 
 - **WHEN** `SettingRepo.Get(ctx, "missing")` is called and no row exists
-- **THEN** it SHALL return `("", false, nil)` — empty string, present=false, nil error
-- **AND** SHALL NOT return `gorm.ErrRecordNotFound`
+- **THEN** it SHALL return `("", false, nil)`
+- **AND** SHALL NOT surface `gorm.ErrRecordNotFound` to callers.
 
 #### Scenario: Set upserts
 
 - **WHEN** `SettingRepo.Set(ctx, "k", "v")` is called and no row exists
-- **THEN** the system SHALL insert `(k, v, now())`
+- **THEN** the system SHALL insert the row
+- **AND** a later `Set(ctx, "k", "v2")` SHALL update the existing row using key conflict handling.
 
-- **WHEN** Set is called again with `(k, "v2")`
-- **THEN** the system SHALL UPDATE the row (value + updated_at), not insert a duplicate
-- **AND** rely on Postgres `ON CONFLICT (key) DO UPDATE` (GORM `clause.OnConflict`)
-
-#### Scenario: Delete removes the override
+#### Scenario: Delete removes override
 
 - **WHEN** `SettingRepo.Delete(ctx, "k")` is called
 - **THEN** the row SHALL be removed
-- **AND** subsequent reads SHALL hit the env-default fallback
+- **AND** subsequent typed reads SHALL fall back to their configured default.
 
-### Requirement: Typed Accessors With Env Fallback
+### Requirement: Typed Accessors Provide Defaults
 
-The system SHALL expose typed read helpers (`GetBool`, `GetInt`,
-`GetString`) that return the env-derived default when no DB row exists,
-so the system is always usable on a fresh database.
+The repository SHALL expose typed accessors for bool, int, and string settings
+with caller-provided defaults.
 
-#### Scenario: GetBool reads from DB then env
+#### Scenario: Bool setting missing
 
-- **GIVEN** the env var `PUBLIC_REGISTRATION=true` and no DB row for `public_registration_enabled`
-- **WHEN** the user service calls `publicRegistrationEnabled(ctx)`
-- **THEN** the system SHALL return `true` (env default)
+- **GIVEN** no DB row exists for `public_registration_enabled`
+- **WHEN** user service reads the setting with default `cfg.PublicRegistration`
+- **THEN** the returned value SHALL be the config default.
 
-- **GIVEN** an admin has set the DB value to `"false"`
-- **WHEN** the same call runs
-- **THEN** the system SHALL return `false` (DB overrides env)
+#### Scenario: Malformed int value
 
-#### Scenario: Type coercion failure falls back
+- **GIVEN** a persisted int setting contains non-integer text
+- **WHEN** a typed int accessor reads it
+- **THEN** the accessor SHALL return an error or a validated fallback according to the caller contract
+- **AND** the request path SHALL not panic.
 
-- **GIVEN** an operator manually wrote a malformed value (e.g. `traffic_warn_pct = "abc"`)
-- **WHEN** the typed getter runs
-- **THEN** the getter SHALL log a WARN with the bad value and fall back to the env default
-- **AND** SHALL NOT crash the request
+### Requirement: Admin Settings HTTP Surface Is Descriptor-Driven
 
-### Requirement: Admin HTTP Surface
+The system SHALL expose admin-authenticated settings endpoints under
+`/api/admin/settings`.
 
-The system SHALL expose `GET /api/admin/settings`, `PUT
-/api/admin/settings/:key`, and `DELETE /api/admin/settings/:key` for
-admin-controlled toggling of known keys.
-
-#### Scenario: List with current values
+#### Scenario: List settings
 
 - **WHEN** an admin GETs `/api/admin/settings`
-- **THEN** the response SHALL be a JSON array, one element per known key, each containing:
-  - `key`
-  - `label` (human-readable)
-  - `type` (`bool` / `int` / `string`)
-  - `value` (current effective value as string)
-  - `has_override` (true if a DB row exists, false if value comes from env)
+- **THEN** the response SHALL contain `settings`
+- **AND** each known setting item SHALL include `key`, `label`, optional `label_zh`, `type`, `group`, `default`, `description`, optional `description_zh`, `value`, `has_override`, and `env_fallback`.
 
-#### Scenario: Unknown key rejected on PUT
+#### Scenario: Unknown persisted rows are visible
 
-- **WHEN** an admin PUTs `/api/admin/settings/foo` where `foo` is not in the known-key set
-- **THEN** the system SHALL respond HTTP 400 with a "unknown setting key" error
-- **AND** SHALL NOT insert a row
+- **GIVEN** a row exists in the table whose key has no descriptor
+- **WHEN** an admin lists settings
+- **THEN** the row SHALL appear as a string setting in group `other`
+- **AND** `has_override` SHALL be true.
 
-#### Scenario: Type-validated PUT
+#### Scenario: PUT validates type and state
 
-- **WHEN** an admin PUTs `/api/admin/settings/traffic_warn_pct` with body `"value": "abc"`
-- **THEN** the system SHALL respond HTTP 400 because `abc` is not parseable as int
-- **AND** SHALL NOT insert the row
+- **WHEN** an admin PUTs `/api/admin/settings/:key` with `{"value": "..."}`
+- **THEN** the handler SHALL validate the value against the descriptor type and per-key rules
+- **AND** on success SHALL upsert the row and return the stored key/value.
 
-#### Scenario: DELETE reverts to default
+#### Scenario: DELETE reverts to fallback
 
-- **WHEN** an admin DELETEs `/api/admin/settings/public_registration_enabled`
-- **THEN** the DB row SHALL be removed
-- **AND** subsequent reads SHALL return the env default value
+- **WHEN** an admin DELETEs `/api/admin/settings/:key`
+- **THEN** the handler SHALL delete the row
+- **AND** respond `204 No Content`.
 
-## Out of scope
+### Requirement: Validation Matches Setting Semantics
 
-- Per-user or per-tenant settings (only one administrator and a single
-  effective config today).
-- Setting change history / audit log (use git-tracked `.env` for the
-  immutable subset; runtime changes are not audited yet).
-- Notify other dashboard replicas of setting changes (single-process
-  deployment; restart picks up new values regardless).
+The admin handler SHALL validate values that have operational constraints.
+
+#### Scenario: Bool validation
+
+- **WHEN** a bool setting is updated
+- **THEN** accepted values SHALL include `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`
+- **AND** other values SHALL be rejected with HTTP 400.
+
+#### Scenario: Data collection bounds
+
+- **WHEN** data-collection interval, concurrency, timeout, retry, or retention settings are updated
+- **THEN** the handler SHALL enforce the configured numeric bounds
+- **AND** timeout SHALL NOT exceed the matching interval.
+
+#### Scenario: Subscription templates
+
+- **WHEN** `clash_template_yaml` or `singbox_template_json` is updated with a non-empty value
+- **THEN** the handler SHALL parse it as YAML/JSON object content
+- **AND** require the `${proxies}` placeholder.
+
+#### Scenario: OIDC URL settings
+
+- **WHEN** OIDC issuer, redirect, icon, auth, token, JWKS, or userinfo URL settings are updated
+- **THEN** each non-empty value SHALL be an absolute `http` or `https` URL.
+
+#### Scenario: Branding text
+
+- **WHEN** brand title, subtitle, description, or footer is updated
+- **THEN** the handler SHALL enforce the per-field character limits.
+
+### Requirement: Branding Is Public And Server-Driven
+
+The system SHALL expose public branding metadata for the SPA chrome.
+
+#### Scenario: Public branding endpoint
+
+- **WHEN** a client GETs `/api/public/branding`
+- **THEN** the response SHALL include `icon_url`, `title`, `subtitle`, `description`, and `footer`
+- **AND** empty stored values SHALL fall back to built-in brand defaults.
+
+#### Scenario: Brand icon upload
+
+- **WHEN** an admin POSTs `/api/admin/settings/branding/icon` with a supported image
+- **THEN** the handler SHALL store it under `uploads/branding`
+- **AND** persist the resulting `/uploads/branding/...` URL in `brand_icon_url`.
+
+### Requirement: SMTP Test Is Admin-Only
+
+The system SHALL let admins test SMTP delivery without triggering a user flow.
+
+#### Scenario: SMTP test succeeds
+
+- **WHEN** an admin POSTs `/api/admin/settings/smtp-test` with a valid `to`
+- **AND** SMTP is enabled
+- **THEN** the handler SHALL send a one-shot test email
+- **AND** respond `200 OK` when accepted by the SMTP relay.
+
+#### Scenario: SMTP unavailable
+
+- **WHEN** SMTP is not enabled
+- **THEN** the test endpoint SHALL respond `503 Service Unavailable`.
+
+## Out of Scope
+
+- Per-user or per-tenant settings.
+- Setting change history beyond the general admin audit system.
+- Cross-process setting cache invalidation.

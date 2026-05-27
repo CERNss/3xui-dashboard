@@ -1,199 +1,172 @@
 # admin-views
 
-The four admin-side route views — Status, Nodes, Inbounds, Settings —
-plus the full 5-tab inbound editor modal. Lives in
-`frontend/src/views/admin/`.
+Admin route views under `frontend/src/views/admin/`. These are the operator
+surfaces mounted by `layouts-and-chrome::AdminLayout` and guarded by admin
+authentication.
 
-## Purpose & boundaries
+## Purpose & Boundaries
 
-These are the visual surfaces an operator actually clicks through.
-The chrome they live inside is `layouts-and-chrome::AdminLayout`; the
-tokens they consume are `design-system`; the data they fetch is
-defined by the various backend modules (`node-management`,
+This spec covers the visual and interaction contract for `/admin/*` pages. The
+backend behavior they call is owned by module specs such as `node-management`,
 `inbound-management`, `client-provisioning`, `traffic-statistics`,
-`settings`).
+`billing-and-plans`, `webhook-notifications`, and `settings`.
 
-## Views inventory
+## View Inventory
 
 | Path | View file | Purpose |
 |---|---|---|
-| `/admin/status` | `Status.vue` | Fleet KPI strip + node health table. Landing page. |
-| `/admin/nodes` | `Nodes.vue` | Node CRUD: add / edit / disable / delete / probe. |
-| `/admin/inbounds` | `Inbounds.vue` | Cross-node inbound list, Sub2API-density table, traffic progress bars, per-row labeled actions. |
-| `/admin/inbounds` (modal) | `InboundEditorModal.vue` | Full 3x-ui-equivalent 5-tab inbound editor (基础配置 / 协议 / Stream / Sniffing / 高级配置), supports 8 transmissions × 3 securities + raw JSON escape hatches. |
-| `/admin/settings` | `Settings.vue` | The known-keys editor for the `settings` module's six toggles. |
+| `/admin/status` | `Overview.tsx` | Overview shell with Status and Stats tabs. |
+| `/admin/stats` | redirect | Redirects to `/admin/status?tab=stats`. |
+| `/admin/ops-monitor` | `OpsMonitor.tsx` | Operational health and traffic trend analysis. |
+| `/admin/nodes` | `Nodes.tsx` + `nodes/NodeDrawer.tsx` | Node CRUD, enable/disable, delete, probe. |
+| `/admin/inbounds` | `Inbounds.tsx` + `InboundEditor.tsx` | Fleet inbound list and inbound editor drawer. |
+| `/admin/users` | `Users.tsx` | Portal user search, filters, moderation, and account updates. |
+| `/admin/plans` | `Plans.tsx` | Plan CRUD and publication controls. |
+| `/admin/provisioning-pools` | `ProvisioningPools.tsx` | Plan-to-node/inbound provisioning pool management. |
+| `/admin/orders` | `Orders.tsx` | Order history, payment status, and operator inspection. |
+| `/admin/audit-log` | `AuditLog.tsx` | Admin action audit trail. |
+| `/admin/webhooks` | `Webhooks.tsx` | Customer webhook subscription CRUD and delivery status. |
+| `/admin/settings` | `Settings.tsx` + `settings/*` | Server-driven settings grouped by workflow. |
 
 ## Requirements
 
-### Requirement: Status View Renders Fleet KPI Strip + Node Health
+### Requirement: Overview Provides Status And Stats Tabs
 
-The system SHALL provide `/admin/status` as the admin entry landing
-page, showing a 4-card KPI strip + a node health table.
+The system SHALL provide `/admin/status` as the admin landing page, with a
+tabbed Overview view.
 
-#### Scenario: KPI strip composition
+#### Scenario: Status tab renders fleet health
 
-- **WHEN** Status.vue renders
-- **THEN** the page SHALL show four KPI cards in a responsive grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-4`):
-  - **节点**: count + breakdown pills (`X 在线 · Y 离线 · Z 未知`)
-  - **入站**: count + "across X 节点" subtext
-  - **客户端**: count + "已 provisioned" subtext
-  - **总流量**: formatted bytes + `↑` upload + `↓` download split
-- **AND** every card SHALL follow the Xboard pattern: tiny label top-left, accent icon tile top-right, big number, delta subtitle
-- **AND** every card SHALL use the same `bg-accent-50 / text-accent-600` icon tile (single accent, semantics via the icon glyph)
+- **WHEN** `Overview.tsx` renders with the `status` tab active
+- **THEN** it SHALL mount `StatusPanel`
+- **AND** show fleet KPIs and node health content sourced from admin query hooks.
 
-#### Scenario: Node health table
+#### Scenario: Stats tab renders traffic statistics
 
-- **WHEN** Status.vue renders and at least one node exists
-- **THEN** the page SHALL show a hairline-bordered card with header "节点健康" + "管理 →" link to `/admin/nodes`
-- **AND** the table columns SHALL be: 名称, 状态, CPU / Mem, Xray, Last Seen
-- **AND** status SHALL be a rounded-full pill with green/red/gray accents and `{{ nodeStatusLabel(status) }}` (中文「在线/离线/未知」)
-- **AND** when no nodes exist, the table SHALL render `EmptyState` with title "还没有节点" + CTA "去添加节点"
+- **WHEN** the URL is `/admin/status?tab=stats`
+- **THEN** the active tab SHALL be `stats`
+- **AND** `StatsPanel` SHALL render traffic-oriented KPIs and charts.
 
-### Requirement: Nodes View Provides CRUD + Probe
+#### Scenario: Refresh targets the active tab
 
-The system SHALL provide `/admin/nodes` for the node lifecycle UI.
+- **WHEN** the operator clicks the page refresh action
+- **THEN** the active panel's `reload()` handle SHALL be invoked
+- **AND** the inactive tab SHALL NOT be forced to remount.
 
-#### Scenario: Node list table
+### Requirement: Ops Monitor Shows Operational Trends
 
-- **WHEN** Nodes.vue renders
-- **THEN** the table columns SHALL be: ID, 名称, 连接, 状态, CPU / Mem, Xray, Last Seen, 操作
-- **AND** the 操作 column SHALL show three icon buttons per row: 探测 (magnifying-glass), 启用/禁用 (toggle), 删除 (trash)
-- **AND** disabled nodes SHALL render with `opacity-60`
+The system SHALL provide `/admin/ops-monitor` for higher-density operational
+observability.
 
-#### Scenario: Add node modal
+#### Scenario: Ops monitor loads
 
-- **WHEN** the user clicks "添加节点"
-- **THEN** a modal SHALL open with fields: 名称, Scheme (https/http), Host, Port, Base path, API Token, 启用 checkbox
-- **AND** the primary CTA SHALL read "创建" (verb-first), with "取消" as the secondary
-- **AND** the modal SHALL close on outdoor click + Escape
+- **WHEN** the operator opens `/admin/ops-monitor`
+- **THEN** the page SHALL render KPI cards and trend panels for node health and traffic data
+- **AND** failures SHALL be surfaced inline through the page error state rather than silently ignored.
 
-#### Scenario: Delete confirmation
+### Requirement: Nodes View Provides Node Lifecycle Operations
 
-- **WHEN** the user clicks the delete button on a row
-- **THEN** the system SHALL show a native `confirm()` dialog reading "确认删除节点 \"X\"？\n所有附属的 client_ownerships 会被级联删除。"
-- **AND** the delete SHALL fire only after the user confirms
+The system SHALL provide `/admin/nodes` for registering and maintaining remote
+3x-ui nodes.
 
-### Requirement: Inbounds View Renders Sub2API-Density Table
+#### Scenario: Node table/list
 
-The system SHALL provide `/admin/inbounds` for the fleet-wide inbound
-list, with a high-density multi-line table.
+- **WHEN** `Nodes.tsx` renders
+- **THEN** it SHALL show each node's identity, connection target, status, resource health, last-seen data, and row actions
+- **AND** the list SHALL provide search/filter behavior appropriate for repeated operator use.
 
-#### Scenario: KPI strip above the table
+#### Scenario: Node drawer
 
-- **WHEN** Inbounds.vue renders
-- **THEN** the page SHALL show a 6-card KPI strip: 上传, 下载, 总用量, 累计, 入站, 客户端
-- **AND** the layout SHALL be `grid-cols-2 md:grid-cols-3 lg:grid-cols-6`
+- **WHEN** the operator creates or edits a node
+- **THEN** `NodeDrawer.tsx` SHALL collect name, scheme, host, port, base path, API token, and enabled state
+- **AND** save through the admin node mutation hook.
 
-#### Scenario: Toolbar above table
+#### Scenario: Destructive action confirms intent
 
-- **WHEN** Inbounds.vue renders
-- **THEN** the toolbar SHALL contain:
-  - A 320px search input with prefix icon, placeholder "搜索 备注 / 协议 / 端口 / 节点 / tag"
-  - A protocol filter chip row with options: 全部, vless, vmess, trojan, shadowsocks
-- **AND** the active chip SHALL render `bg-ink-900 text-white` (light) / `bg-accent-600` (dark)
+- **WHEN** the operator deletes a node
+- **THEN** the UI SHALL ask for confirmation before invoking the delete mutation.
 
-#### Scenario: Table row density (Sub2API pattern)
+### Requirement: Inbounds View Provides Fleet Inbound Management
 
-- **WHEN** the table renders a row
-- **THEN** each row SHALL be `py-4` minimum row height
-- **AND** cells SHALL be MULTI-LINE where useful:
-  - **节点**: chip with status dot + "node #ID" subtext below
-  - **备注 · Tag · 端口**: 备注 (main, ink) + tag (mono, dim) + `:port` (mono, dim) on three lines
-  - **协议**: protocol pill on top, transport + security pills below (vertical stack)
-  - **客户端**: total count big + "● 在线 X · ○ 离线 Y" breakdown line
-  - **流量 · 用量**: bytes + `/ limit` + Marzban-style gradient progress bar (green <60%, amber <85%, red ≥85%) + per-direction `↑ up / ↓ down` line
-- **AND** the 操作 column SHALL show three ALWAYS-VISIBLE labeled mini-buttons: 编辑 / 重置 / 删除
+The system SHALL provide `/admin/inbounds` for fleet-wide inbound inspection and
+editing.
 
-#### Scenario: Row expansion
+#### Scenario: Inbound list
 
-- **WHEN** the user clicks a row
-- **THEN** an expanded panel SHALL appear below with the inbound's client list + an "添加客户端" CTA
-- **AND** the chevron in the first column SHALL rotate 90° to indicate state
+- **WHEN** `Inbounds.tsx` renders
+- **THEN** it SHALL show node, remark/tag/port, protocol, client counts, usage, and row actions
+- **AND** it SHALL provide search/filter controls for common operator lookup workflows.
 
-#### Scenario: Add inbound CTA opens 5-tab modal
+#### Scenario: Inbound editor drawer
 
-- **WHEN** the user clicks "添加入站"
-- **THEN** `InboundEditorModal.vue` SHALL open in `create` mode
-- **AND** the modal SHALL provide 5 tabs: 基础配置 / 协议 / Stream / Sniffing / 高级配置 (see next requirement)
+- **WHEN** the operator creates or edits an inbound
+- **THEN** `InboundEditor.tsx` SHALL open as an AntD drawer containing an AntD form
+- **AND** it SHALL include Basic, Protocol, Stream, Sniffing, and Advanced JSON sections where applicable.
 
-### Requirement: Inbound Editor Modal Covers 3x-UI Parity
+#### Scenario: Protocol coverage
 
-The system SHALL provide a 5-tab inbound editor that matches the
-visual structure of the upstream 3x-ui panel's add-inbound modal,
-supporting all 8 transmissions × 3 securities.
+- **WHEN** the editor protocol is changed
+- **THEN** it SHALL render protocol-specific fields for `vless`, `vmess`, `trojan`, `shadowsocks`, `wireguard`, and `hysteria`
+- **AND** WireGuard and Hysteria SHALL suppress Stream/Sniffing sections when those settings do not apply.
 
-#### Scenario: Tab "基础配置"
+#### Scenario: Stream coverage
 
-- **WHEN** the user opens the modal
-- **THEN** the first tab SHALL provide fields for: enable toggle, remark, protocol (vless/vmess/trojan/shadowsocks), listen address, port, total GB limit, trafficReset (daily/none), expiry datetime
+- **WHEN** a stream-enabled protocol is edited
+- **THEN** the editor SHALL support transmissions `tcp`, `ws`, `grpc`, `httpupgrade`, `h2`, `xhttp`, `kcp`, and `quic`
+- **AND** security modes `none`, `tls`, and `reality` with conditional fields.
 
-#### Scenario: Tab "协议"
+#### Scenario: Wire format composition
 
-- **WHEN** the user is on the 协议 tab
-- **THEN** the form SHALL show protocol-specific fields:
-  - VLESS: clients (id + flow), decryption=none
-  - VMess: clients (id + alterId)
-  - Trojan: clients (password)
-  - Shadowsocks: method (chacha20-poly1305 / aes-256-gcm / 2022-blake3-*) + clients (password)
+- **WHEN** the operator submits the editor
+- **THEN** `inbound-editor/model.ts` SHALL compose `settings`, `streamSettings`, and `sniffing` as JSON strings matching the backend/runtime 3x-ui wire contract.
 
-#### Scenario: Tab "Stream"
+### Requirement: User And Billing Views Cover Portal Operations
 
-- **WHEN** the user is on the Stream tab
-- **THEN** the form SHALL accept network ∈ {tcp, ws, grpc, httpupgrade, h2, xhttp, kcp, quic}
-- **AND** the form SHALL conditionally show transport-specific fields for the chosen network (e.g. ws path + host, grpc serviceName)
-- **AND** the form SHALL accept security ∈ {none, tls, reality} with conditional sub-fields:
-  - tls: server name, alpn, cert mode
-  - reality: server name, short ids, private/public key pair, dest, spider X
+The system SHALL provide admin pages for user, plan, provisioning-pool, and
+order operations.
 
-#### Scenario: Tab "Sniffing"
+#### Scenario: Users view
 
-- **WHEN** the user is on the Sniffing tab
-- **THEN** the form SHALL accept: enabled toggle, dest override (http/tls/quic/fakedns), metadata only, route only, domains override
+- **WHEN** `/admin/users` renders
+- **THEN** operators SHALL be able to search/filter users, inspect balance and OIDC linkage, and perform moderation actions through admin APIs.
 
-#### Scenario: Tab "高级配置"
+#### Scenario: Plans view
 
-- **WHEN** the user is on the 高级配置 tab
-- **THEN** the form SHALL show three textareas labeled "settings", "streamSettings", "sniffing" — each with a "override raw" checkbox
-- **AND** when "override raw" is checked, the corresponding textarea content SHALL replace the per-tab structured form output verbatim — escape hatch for fields not yet in the structured form
+- **WHEN** `/admin/plans` renders
+- **THEN** operators SHALL be able to create, edit, enable/disable, and inspect plans that portal users can purchase.
 
-#### Scenario: composeBody emits proper wire format
+#### Scenario: Provisioning pools view
 
-- **WHEN** the user submits the modal
-- **THEN** `composeBody()` SHALL produce a request body matching the wire format expected by `runtime-3xui-client::AddInbound` — `settings`, `streamSettings`, `sniffing` as stringified JSON (NOT JSON objects)
-- **AND** the API call SHALL be `POST /api/admin/inbounds/nodes/:nodeID` in create mode or `PUT .../:tag` in edit mode
+- **WHEN** `/admin/provisioning-pools` renders
+- **THEN** operators SHALL be able to bind plans to node/inbound targets used by client provisioning.
 
-### Requirement: Settings View Lists Known Keys
+#### Scenario: Orders view
 
-The system SHALL provide `/admin/settings` for the six known settings
-keys defined by the `settings` module.
+- **WHEN** `/admin/orders` renders
+- **THEN** operators SHALL be able to inspect orders, payment method/status, and provisioning outcome.
 
-#### Scenario: Settings list
+### Requirement: Audit, Webhook, And Settings Views Are First-Class Admin Pages
 
-- **WHEN** Settings.vue renders
-- **THEN** the page SHALL fetch `GET /api/admin/settings` and render one row per known key
-- **AND** each row SHALL show: label, type, type-appropriate input (toggle for bool / number input for int / text for string), Save button per-row
-- **AND** an indicator SHALL distinguish DB-override rows from env-default rows ("已覆盖" badge or similar)
+The system SHALL provide operational pages for audit, webhook, and settings
+workflows.
 
-#### Scenario: Save flash
+#### Scenario: Audit log view
 
-- **WHEN** the user clicks Save on a row
-- **THEN** the system SHALL call `PUT /api/admin/settings/<key>` with the new value
-- **AND** show a brief "已保存" flash on success
-- **AND** surface backend errors verbatim via `formatError` on failure
+- **WHEN** `/admin/audit-log` renders
+- **THEN** it SHALL display admin action history with filtering/search affordances.
 
-#### Scenario: Reset-to-default
+#### Scenario: Webhooks view
 
-- **WHEN** a row has a DB override and the user clicks "恢复默认"
-- **THEN** the system SHALL call `DELETE /api/admin/settings/<key>`
-- **AND** re-fetch the list to show the env-default value
+- **WHEN** `/admin/webhooks` renders
+- **THEN** operators SHALL be able to register, edit, enable/disable, delete, and inspect webhook subscriptions.
 
-## Out of scope
+#### Scenario: Settings view
 
-- Mobile-responsive table collapse (admin views are desktop-first).
-- Bulk operations (multi-select + bulk delete/reset) — single-row only
-  for now.
-- Real-time push updates (auto-refresh is manual via the "刷新" button
-  on each page).
-- Charts on the Status page (KPI strip is the only data visualization
-  in v1; per-node CPU/mem time series are exposed by the backend but
-  not yet rendered).
+- **WHEN** `/admin/settings` renders
+- **THEN** `Settings.tsx` SHALL present server-provided descriptors in workflow tabs
+- **AND** each setting row SHALL support save and reset-to-default where applicable.
+
+## Out of Scope
+
+- Backend endpoint semantics, which are owned by the corresponding backend module specs.
+- Real-time push updates; admin pages may use manual refresh and query invalidation.

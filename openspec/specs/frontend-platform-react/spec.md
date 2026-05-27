@@ -1,263 +1,165 @@
 # frontend-platform-react Specification
 
 ## Purpose
-TBD - created by archiving change rewrite-frontend-react-antd. Update Purpose after archive.
-## Requirements
-### Requirement: Canonical client-side library stack
 
-The frontend SHALL be implemented exclusively on the following
-libraries; introducing an alternative library that overlaps with
-any of these roles requires a separate change proposal.
+Defines the supported React SPA platform: library stack, app providers,
+state/query boundaries, routing, build output, and shared UI primitives. This
+module is the current frontend contract; migration-era parity requirements are
+not part of the active design.
+
+## Requirements
+
+### Requirement: Canonical Client-Side Stack
+
+The frontend SHALL be implemented under `frontend/` using the following
+libraries. Introducing another library that overlaps one of these roles
+requires an OpenSpec change.
 
 | Role | Library |
 |---|---|
 | UI rendering | React 18 |
-| UI primitives + design tokens | Ant Design 5 (`antd`) |
+| UI primitives and theme tokens | Ant Design 5 (`antd`) |
 | Iconography | `@ant-design/icons` |
 | Routing | React Router v6 (`react-router-dom`) |
 | Client state | Zustand |
 | Server state | TanStack Query v5 (`@tanstack/react-query`) |
 | HTTP client | axios |
-| i18n | react-i18next + i18next |
+| i18n | `react-i18next` + `i18next` |
 | Date utility | dayjs |
 | Build | Vite + `@vitejs/plugin-react` |
-| Unit tests | Vitest + `@testing-library/react` |
+| Unit/component tests | Vitest + Testing Library |
 | E2E tests | Playwright |
 
-#### Scenario: package.json names every canonical library
+#### Scenario: Package manifest names the supported stack
 
-- **WHEN** an inspector reads `frontend/package.json` (or
-  `frontend-react/package.json` during the rewrite window)
-- **THEN** every library in the table above SHALL appear in
-  `dependencies` or `devDependencies` with a non-empty version
-  range
-- **AND** `vue`, `vue-router`, `vue-i18n`, `pinia`, and
-  `@vitejs/plugin-vue` SHALL NOT appear in either section after
-  cutover
+- **WHEN** an inspector reads `frontend/package.json`
+- **THEN** every library in the table above SHALL appear in `dependencies` or `devDependencies`
+- **AND** package dependencies SHALL align with the single supported frontend stack in this spec.
 
-#### Scenario: PR introducing a competing library is rejected
+#### Scenario: Competing client-state library is proposed
 
-- **WHEN** a PR adds a library that overlaps an existing role
-  (e.g. adding Redux while Zustand is the canonical client-state
-  store, or adding SWR while TanStack Query is canonical)
-- **THEN** the PR SHALL be blocked pending an OpenSpec change
-  proposal that updates this table
+- **WHEN** a PR adds Redux, SWR, another router, or another UI component system
+- **THEN** the PR SHALL include an OpenSpec change that updates this platform contract.
 
-### Requirement: Build output is `dist/` with `index.html` + `assets/`
+### Requirement: App Root Owns Providers
 
-The build SHALL emit a directory consumable by the backend's
-`go:embed` directive at `backend/internal/web/embed.go`. The Go
-side does not change as part of this rewrite, so the output
-layout MUST remain identical to the current Vue build.
+`frontend/src/main.tsx` SHALL mount a single React root and install the
+global providers that every view depends on.
 
-#### Scenario: Production build produces the expected layout
+#### Scenario: Root provider order
 
-- **GIVEN** `npm run build` is invoked in the frontend tree
-- **WHEN** the build completes successfully
+- **WHEN** the SPA boots
+- **THEN** `main.tsx` SHALL render `ConfigProvider`, AntD `App`, `QueryClientProvider`, `BrowserRouter`, and `AppRouter`
+- **AND** theme selection SHALL come from `useThemeStore().resolvedTheme`
+- **AND** `frontend/src/i18n/index.ts` SHALL be imported before route views render.
+
+### Requirement: Build Output Embeds Into The Go Binary
+
+The frontend build SHALL emit assets into the backend web embed directory.
+
+#### Scenario: Production build layout
+
+- **GIVEN** `npm run build` is invoked in `frontend/`
+- **WHEN** the build completes
 - **THEN** `backend/internal/web/dist/index.html` SHALL exist
-- **AND** `backend/internal/web/dist/assets/` SHALL contain at
-  least one hashed JS bundle and one hashed CSS bundle
-- **AND** any other top-level paths the existing Vue build emits
-  (e.g. `dist/favicon.ico` if present) SHALL also be produced
+- **AND** `backend/internal/web/dist/assets/` SHALL contain hashed JS and CSS assets
+- **AND** the backend's existing SPA fallback SHALL serve `index.html` for non-API browser routes.
 
-#### Scenario: Backend serves SPA fallback unchanged
+#### Scenario: Development server proxies backend paths
 
-- **GIVEN** the React build output is present at the expected path
-- **WHEN** the backend receives a GET for any non-`/api/*` route
-  that does not match an asset
-- **THEN** the backend SHALL serve `dist/index.html` verbatim
-- **AND** no backend code change SHALL be required to support
-  this — the existing SPA fallback handler covers React Router as
-  cleanly as it covered vue-router
+- **WHEN** the Vite dev server runs
+- **THEN** `/api`, `/sub`, and `/uploads` requests SHALL proxy to `http://localhost:8080`
+- **AND** the dev server SHALL default to port `5174`.
 
-### Requirement: Every i18n key is preserved 1:1
+### Requirement: Routing Uses React Router Guards
 
-The locale files in the React tree SHALL contain exactly the same
-flattened key set as the Vue tree's
-`frontend/src/i18n/locales/{zh,en}.ts` at the moment immediately
-before cutover. New keys MAY be added during the rewrite; existing
-keys MUST NOT be removed or renamed.
+`frontend/src/router.tsx` SHALL be the canonical route map.
 
-#### Scenario: Locale key parity script passes
+#### Scenario: Route topology
 
-- **GIVEN** the Vue tree and React tree both have their
-  `zh.ts`/`en.ts` locale files
-- **WHEN** the locale-parity script flattens both objects' key sets
-  and diffs them
-- **THEN** every key present in the Vue tree SHALL be present in
-  the React tree
+- **WHEN** routes are inspected
+- **THEN** `/login` and `/oidc/callback` SHALL render inside `AuthLayout`
+- **AND** `/admin/*` SHALL render inside `ProtectedRoute area="admin"` and `AdminLayout`
+- **AND** `/portal/*` SHALL render inside `ProtectedRoute area="portal"` and `PortalLayout`
+- **AND** `/` SHALL redirect to `/admin`.
 
-#### Scenario: Missing key fails loudly in development
+#### Scenario: Admin default route
 
-- **GIVEN** `react-i18next` is configured with `returnNull: false`
-  and `keySeparator: '.'`
-- **WHEN** a component calls `t('admin.nonexistent.key')` in
-  development mode
-- **THEN** the call SHALL surface the missing key in the console
-  rather than silently rendering an empty string
+- **WHEN** an authenticated admin opens `/admin`
+- **THEN** the router SHALL redirect to `/admin/status`.
 
-#### Scenario: vue-i18n interpolation syntax works unchanged
+#### Scenario: Portal default route
 
-- **GIVEN** a locale string uses `{var}` interpolation (e.g.
-  `admin.stats.kpiSubtitle.todayDelta = '今日: {value}'`)
-- **WHEN** the React tree's `t('admin.stats.kpiSubtitle.todayDelta',
-  { value: '2.51 GB' })` is invoked
-- **THEN** the rendered string SHALL be `今日: 2.51 GB`
+- **WHEN** an authenticated portal user opens `/portal`
+- **THEN** the router SHALL redirect to `/portal/subscription`.
 
-### Requirement: Server state goes through TanStack Query
+### Requirement: Server State Goes Through TanStack Query
 
-Every HTTP fetch or mutation against the backend SHALL be issued
-through a TanStack Query hook (`useQuery` or `useMutation`).
-Components SHALL NOT call axios endpoints directly via
-`useEffect`/`useState`.
+HTTP reads and writes SHALL be wrapped by query/mutation hooks. View
+components SHOULD consume hooks instead of calling axios clients directly.
 
-#### Scenario: Component opens a list view
+#### Scenario: View opens a list page
 
-- **GIVEN** a view needs a list of resources from the backend
+- **GIVEN** a view needs backend data
 - **WHEN** the view is implemented
-- **THEN** it SHALL consume a `useXxxList()` hook that wraps
-  `useQuery`
-- **AND** the hook SHALL define a `queryKey` of the form
-  `[area, resource, op, ...args]` where `area ∈ {admin, portal,
-  public}`
+- **THEN** it SHALL consume a `useXxx...` query hook under `frontend/src/hooks/queries/`
+- **AND** the query key SHALL identify the area (`admin`, `portal`, or `public`) and resource.
 
-#### Scenario: Mutation invalidates the corresponding list
+#### Scenario: Mutation succeeds
 
-- **GIVEN** a mutation hook (e.g. `useUpdateNode()`) is invoked and
-  succeeds
-- **WHEN** the mutation's `onSuccess` runs
-- **THEN** it SHALL invalidate every cached query whose key
-  starts with the mutation's `[area, resource]` prefix
-- **AND** any list view currently rendered SHALL refetch
-  automatically
+- **WHEN** a mutation updates a resource
+- **THEN** its success handler SHALL invalidate or refresh the affected query keys so visible lists refetch.
 
-### Requirement: Client state goes through Zustand
+### Requirement: Client State Goes Through Zustand
 
-The platform SHALL store all client-side session state (auth tokens, theme preference, app-locale) in Zustand stores under `src/stores/`, and components MUST NOT duplicate this state in local `useState`.
+Session, locale, and theme state SHALL live in Zustand stores under
+`frontend/src/stores/`.
 
-#### Scenario: JWT survives reload
+#### Scenario: Admin JWT survives reload
 
-- **GIVEN** a user has authenticated via `/admin/login` or
-  `/portal/login` and the JWT is in the corresponding Zustand
-  store
-- **WHEN** the browser is reloaded
-- **THEN** the store SHALL rehydrate from `localStorage` using
-  `zustand/middleware`'s `persist` middleware
-- **AND** the user SHALL remain authenticated without a second
-  login
+- **GIVEN** an admin has logged in successfully
+- **WHEN** the browser reloads
+- **THEN** `useAdminAuthStore` SHALL rehydrate the admin token from localStorage
+- **AND** guarded admin routes SHALL remain accessible until the token expires or is cleared.
 
-#### Scenario: Storage keys are stable across the Vue→React cutover
+#### Scenario: Portal JWT survives reload
 
-- **GIVEN** a user was logged in under the Vue tree before
-  cutover, with a JWT stored at a specific `localStorage` key
-- **WHEN** the cutover commit is deployed and the user opens the
-  app
-- **THEN** the React tree's Zustand store SHALL read the same
-  `localStorage` key the Vue tree wrote
-- **AND** the user SHALL NOT be forced to log in again
+- **GIVEN** a portal user has authenticated through OIDC or user login API
+- **WHEN** the browser reloads
+- **THEN** `usePortalAuthStore` SHALL rehydrate the portal token and user identity.
 
-### Requirement: AntD theme is parameterized from the existing brand palette
+#### Scenario: Legacy token keys are read
 
-The React tree SHALL configure a single `<ConfigProvider theme={...}>`
-at the app root that carries forward the existing brand identity:
-the indigo `primary` and teal `accent` from the Vue tree's
-Tailwind config become AntD's `colorPrimary` and `colorSuccess`
-tokens, respectively. The same `theme` Zustand store decides
-between light and dark algorithms.
+- **WHEN** auth stores initialize
+- **THEN** they MAY read legacy token keys defined in `frontend/src/stores/storage.ts`
+- **AND** the canonical persisted store keys SHALL remain `3xui.adminAuth` and `3xui.portalAuth`.
 
-#### Scenario: Primary buttons render in the brand color
+### Requirement: Shared Components Carry Repeated UI Patterns
 
-- **GIVEN** the app is mounted with the default light theme
-- **WHEN** an AntD `<Button type="primary">` is rendered
-- **THEN** its background color SHALL be the brand primary
-  (`#6366f1` indigo, from the Vue tree's `primary-500` token) —
-  not AntD's default blue
+Repeated page primitives SHALL live under `frontend/src/components/common/`
+or `frontend/src/components/layout/`.
 
-#### Scenario: Theme toggle swaps light/dark without remount
+#### Scenario: Page header repeats
 
-- **GIVEN** the `theme` Zustand store is currently `light`
-- **WHEN** the user toggles to `dark`
-- **THEN** `<ConfigProvider>` SHALL re-render with
-  `theme.darkAlgorithm`
-- **AND** the swap SHALL apply via AntD CSS variables — no
-  component remount, no flash of unstyled content
+- **WHEN** a top-level page needs title, subtitle, and actions
+- **THEN** it SHALL use `PageHeader` instead of copying equivalent header markup.
 
-### Requirement: Route guards enforce admin/portal area separation
+#### Scenario: Refresh action repeats
 
-The router SHALL gate every `/admin/*` route behind admin
-authentication and every `/portal/*` route behind portal
-authentication. Unauthenticated access SHALL redirect to
-`/login` with a `next=` query param carrying the original path.
+- **WHEN** a page exposes manual reload
+- **THEN** it SHALL use `RefreshButton` or an AntD button with the same behavior and iconography.
 
-#### Scenario: Anonymous user opens an admin URL
+#### Scenario: Responsive table/list repeats
 
-- **GIVEN** there is no admin JWT in the `adminAuth` Zustand store
-- **WHEN** the user navigates to `/admin/users`
-- **THEN** the router SHALL redirect to `/login?next=/admin/users`
-- **AND** after successful login the user SHALL land on
-  `/admin/users` (not the admin home)
+- **WHEN** a resource list needs table-on-wide and list-on-narrow behavior
+- **THEN** it SHOULD use `ResponsiveListTable` rather than maintaining independent duplicated layouts.
 
-#### Scenario: Portal user attempts to enter the admin area
+### Requirement: Only React Sources Are Supported
 
-- **GIVEN** the user is authenticated as a portal user but not as
-  an admin
-- **WHEN** the user navigates directly to `/admin/status`
-- **THEN** the router SHALL redirect to `/login?next=/admin/status`
-- **AND** the portal session SHALL NOT be cleared
+The supported frontend source tree is `frontend/src` and uses `.ts`/`.tsx`.
 
-#### Scenario: Default landing on `/admin`
+#### Scenario: Source tree is inspected
 
-- **WHEN** an authenticated admin navigates to `/admin` with no
-  sub-path
-- **THEN** the router SHALL redirect to `/admin/status` (the
-  Overview page, default tab `status`)
-
-### Requirement: Shared widgets render identically across pages
-
-The platform SHALL ensure that the same functional widget renders
-identically wherever it appears. This is enforced by sourcing every
-common interaction from AntD's component library (or a single
-shared wrapper around it), not by hand-rolling per-page variants.
-
-#### Scenario: Refresh button identical on every page
-
-- **GIVEN** any admin page that exposes a refresh affordance
-- **WHEN** the page renders
-- **THEN** the refresh control SHALL be an AntD `<Button>` (or a
-  single shared wrapper component) — never a hand-rolled
-  inline-class button
-- **AND** its label/icon/size SHALL match every other refresh
-  button in the app
-
-#### Scenario: Page header is a single shared component
-
-- **GIVEN** multiple top-level pages need a "title + subtitle +
-  trailing actions" header
-- **WHEN** the page is implemented
-- **THEN** it SHALL use the shared `PageHeader` wrapper (around
-  AntD's primitives) — copying the JSX into the page is forbidden
-
-### Requirement: No Vue tree at cutover
-
-After the cutover commit, the repository SHALL contain exactly one
-frontend tree — the React tree, located at `frontend/`. The Vue
-tree SHALL be deleted, not archived under a sibling directory.
-
-#### Scenario: Post-cutover repository has only React sources
-
-- **GIVEN** the cutover commit has been merged
-- **WHEN** a tree-walk lists files under `frontend/src/`
-- **THEN** no `*.vue` files SHALL be present
-- **AND** no Pinia store SHALL be present
-- **AND** no `vite-plugin-vue` reference SHALL appear in any
-  config file
-
-#### Scenario: Backend embed continues to work
-
-- **GIVEN** the cutover commit has been merged and the backend is
-  rebuilt
-- **WHEN** the binary serves the SPA
-- **THEN** `index.html` SHALL load the React app
-- **AND** no Go code change SHALL have been required for the
-  cutover
-
+- **WHEN** `frontend/src` is scanned
+- **THEN** page, component, store, and route implementations SHALL be React/TypeScript files
+- **AND** no second frontend source tree SHALL be required to build or run the app.

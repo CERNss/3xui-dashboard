@@ -12,7 +12,7 @@ be resolved automatically.
 
 ## Configuration
 
-New env vars (added to `config.OIDC`):
+OIDC can be configured by environment variables and by DB-backed settings:
 
 | Var | Purpose | Required for button to render |
 |---|---|---|
@@ -23,7 +23,10 @@ New env vars (added to `config.OIDC`):
 | `OIDC_DISPLAY_NAME` | Human label, e.g. "集换社" | No — falls back to issuer hostname |
 | `OIDC_ICON_URL` | Icon shown on the button (URL or SVG path) | No — frontend falls back to generic globe |
 
-`config.OIDC.Enabled() == (Issuer && ClientID && ClientSecret && RedirectURL)`. Providers can also be persisted in `oidc_providers`; the env/runtime provider is exposed as provider key `default`.
+`config.OIDC.Enabled() == (Issuer && ClientID && ClientSecret && RedirectURL)`.
+Settings-backed values override or complement the environment where the OIDC
+service reads them. The env/runtime provider is exposed as provider key
+`default`.
 
 ## Endpoint
 
@@ -42,9 +45,9 @@ Response: JSON array. Empty array (not 404) when OIDC isn't configured.
 ]
 ```
 
-Multiple providers SHALL be permitted in the response shape. The
-frontend starts a provider by POSTing to `/auth/oidc/start` with the
-returned `key`, then navigates to the returned `authorize_url`.
+Multiple providers SHALL be permitted in the response shape. The frontend
+starts a provider by POSTing to `/api/user/auth/oidc/start` with the returned
+`key`, then navigates to the returned `authorize_url`.
 
 ## Requirements
 
@@ -112,19 +115,19 @@ per provider beneath the admin login form, separated by a divider.
 - **THEN** `redirect_after` SHALL default to `/portal/subscription`
 - **AND** admin-only `next` paths SHALL NOT be passed into OIDC start
 
-#### Scenario: Multiple providers (future-proofing)
+#### Scenario: Multiple providers
 
 - **GIVEN** the response array has more than one element
 - **WHEN** the login view renders
 - **THEN** each provider SHALL render as a separate button in array order
 - **AND** the divider SHALL appear exactly once, above the first button
 
-### Requirement: Providers endpoint is fail-soft on the client
+### Requirement: Providers Endpoint Is Fail-Soft On The Client
 
 The frontend SHALL treat any error fetching providers as "no providers",
 so a transient backend/config error does not break the login page.
 
-#### Scenario: Endpoint returns 404 on old deploy
+#### Scenario: Provider fetch rejects
 
 - **WHEN** `portalAuthApi.oidcProviders()` rejects
 - **THEN** the SPA SHALL set `oidcProviders.value = []` (no error toast)

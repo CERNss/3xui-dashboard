@@ -1,120 +1,101 @@
 # i18n
 
-Translation strategy and locale-routing for the Vue 3 SPA, built on
-`vue-i18n` v9 in composition (non-legacy) mode. Lives in
-`frontend/src/i18n/`.
+Translation strategy for the React SPA, built on `i18next` and
+`react-i18next`.
 
-## Purpose & boundaries
+## Purpose & Boundaries
 
-Two locales today: `en` and `zh-CN` (key `zh`). The dashboard targets
-operators in both English-default and Chinese-default environments;
-admin views were authored Chinese-first based on operator feedback, so
-some labels in `views/admin/*.vue` use literal Chinese text rather than
-`$t()` keys. This is acceptable for the admin surface (single
-operator, won't translate); the portal surface DOES use `$t()` end-to-
-end so it can ship in either language.
+The frontend supports English and Chinese. Locale selection is purely
+client-side and applies to auth, admin, and portal surfaces. Backend API error
+strings may still be returned as operator-facing text and are not translated by
+this module.
 
-## Layout
+## Files
 
 ```
 frontend/src/i18n/
-  index.ts            — createI18n + initialLocale + bindI18nToStore
-  locales/
-    en.ts             — default fallback
-    zh.ts             — primary for ops in mainland China
+  index.ts       - i18next initialization and initial locale resolution
+  locales/en.ts  - English messages
+  locales/zh.ts  - Chinese messages
 ```
 
-Locale persistence: `localStorage["dashboard.locale"]` + an `app`
-Pinia store that mirrors it. Bound in `bindI18nToStore` so toggling
-the locale in the store updates the i18n active locale in lockstep.
+Locale persistence uses `localStorage["dashboard.locale"]`. `useAppStore`
+mirrors the active UI locale as `en-US` or `zh-CN`, while i18next uses `en` or
+`zh`.
 
-## Initial locale resolution
+## Initial Locale Resolution
 
 ```
-1. localStorage["dashboard.locale"] in {"en", "zh"} → use it
-2. navigator.language starts with "zh" → "zh"
-3. fallback → "en"
+1. localStorage["dashboard.locale"] in {"en", "en-US", "zh", "zh-CN"} -> normalized locale
+2. navigator.language starts with "zh" -> "zh"
+3. fallback -> "en"
 ```
-
-Resolved BEFORE Pinia activates so the first paint is in the right
-language (matches theme-system's same "set before mount" pattern).
 
 ## Requirements
 
-### Requirement: Single i18n Instance For The SPA
+### Requirement: Single i18next Instance
 
-The system SHALL construct exactly one `createI18n` instance in
-`i18n/index.ts` and inject it via `app.use(i18n)` in `main.ts`.
+The system SHALL initialize one i18next instance in `frontend/src/i18n/index.ts`
+and make it available through `react-i18next`.
 
-#### Scenario: Composition API mode
+#### Scenario: Initialization config
 
-- **WHEN** `createI18n` is called
-- **THEN** the config SHALL set `legacy: false` and `globalInjection: true`
-- **AND** the `$t` function SHALL be available in every template
+- **WHEN** i18next initializes
+- **THEN** it SHALL install `initReactI18next`
+- **AND** register `zh` and `en` translation resources
+- **AND** set `fallbackLng` to `en`
+- **AND** set `returnNull: false`.
 
-#### Scenario: Fallback chain
+#### Scenario: Missing key visibility
 
-- **WHEN** a translation key is missing in the active locale
-- **THEN** the system SHALL fall back to the `en` locale
-- **AND** if the key is also missing in `en`, vue-i18n's default behavior of rendering the key path SHALL apply (the missing key SHALL be visible in dev so it gets caught at PR review)
+- **WHEN** a translation key is missing in development
+- **THEN** the system SHALL keep the missing key visible or log a missing-key warning
+- **AND** the UI SHALL NOT silently render an empty string.
 
-### Requirement: Initial Locale Detection
+### Requirement: Interpolation Uses Existing Brace Syntax
 
-The system SHALL determine the active locale before Vue mounts so the
-first paint avoids a flash of wrong language.
+Locale strings SHALL support `{name}` interpolation syntax.
 
-#### Scenario: User has a persisted preference
+#### Scenario: Value interpolation
 
-- **GIVEN** localStorage holds `dashboard.locale = "zh"`
+- **GIVEN** a translation string contains `{value}`
+- **WHEN** a component calls `t(key, { value: "2.51 GB" })`
+- **THEN** the rendered copy SHALL include `2.51 GB` in the placeholder position.
+
+### Requirement: Locale Switch Persists And Propagates
+
+The system SHALL keep `useAppStore().locale`, localStorage, and i18next's active
+language in sync.
+
+#### Scenario: User toggles locale
+
+- **WHEN** `LocaleSwitcher` changes from `en-US` to `zh-CN`
+- **THEN** `useAppStore().setLocale("zh-CN")` SHALL persist `dashboard.locale = "zh"`
+- **AND** `i18n.changeLanguage("zh")` SHALL run in the same user interaction.
+
+#### Scenario: Reload after locale choice
+
+- **GIVEN** localStorage contains `dashboard.locale = "zh"`
 - **WHEN** the SPA bootstraps
-- **THEN** the i18n instance SHALL initialize with locale `zh` regardless of `navigator.language`
+- **THEN** i18next SHALL initialize with `lng: "zh"` regardless of browser language.
 
-#### Scenario: First visit, Chinese browser
+### Requirement: User-Facing Surfaces Use Translation Keys
 
-- **GIVEN** no localStorage entry AND `navigator.language === "zh-CN"`
-- **WHEN** the SPA bootstraps
-- **THEN** the active locale SHALL be `zh`
+The frontend SHALL prefer translation keys for visible user-facing copy,
+especially auth and portal flows.
 
-#### Scenario: First visit, English browser
+#### Scenario: Auth surface copy
 
-- **GIVEN** no localStorage entry AND `navigator.language === "en-US"`
-- **WHEN** the SPA bootstraps
-- **THEN** the active locale SHALL be `en`
+- **WHEN** `Login.tsx` renders labels, validation messages, and OIDC copy
+- **THEN** those strings SHOULD come from `useTranslation().t(...)` with defaults only where necessary.
 
-### Requirement: Locale Bound To App Store
+#### Scenario: Admin data labels
 
-The system SHALL keep the i18n locale in lockstep with the `useAppStore().locale`
-so user-facing locale switches persist and propagate.
+- **WHEN** admin navigation, settings groups, and common controls render
+- **THEN** they SHALL use shared i18n keys so locale switching remains coherent across repeated chrome.
 
-#### Scenario: Store mutation updates i18n
+## Out of Scope
 
-- **WHEN** code calls `appStore.setLocale("en")`
-- **THEN** `i18n.global.locale.value` SHALL become `"en"` in the same tick (via the binding installed by `bindI18nToStore`)
-- **AND** localStorage SHALL persist the new value
-
-### Requirement: Admin Surface May Use Literal Text
-
-The system SHALL allow admin views (`frontend/src/views/admin/*.vue`)
-to use literal Chinese text without `$t()` lookups, because the admin
-audience is the single operator and translation is not required.
-
-#### Scenario: Admin view uses literal label
-
-- **WHEN** an admin view button reads `添加节点` directly in the template
-- **THEN** this SHALL be acceptable — no spec violation
-- **AND** the `en.ts` / `zh.ts` files SHALL NOT be required to carry an entry for it
-
-#### Scenario: Portal surface MUST use $t
-
-- **WHEN** a portal view (`frontend/src/views/portal/*.vue`) renders user-facing copy
-- **THEN** the copy SHALL come through `$t('key.path')`
-- **AND** both `en.ts` and `zh.ts` SHALL provide the key
-
-## Out of scope
-
-- RTL languages (Arabic, Hebrew) — not in scope for v1.
-- Plural rules beyond what vue-i18n's defaults handle.
-- Dynamic locale loading (the two locale files are bundled into the SPA
-  — total size is trivial).
-- Backend-side translations (error messages from the API are returned
-  in operator-facing Chinese / English mix; not gated on locale).
+- RTL layout support.
+- Dynamic locale bundle loading.
+- Backend-side error translation.

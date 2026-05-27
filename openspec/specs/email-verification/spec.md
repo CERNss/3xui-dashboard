@@ -214,13 +214,17 @@ The system SHALL support start/confirm/token verification for
 
 ## Frontend behavior
 
-`frontend/src/views/Login.tsx` in register mode:
+OIDC account completion and profile email-change flows use scoped
+email-verification endpoints from the React SPA:
 
-- Calls `portalAuthApi.sendCode(email)` when user clicks "发送验证码"
-- Starts a 60-second countdown after a successful send; the send button
-  is disabled until the countdown expires.
-- Validates `code.length === 6` client-side before calling register.
-- On register failure (e.g. wrong code), surfaces the backend error verbatim.
+- OIDC create-account UI calls `portalAuthApi.startEmailVerification` with
+  `purpose="oidc_create_account"`, confirms the code, then submits the returned
+  verification token to `/api/user/auth/oidc/create-account`.
+- Portal profile email-change UI uses the authenticated
+  `/api/user/email-verification/*` surface with `purpose="change_email"`.
+- Any future portal self-registration UI SHALL use the same public auth
+  verification surface for `purpose="register"` before calling
+  `/api/user/auth/register`.
 
 ## Out of scope
 
