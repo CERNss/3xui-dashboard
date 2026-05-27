@@ -26,10 +26,15 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   background: var(--app-bg);
   min-width: 320px;
-  min-height: 100vh;
   margin: 0;
 }
 
@@ -37,10 +42,28 @@ body {
   min-height: 100vh;
 }
 
+.admin-shell.ant-layout {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-shell-main.ant-layout {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .admin-shell-sider.ant-layout-sider {
   background: #f8fafc;
   border-right: 1px solid #e2e8f0;
   box-shadow: 18px 0 54px rgba(15, 23, 42, 0.06);
+  flex: 0 0 auto;
+  height: 100vh;
+  left: 0;
+  overflow: hidden;
+  position: sticky;
+  top: 0;
 }
 
 .admin-shell-drawer .ant-drawer-body {
@@ -234,11 +257,21 @@ body {
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
   color: #334155;
   display: flex;
+  flex: 0 0 var(--admin-shell-header-height);
   gap: 24px;
   height: var(--admin-shell-header-height);
   justify-content: space-between;
   line-height: 1;
   padding: 0 28px;
+  position: relative;
+  z-index: 10;
+}
+
+.admin-shell-content.ant-layout-content {
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
 }
 
 .admin-topbar-heading {
@@ -631,17 +664,231 @@ body {
   z-index: 1;
 }
 
-.config-list-page-filters,
+.config-list-page {
+  --config-list-surface: #ffffff;
+  --config-list-surface-soft: #f8fafc;
+  --config-list-border: #dbe5f0;
+  --config-list-text-soft: #64748b;
+  min-width: 0;
+}
+
+.config-list-page-toolbar {
+  align-items: center;
+  background: var(--config-list-surface);
+  border: 1px solid var(--config-list-border);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  min-height: 64px;
+  padding: 10px 16px;
+}
+
+.config-list-page-filters {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.config-list-page-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.config-list-page-actions:only-child {
+  margin-left: auto;
+}
+
 .config-list-page-stats,
 .config-list-page-alerts {
-  margin-bottom: 16px;
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+
+.config-list-page-list {
+  min-width: 0;
 }
 
 .config-list-page-footer {
-  margin-top: 16px;
+  margin-top: 8px;
+}
+
+.config-list-page--viewport {
+  --config-list-table-header-height: 55px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--admin-shell-header-height) - 48px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.config-list-page--viewport .config-list-page-filters,
+.config-list-page--viewport .config-list-page-stats,
+.config-list-page--viewport .config-list-page-alerts,
+.config-list-page--viewport .config-list-page-toolbar,
+.config-list-page--viewport .config-list-page-footer {
+  flex: 0 0 auto;
+}
+
+.config-list-page--viewport .config-list-page-list {
+  background: var(--config-list-surface);
+  border: 1px solid var(--config-list-border);
+  border-radius: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.config-list-page--viewport .config-list-page-toolbar + .config-list-page-list {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: 0;
+}
+
+.config-list-page--viewport [data-component="responsive-list-table"],
+.config-list-page--viewport .ant-spin-nested-loading,
+.config-list-page--viewport .ant-spin-container {
+  height: 100%;
+  min-height: 0;
+}
+
+.config-list-page--viewport .ant-table-wrapper {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.config-list-page--viewport .ant-spin-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.config-list-page--viewport .ant-table {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.config-list-page--viewport .ant-table-container,
+.config-list-page--viewport .ant-table-body {
+  min-height: 0;
+}
+
+.config-list-page--viewport .ant-table-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.config-list-page--viewport .ant-table-header {
+  flex: 0 0 auto;
+}
+
+.config-list-page--viewport .ant-table-body {
+  flex: 1 1 auto;
+  height: auto !important;
+  max-height: none !important;
+}
+
+.table-cell-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.table-cell-nowrap {
+  white-space: nowrap;
+}
+
+.ant-table-cell.table-cell-actions > .ant-space,
+.ant-table-cell.table-cell-actions > .ant-space-wrap {
+  justify-content: center;
+}
+
+.config-list-page--viewport .ant-table-pagination.ant-pagination {
+  align-items: center;
+  background: var(--config-list-surface);
+  border: 1px solid var(--config-list-border);
+  border-radius: 0;
+  display: flex;
+  flex: 0 0 auto;
+  margin: 16px 0 0;
+  min-height: 56px;
+  padding: 10px 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.config-list-page--viewport .config-list-page-footer {
+  align-items: center;
+  background: var(--config-list-surface);
+  border: 1px solid var(--config-list-border);
+  display: flex;
+  min-height: 56px;
+  padding: 10px 16px;
+}
+
+.config-list-page-footer-summary {
+  color: var(--config-list-text-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.config-list-page--viewport .config-list-page-list > .ant-space,
+.config-list-page--viewport .config-list-page-list > .ant-space > .ant-space-item {
+  min-width: 0;
+}
+
+.config-list-page--viewport .config-list-page-list > .ant-space {
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px;
+  width: 100%;
+}
+
+.config-list-page-card-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  padding: 16px;
+}
+
+.config-list-page-card-stack {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.config-list-page--viewport .config-list-page-card-grid,
+.config-list-page--viewport .config-list-page-card-stack {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.dark .config-list-page {
+  --config-list-surface: #1f2b3f;
+  --config-list-surface-soft: #18243a;
+  --config-list-border: rgba(148, 163, 184, 0.16);
+  --config-list-text-soft: rgba(219, 231, 241, 0.72);
+}
+
+.dark .config-list-page-toolbar,
+.dark .config-list-page--viewport .config-list-page-list,
+.dark .config-list-page--viewport .ant-table-pagination.ant-pagination,
+.dark .config-list-page--viewport .config-list-page-footer {
+  background: var(--config-list-surface);
+  border-color: var(--config-list-border);
+}
+
+.admin-audit-log-page {
+  min-height: 0;
 }
 
 .settings-page {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
@@ -653,10 +900,12 @@ body {
   --settings-tabs-muted: rgba(219, 231, 241, 0.68);
   --settings-tabs-active-bg: rgba(20, 184, 166, 0.22);
   --settings-tabs-active-border: rgba(45, 212, 191, 0.34);
+  min-width: 0;
   position: relative;
 }
 
 .settings-floating-tabs > .ant-tabs-nav {
+  align-self: stretch;
   backdrop-filter: blur(18px);
   background:
     linear-gradient(180deg, rgba(17, 28, 44, 0.9), rgba(8, 18, 33, 0.78)),
@@ -666,16 +915,15 @@ body {
   box-shadow:
     0 24px 54px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
   display: inline-flex;
-  left: 50%;
-  margin: -4px 0 20px;
-  max-width: min(100%, 1160px);
+  margin: 0 0 20px;
+  max-width: 100%;
   min-height: 54px;
   padding: 6px;
   position: sticky;
   top: 16px;
-  transform: translateX(-50%);
-  width: min(100%, 1160px);
+  width: 100%;
   z-index: 8;
 }
 
@@ -1218,6 +1466,10 @@ body {
 
 .auth-tabs .ant-tabs-nav {
   margin-bottom: 22px;
+}
+
+.auth-tabs .ant-tabs-nav::before {
+  border-bottom: 0;
 }
 
 .auth-tabs .ant-tabs-tab {

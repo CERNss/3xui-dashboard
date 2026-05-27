@@ -10,7 +10,7 @@ import type {
   ProvisioningPoolTarget,
   ProvisioningPoolTargetInput,
 } from '@/api/admin/provisioningPools'
-import { EmptyState, PageHeader, RefreshButton, ResponsiveListTable } from '@/components/common'
+import { ConfigListPage, EmptyState, RefreshButton, ResponsiveListTable } from '@/components/common'
 import { useInboundsFleet } from '@/hooks/queries/admin/inbounds'
 import {
   useAddProvisioningPoolTarget,
@@ -241,15 +241,23 @@ export default function ProvisioningPools() {
     {
       title: t('admin.provisioningPools.column.capacity'),
       key: 'capacity',
+      align: 'right',
+      className: 'table-cell-number',
+      width: 140,
       render: (_value, target) => capacityText(target, t('admin.provisioningPools.unlimited')),
     },
     {
       title: t('admin.provisioningPools.priority'),
       dataIndex: 'priority',
+      align: 'center',
+      className: 'table-cell-number',
+      width: 96,
     },
     {
       title: t('admin.provisioningPools.column.status'),
       dataIndex: 'enabled',
+      align: 'center',
+      width: 96,
       render: (_value, target) => (
         <Switch
           checked={target.enabled}
@@ -262,7 +270,9 @@ export default function ProvisioningPools() {
     {
       title: t('admin.provisioningPools.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 120,
       render: (_value, target) => (
         <Button
           danger
@@ -287,7 +297,7 @@ export default function ProvisioningPools() {
 
   return (
     <div>
-      <PageHeader
+      <ConfigListPage<ProvisioningPool>
         title={t('admin.provisioningPools.title')}
         subtitle={t('admin.provisioningPools.subtitle')}
         actions={
@@ -298,87 +308,90 @@ export default function ProvisioningPools() {
             <RefreshButton loading={poolsQuery.isFetching || fleetQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
           </>
         }
-      />
-
-      {error ? <Alert type="error" showIcon message={t('admin.provisioningPools.saveFailed')} style={{ marginBottom: 16 }} /> : null}
-
-      {pools.length > 0 || loading ? (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {pools.map((pool) => (
-            <Card
-              key={pool.id}
-              title={
-                <Space>
-                  <Typography.Text strong>{pool.name}</Typography.Text>
-                  <Tag color={pool.enabled ? 'green' : 'default'}>{pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}</Tag>
-                  {pool.auto_create ? <Tag color="blue">{t('admin.provisioningPools.autoCreate')}</Tag> : null}
-                </Space>
-              }
-              extra={
-                <Space>
-                  <Button size="small" aria-label={t('admin.provisioningPools.addTarget')} icon={<PlusOutlined />} onClick={() => openAddTarget(pool)}>
-                    {t('admin.provisioningPools.addTarget')}
-                  </Button>
-                  <Button size="small" aria-label={`${t('admin.provisioningPools.edit')} ${pool.name}`} icon={<EditOutlined />} onClick={() => openEditPool(pool)} />
-                  <Button
-                    danger
-                    size="small"
-                    aria-label={`${t('admin.provisioningPools.delete')} ${pool.name}`}
-                    icon={<DeleteOutlined />}
-                    onClick={() => confirmDeletePool(pool)}
-                  />
-                </Space>
-              }
-            >
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Typography.Text type="secondary">{pool.description || protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Typography.Text>
-                <Typography.Text>
-                  {t('admin.provisioningPools.portRange')}: {pool.port_min && pool.port_max ? `${pool.port_min}-${pool.port_max}` : t('admin.commonAny', { defaultValue: t('common.all') })}
-                </Typography.Text>
-                {pool.targets?.length ? (
-                  <ResponsiveListTable
-                    rowKey="id"
-                    columns={targetColumns}
-                    dataSource={pool.targets}
-                    pagination={false}
-                    mobileCard={(target) => (
-                      <Card size="small" style={{ width: '100%' }}>
-                        <Space direction="vertical" size={6}>
-                          <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
-                          <Typography.Text type="secondary">
-                            {target.inbound_tag} · {target.protocol || '-'}
-                          </Typography.Text>
-                          <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
-                          <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
-                          <Space>
-                            <Switch
-                              checked={target.enabled}
-                              aria-label={`${target.enabled ? t('admin.nodes.disable') : t('admin.nodes.enable')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`}
-                              onChange={() => toggleTarget(target)}
-                            />
-                            <Button size="small" danger aria-label={`${t('admin.provisioningPools.delete')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`} onClick={() => deleteTarget(target)}>
-                              {t('admin.provisioningPools.delete')}
-                            </Button>
-                          </Space>
-                        </Space>
-                      </Card>
+        alerts={error ? <Alert type="error" showIcon message={t('admin.provisioningPools.saveFailed')} /> : null}
+        dataSource={pools}
+        loading={loading}
+        listClassName="config-list-page-card-stack"
+        listContent={
+          pools.length > 0 || loading ? (
+            <>
+              {pools.map((pool) => (
+                <Card
+                  key={pool.id}
+                  title={
+                    <Space>
+                      <Typography.Text strong>{pool.name}</Typography.Text>
+                      <Tag color={pool.enabled ? 'green' : 'default'}>{pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}</Tag>
+                      {pool.auto_create ? <Tag color="blue">{t('admin.provisioningPools.autoCreate')}</Tag> : null}
+                    </Space>
+                  }
+                  extra={
+                    <Space>
+                      <Button size="small" aria-label={t('admin.provisioningPools.addTarget')} icon={<PlusOutlined />} onClick={() => openAddTarget(pool)}>
+                        {t('admin.provisioningPools.addTarget')}
+                      </Button>
+                      <Button size="small" aria-label={`${t('admin.provisioningPools.edit')} ${pool.name}`} icon={<EditOutlined />} onClick={() => openEditPool(pool)} />
+                      <Button
+                        danger
+                        size="small"
+                        aria-label={`${t('admin.provisioningPools.delete')} ${pool.name}`}
+                        icon={<DeleteOutlined />}
+                        onClick={() => confirmDeletePool(pool)}
+                      />
+                    </Space>
+                  }
+                >
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Typography.Text type="secondary">{pool.description || protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Typography.Text>
+                    <Typography.Text>
+                      {t('admin.provisioningPools.portRange')}: {pool.port_min && pool.port_max ? `${pool.port_min}-${pool.port_max}` : t('admin.commonAny', { defaultValue: t('common.all') })}
+                    </Typography.Text>
+                    {pool.targets?.length ? (
+                      <ResponsiveListTable
+                        rowKey="id"
+                        columns={targetColumns}
+                        dataSource={pool.targets}
+                        pagination={false}
+                        mobileCard={(target) => (
+                          <Card size="small" style={{ width: '100%' }}>
+                            <Space direction="vertical" size={6}>
+                              <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
+                              <Typography.Text type="secondary">
+                                {target.inbound_tag} · {target.protocol || '-'}
+                              </Typography.Text>
+                              <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
+                              <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
+                              <Space>
+                                <Switch
+                                  checked={target.enabled}
+                                  aria-label={`${target.enabled ? t('admin.nodes.disable') : t('admin.nodes.enable')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`}
+                                  onChange={() => toggleTarget(target)}
+                                />
+                                <Button size="small" danger aria-label={`${t('admin.provisioningPools.delete')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`} onClick={() => deleteTarget(target)}>
+                                  {t('admin.provisioningPools.delete')}
+                                </Button>
+                              </Space>
+                            </Space>
+                          </Card>
+                        )}
+                      />
+                    ) : (
+                      <Typography.Text type="secondary">{t('admin.provisioningPools.noTargets')}</Typography.Text>
                     )}
-                  />
-                ) : (
-                  <Typography.Text type="secondary">{t('admin.provisioningPools.noTargets')}</Typography.Text>
-                )}
-              </Space>
-            </Card>
-          ))}
-        </Space>
-      ) : (
-        <EmptyState
-          title={t('admin.provisioningPools.empty')}
-          description={t('admin.provisioningPools.emptyDescription')}
-          actionLabel={t('admin.provisioningPools.add')}
-          onAction={openCreatePool}
-        />
-      )}
+                  </Space>
+                </Card>
+              ))}
+            </>
+          ) : (
+            <EmptyState
+              title={t('admin.provisioningPools.empty')}
+              description={t('admin.provisioningPools.emptyDescription')}
+              actionLabel={t('admin.provisioningPools.add')}
+              onAction={openCreatePool}
+            />
+          )
+        }
+      />
 
       <Modal
         title={editingPool ? t('admin.provisioningPools.editTitle', { id: editingPool.id }) : t('admin.provisioningPools.createTitle')}

@@ -1313,6 +1313,7 @@ export const zh = {
     create: '创建',
     delete: '删除',
     edit: '编辑',
+    resultCount: '{n} 个结果',
     empty: '空',
     failed: '失败',
     loading: '加载中…',

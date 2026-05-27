@@ -1313,6 +1313,7 @@ export const en = {
     create: 'Create',
     delete: 'Delete',
     edit: 'Edit',
+    resultCount: 'Showing {n} result(s)',
     empty: 'Empty',
     failed: 'Failed',
     loading: 'Loading…',

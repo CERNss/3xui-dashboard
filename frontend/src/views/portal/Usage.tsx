@@ -43,6 +43,8 @@ export function Usage() {
     {
       title: t('portal.dashboard.column.node'),
       dataIndex: 'node_id',
+      align: 'center',
+      width: 96,
       render: (nodeId: number) => `#${nodeId}`,
     },
     {
@@ -54,17 +56,23 @@ export function Usage() {
       title: t('portal.dashboard.column.upload'),
       dataIndex: 'up',
       align: 'right',
+      className: 'table-cell-number',
+      width: 120,
       render: (value: number) => formatBytes(value),
     },
     {
       title: t('portal.dashboard.column.download'),
       dataIndex: 'down',
       align: 'right',
+      className: 'table-cell-number',
+      width: 120,
       render: (value: number) => formatBytes(value),
     },
     {
       title: t('portal.dashboard.column.usageLimit'),
       align: 'right',
+      className: 'table-cell-number',
+      width: 160,
       render: (_, client) => (
         <Space size={4}>
           <span>{formatBytes(client.total)}</span>
@@ -75,6 +83,9 @@ export function Usage() {
     {
       title: t('portal.dashboard.column.expires'),
       dataIndex: 'expires_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       render: (value: string | null | undefined) => formatDateTime(value),
     },
   ]

@@ -152,6 +152,7 @@ export default function Plans() {
     {
       title: 'ID',
       dataIndex: 'id',
+      align: 'center',
       width: 80,
       render: (id: number) => <Typography.Text type="secondary">#{id}</Typography.Text>,
     },
@@ -170,23 +171,31 @@ export default function Plans() {
       title: t('admin.plans.column.price'),
       dataIndex: 'price_cents',
       align: 'right',
+      className: 'table-cell-number',
+      width: 120,
       render: (value: number) => <Typography.Text strong>{formatYuan(value)}</Typography.Text>,
     },
     {
       title: t('admin.plans.column.traffic'),
       dataIndex: 'traffic_limit_bytes',
       align: 'right',
+      className: 'table-cell-number',
+      width: 140,
       render: (value: number) => formatTraffic(value, t('admin.stats.unlimited')),
     },
     {
       title: t('admin.plans.column.duration'),
       dataIndex: 'duration_days',
       align: 'right',
+      className: 'table-cell-number',
+      width: 120,
       render: (value: number) => `${value} ${t('admin.plans.unitDays')}`,
     },
     {
       title: t('admin.plans.column.status'),
       dataIndex: 'enabled',
+      align: 'center',
+      width: 110,
       render: (_value, plan) => (
         <Switch
           checked={plan.enabled}
@@ -199,7 +208,9 @@ export default function Plans() {
     {
       title: t('admin.plans.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 112,
       render: (_value, plan) => (
         <Space>
           <Button aria-label={`${t('admin.plans.edit')} ${plan.name}`} icon={<EditOutlined />} onClick={() => openEdit(plan)} />

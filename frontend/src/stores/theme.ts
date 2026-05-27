@@ -38,7 +38,7 @@ function applyToHtml(mode: ThemeMode): ResolvedTheme {
 }
 
 const initialMode = readInitialMode()
-const initialResolvedTheme = resolveTheme(initialMode)
+const initialResolvedTheme = applyToHtml(initialMode)
 
 export const useThemeStore = create<ThemeState>()(
   persist(

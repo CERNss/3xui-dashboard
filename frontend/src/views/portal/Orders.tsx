@@ -95,6 +95,8 @@ export default function Orders() {
     {
       title: t('portal.orders.column.orderId'),
       dataIndex: 'id',
+      align: 'center',
+      width: 96,
       render: (id: number) => <Typography.Text type="secondary">#{id}</Typography.Text>,
     },
     {
@@ -107,27 +109,38 @@ export default function Orders() {
       title: t('portal.orders.column.amount'),
       dataIndex: 'price_cents',
       align: 'right',
+      className: 'table-cell-number',
+      width: 120,
       render: (value: number) => <Typography.Text strong>{formatYuan(value)}</Typography.Text>,
     },
     {
       title: t('portal.orders.column.method'),
       dataIndex: 'payment_method',
+      align: 'center',
+      width: 120,
       render: (method: PaymentMethod) => paymentMethodLabel(method, methodLabels),
     },
     {
       title: t('portal.orders.column.status'),
       dataIndex: 'status',
+      align: 'center',
+      width: 140,
       render: (status: Order['status']) => <OrderStatusTag label={statusLabel(status)} status={status} />,
     },
     {
       title: t('portal.orders.column.createdAt'),
       dataIndex: 'created_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       render: (value: string) => new Date(value).toLocaleString(),
     },
     {
       title: t('portal.orders.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 140,
       render: (_value, order) =>
         canContinuePayment(order) ? (
           <Button loading={refreshingOrderId === order.id} onClick={() => void continuePayment(order)}>

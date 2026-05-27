@@ -368,12 +368,15 @@ export default function Users() {
     {
       title: 'ID',
       dataIndex: 'id',
+      align: 'center',
       width: 80,
       render: (id: number) => <Typography.Text code>#{id}</Typography.Text>,
     },
     {
       title: t('admin.users.column.status'),
       dataIndex: 'status',
+      align: 'center',
+      width: 120,
       filters: [
         { text: t('admin.users.status.active'), value: 'active' },
         { text: t('admin.users.status.suspended'), value: 'suspended' },
@@ -385,6 +388,8 @@ export default function Users() {
       title: t('admin.users.column.balance'),
       dataIndex: 'balance_cents',
       align: 'right',
+      className: 'table-cell-number',
+      width: 150,
       sorter: (a, b) => a.balance_cents - b.balance_cents,
       render: (_value, user) => (
         <Space>
@@ -398,6 +403,8 @@ export default function Users() {
     {
       title: t('admin.users.column.autoRenew'),
       dataIndex: 'auto_renew',
+      align: 'center',
+      width: 120,
       render: (_value, user) => (
         <Switch
           checked={user.auto_renew}
@@ -410,18 +417,26 @@ export default function Users() {
     {
       title: t('admin.users.column.registered'),
       dataIndex: 'created_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       sorter: (a, b) => a.created_at.localeCompare(b.created_at),
       render: formatDate,
     },
     {
       title: t('admin.users.column.lastActive'),
       dataIndex: 'last_active_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       render: formatDate,
     },
     {
       title: t('admin.users.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 144,
       render: (_value, user) => (
         <Space>
           <Button aria-label={`${t('admin.users.edit.open')} ${userLabel(user)}`} icon={<EditOutlined />} onClick={() => openEdit(user)} />
@@ -455,73 +470,70 @@ export default function Users() {
           </>
         }
         filters={
-          <Card size="small">
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Input.Search
-                allowClear
-                value={query}
-                placeholder={t('admin.users.searchPlaceholder')}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <Space wrap>
-                <Segmented
-                  aria-label={t('admin.users.filterStatus')}
-                  value={statusFilter}
-                  onChange={(value) => setStatusFilter(value as StatusFilter)}
-                  options={[
-                    { label: t('admin.users.filterAll'), value: 'all' },
-                    { label: t('admin.users.status.active'), value: 'active' },
-                    { label: t('admin.users.status.suspended'), value: 'suspended' },
-                  ]}
-                />
-                <Segmented
-                  aria-label={t('admin.users.filterVerified')}
-                  value={verifiedFilter}
-                  onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
-                  options={[
-                    { label: t('admin.users.filterVerifiedAll'), value: 'all' },
-                    { label: t('admin.users.verified'), value: 'verified' },
-                    { label: t('admin.users.unverified'), value: 'unverified' },
-                  ]}
-                />
-                <Segmented
-                  aria-label={t('admin.users.filterRegisterMethod')}
-                  value={registerFilter}
-                  onChange={(value) => setRegisterFilter(value as RegisterFilter)}
-                  options={[
-                    { label: t('admin.users.filterRegisterAll'), value: 'all' },
-                    { label: t('admin.users.filterRegisterEmail'), value: 'email' },
-                    { label: 'OIDC', value: 'oidc' },
-                  ]}
-                />
-                <Select
-                  aria-label={t('admin.users.sortLabel')}
-                  value={sort}
-                  onChange={(value) => setSort(value)}
-                  style={{ minWidth: 190 }}
-                  options={[
-                    { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
-                    { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
-                    { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
-                    { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
-                    { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
-                    { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
-                    { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
-                  ]}
-                />
-                <Switch
-                  checked={autoRefresh}
-                  aria-label={t('admin.users.autoRefresh')}
-                  checkedChildren={t('admin.users.autoRefreshShort')}
-                  unCheckedChildren={t('admin.users.manualRefreshShort')}
-                  onChange={setAutoRefresh}
-                />
-                <Dropdown menu={{ items: moreItems }}>
-                  <Button>{t('admin.users.more.label')}</Button>
-                </Dropdown>
-              </Space>
-            </Space>
-          </Card>
+          <Space wrap>
+            <Input.Search
+              allowClear
+              value={query}
+              placeholder={t('admin.users.searchPlaceholder')}
+              onChange={(event) => setQuery(event.target.value)}
+              style={{ width: 260 }}
+            />
+            <Segmented
+              aria-label={t('admin.users.filterStatus')}
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value as StatusFilter)}
+              options={[
+                { label: t('admin.users.filterAll'), value: 'all' },
+                { label: t('admin.users.status.active'), value: 'active' },
+                { label: t('admin.users.status.suspended'), value: 'suspended' },
+              ]}
+            />
+            <Segmented
+              aria-label={t('admin.users.filterVerified')}
+              value={verifiedFilter}
+              onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
+              options={[
+                { label: t('admin.users.filterVerifiedAll'), value: 'all' },
+                { label: t('admin.users.verified'), value: 'verified' },
+                { label: t('admin.users.unverified'), value: 'unverified' },
+              ]}
+            />
+            <Segmented
+              aria-label={t('admin.users.filterRegisterMethod')}
+              value={registerFilter}
+              onChange={(value) => setRegisterFilter(value as RegisterFilter)}
+              options={[
+                { label: t('admin.users.filterRegisterAll'), value: 'all' },
+                { label: t('admin.users.filterRegisterEmail'), value: 'email' },
+                { label: 'OIDC', value: 'oidc' },
+              ]}
+            />
+            <Select
+              aria-label={t('admin.users.sortLabel')}
+              value={sort}
+              onChange={(value) => setSort(value)}
+              style={{ minWidth: 190 }}
+              options={[
+                { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
+                { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
+                { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
+                { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
+                { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
+                { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
+                { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
+              ]}
+            />
+            <Switch
+              checked={autoRefresh}
+              aria-label={t('admin.users.autoRefresh')}
+              checkedChildren={t('admin.users.autoRefreshShort')}
+              unCheckedChildren={t('admin.users.manualRefreshShort')}
+              onChange={setAutoRefresh}
+            />
+            <Dropdown menu={{ items: moreItems }}>
+              <Button>{t('admin.users.more.label')}</Button>
+            </Dropdown>
+          </Space>
         }
         alerts={error || flash || selectedRowKeys.length > 0 ? (
           <>

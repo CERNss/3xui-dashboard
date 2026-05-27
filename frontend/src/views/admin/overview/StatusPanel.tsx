@@ -119,6 +119,8 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
     {
       title: t('admin.status.column.status'),
       dataIndex: 'status',
+      align: 'center',
+      width: 150,
       render: (_value, node) => {
         const tone = nodeTone(node)
         return (
@@ -132,16 +134,25 @@ export const StatusPanel = forwardRef<OverviewPanelHandle, StatusPanelProps>(fun
     {
       title: t('admin.status.column.cpuMem'),
       key: 'cpuMem',
+      align: 'center',
+      className: 'table-cell-number',
+      width: 140,
       render: (_value, node) => <Typography.Text>{nodeMetrics(node)}</Typography.Text>,
     },
     {
       title: 'Xray',
       dataIndex: 'xray_version',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 150,
       render: (value: string) => <Typography.Text code>{value || '—'}</Typography.Text>,
     },
     {
       title: t('admin.status.column.lastSeen'),
       dataIndex: 'last_seen_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       render: (value?: string | null) => formatDateTime(value),
     },
   ]

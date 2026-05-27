@@ -64,7 +64,7 @@ export function AdminLayout() {
   )
 
   return (
-    <Layout data-testid="admin-layout" style={{ minHeight: '100vh' }}>
+    <Layout className="admin-shell" data-testid="admin-layout">
       {wide ? (
         <Sider
           className="admin-shell-sider"
@@ -77,7 +77,7 @@ export function AdminLayout() {
           {sidebar}
         </Sider>
       ) : null}
-      <Layout>
+      <Layout className="admin-shell-main">
         <Header className="admin-topbar">
           <div className="admin-topbar-heading">
             {!wide ? (
@@ -123,7 +123,7 @@ export function AdminLayout() {
             </AccountMenu>
           </div>
         </Header>
-        <Content style={{ background: token.colorBgLayout, margin: 0, minHeight: 0, padding: 24 }}>
+        <Content className="admin-shell-content" style={{ background: token.colorBgLayout }}>
           <PageHeaderChromeProvider suppressContentHeading>
             <Outlet />
           </PageHeaderChromeProvider>

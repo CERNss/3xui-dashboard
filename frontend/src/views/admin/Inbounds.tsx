@@ -129,6 +129,7 @@ export default function Inbounds() {
     {
       title: t('admin.inbounds.column.remark'),
       dataIndex: ['inbound', 'remark'],
+      width: 280,
       render: (_value, row) => (
         <Space direction="vertical" size={2}>
           <Typography.Text strong>{row.inbound.remark || row.inbound.tag}</Typography.Text>
@@ -141,22 +142,30 @@ export default function Inbounds() {
     {
       title: t('admin.inbounds.column.protocol'),
       key: 'protocol',
+      align: 'center',
+      width: 120,
       render: (_value, row) => <Tag>{transportText(row)}</Tag>,
     },
     {
       title: t('admin.inbounds.column.clients'),
       key: 'clients',
       align: 'right',
+      className: 'table-cell-number',
+      width: 100,
       render: (_value, row) => parseClients(row.inbound).length,
     },
     {
       title: t('admin.inbounds.column.traffic'),
       key: 'traffic',
+      className: 'table-cell-number',
+      width: 190,
       render: (_value, row) => `${formatBytes(row.inbound.up + row.inbound.down)} / ${formatLimit(row.inbound.total, t('admin.stats.unlimited'))}`,
     },
     {
       title: t('admin.inbounds.column.enable'),
       dataIndex: ['inbound', 'enable'],
+      align: 'center',
+      width: 96,
       render: (_value, row) => (
         <Switch
           checked={row.inbound.enable}
@@ -169,7 +178,9 @@ export default function Inbounds() {
     {
       title: t('admin.users.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 144,
       render: (_value, row) => (
         <Space>
           <Button aria-label={`${t('admin.inbounds.edit')} ${row.inbound.tag}`} icon={<EditOutlined />} onClick={() => openEdit(row)} />

@@ -79,6 +79,9 @@ export default function AuditLog() {
       {
         title: t('admin.auditLog.column.time'),
         dataIndex: 'created_at',
+        align: 'center',
+        className: 'table-cell-nowrap',
+        width: 180,
         sorter: (a, b) => compareRows(a, b, 'created_at'),
         defaultSortOrder: 'descend',
         render: formatDate,
@@ -92,6 +95,8 @@ export default function AuditLog() {
       {
         title: t('admin.auditLog.column.method'),
         dataIndex: 'method',
+        align: 'center',
+        width: 110,
         sorter: (a, b) => compareRows(a, b, 'method'),
         render: methodTag,
       },
@@ -121,6 +126,8 @@ export default function AuditLog() {
       {
         title: t('admin.auditLog.column.status'),
         dataIndex: 'status_code',
+        align: 'center',
+        width: 130,
         sorter: (a, b) => compareRows(a, b, 'status_code'),
         render: (code: number, row) => (
           <Space direction="vertical" size={2}>
@@ -132,6 +139,9 @@ export default function AuditLog() {
       {
         title: t('admin.auditLog.column.ip'),
         dataIndex: 'ip',
+        align: 'center',
+        className: 'table-cell-nowrap',
+        width: 140,
         render: (ip: string) => ip || '-',
       },
     ],
@@ -141,7 +151,7 @@ export default function AuditLog() {
   const onTableChange: TableProps<AdminAction>['onChange'] = () => undefined
 
   return (
-    <section>
+    <section className="admin-audit-log-page">
       <ConfigListPage
         title={t('admin.auditLog.title')}
         subtitle={t('admin.auditLog.subtitle')}

@@ -111,6 +111,8 @@ export default function Orders() {
     {
       title: t('admin.orders.column.orderId'),
       dataIndex: 'id',
+      align: 'center',
+      width: 96,
       render: (id: number) => <Typography.Text code>#{id}</Typography.Text>,
     },
     {
@@ -132,11 +134,15 @@ export default function Orders() {
       title: t('admin.orders.column.amount'),
       dataIndex: 'price_cents',
       align: 'right',
+      className: 'table-cell-number',
+      width: 120,
       render: formatMoney,
     },
     {
       title: t('admin.orders.column.status'),
       dataIndex: 'status',
+      align: 'center',
+      width: 150,
       render: (status: OrderStatus, order) => (
         <Space direction="vertical" size={2}>
           {statusTag(status, statusTagLabel(status))}
@@ -147,6 +153,9 @@ export default function Orders() {
     {
       title: t('admin.orders.column.created'),
       dataIndex: 'created_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       sorter: (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       defaultSortOrder: 'descend',
       render: formatDate,
@@ -154,12 +163,17 @@ export default function Orders() {
     {
       title: t('admin.orders.column.completed'),
       dataIndex: 'completed_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 180,
       render: formatDate,
     },
     {
       title: t('admin.users.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 120,
       render: (_, order) =>
         canRefund(order.status) ? (
           <Button

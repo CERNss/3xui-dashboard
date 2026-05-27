@@ -246,6 +246,7 @@ export default function Nodes() {
     {
       title: t('admin.nodes.column.name'),
       dataIndex: 'name',
+      width: 240,
       sorter: (a, b) => a.name.localeCompare(b.name),
       render: (_value, node) => (
         <Space direction="vertical" size={2}>
@@ -257,6 +258,8 @@ export default function Nodes() {
     {
       title: t('admin.nodes.column.status'),
       dataIndex: 'status',
+      align: 'center',
+      width: 120,
       sorter: (a, b) => labelForStatus(nodeDisplayStatus(a)).localeCompare(labelForStatus(nodeDisplayStatus(b))),
       render: (_value, node) => {
         const status = nodeDisplayStatus(node)
@@ -266,22 +269,31 @@ export default function Nodes() {
     {
       title: t('admin.nodes.column.cpuMem'),
       key: 'cpuMem',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-number',
+      width: 140,
       render: (_value, node) => `${node.cpu_pct.toFixed(1)}% / ${node.mem_pct.toFixed(1)}%`,
     },
     {
       title: 'Xray',
       dataIndex: 'xray_version',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 160,
       render: (value: string) => value || '-',
     },
     {
       title: t('admin.nodes.column.lastSeen'),
       dataIndex: 'last_seen_at',
+      align: 'center',
+      className: 'table-cell-nowrap',
+      width: 190,
       render: (value?: string | null) => formatLastSeen(value),
     },
     {
       title: t('admin.nodes.column.connection'),
       key: 'endpoint',
+      width: 280,
       render: (_value, node) => (
         <Space direction="vertical" size={2}>
           <Typography.Text code>{nodeConnectionURL(node)}</Typography.Text>
@@ -294,6 +306,8 @@ export default function Nodes() {
     {
       title: t('admin.nodes.enable'),
       dataIndex: 'enabled',
+      align: 'center',
+      width: 96,
       render: (_value, node) => (
         <Switch
           checked={node.enabled}
@@ -306,7 +320,9 @@ export default function Nodes() {
     {
       title: t('admin.users.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 144,
       render: (_value, node) => (
         <Space>
           <Button aria-label={`${t('admin.nodes.probe')} ${node.name}`} icon={<ThunderboltOutlined />} onClick={() => probeNode.mutateAsync(node.id)} />

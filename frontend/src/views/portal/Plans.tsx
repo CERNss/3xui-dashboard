@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import type { Plan, PaymentMethod, Order } from '@/api/portal/billing'
 import { AlipayPayModal } from '@/components/portal'
-import { PageHeader } from '@/components/common'
+import { ConfigListPage, EmptyState } from '@/components/common'
 import { usePaymentMethods, usePortalPlansList, usePurchasePlan, usePurchaseViaPayment } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { formatError } from '@/utils/format'
@@ -132,7 +132,7 @@ export default function Plans() {
 
   return (
     <div>
-      <PageHeader
+      <ConfigListPage<Plan>
         title={t('portal.plans.title')}
         subtitle={t('portal.plans.subtitle')}
         actions={
@@ -145,86 +145,82 @@ export default function Plans() {
             </Space>
           ) : null
         }
-      />
-
-      {error ? (
-        <Alert message={formatError(error, t('portal.plans.loadFailed'))} showIcon style={{ marginBottom: 16 }} type="error" />
-      ) : null}
-      {flash ? <Alert message={flash.text} showIcon style={{ marginBottom: 16 }} type={flash.type} /> : null}
-
-      {methods.length > 1 ? (
-        <Card size="small" style={{ marginBottom: 16 }}>
-          <Space direction="vertical" size={8}>
-            <Typography.Text strong>{t('portal.plans.methodPickerTitle')}</Typography.Text>
-            <Typography.Text type="secondary">
-              {t('portal.plans.methodPickerHint')}
-            </Typography.Text>
-            <Radio.Group
-              optionType="button"
-              options={methods.map((method) => ({ label: paymentMethodLabel(method, methodLabels), value: method }))}
-              value={effectiveMethod}
-              onChange={(event) => setSelectedMethod(event.target.value as PaymentMethod)}
-            />
-          </Space>
-        </Card>
-      ) : null}
-
-      {enabledPlans.length > 0 || loading ? (
-        <div
-          aria-busy={loading}
-          style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
-        >
-          {enabledPlans.map((plan) => (
-            <Card
-              key={plan.id}
-              actions={[
-                <Button
-                  key="buy"
-                  block
-                  disabled={!canBuy(plan)}
-                  loading={buyingPlanId === plan.id}
-                  type="primary"
-                  onClick={() => void buy(plan)}
+        alerts={error || flash ? (
+          <>
+            {error ? <Alert message={formatError(error, t('portal.plans.loadFailed'))} showIcon type="error" /> : null}
+            {flash ? <Alert message={flash.text} showIcon style={{ marginTop: error ? 16 : 0 }} type={flash.type} /> : null}
+          </>
+        ) : null}
+        dataSource={enabledPlans}
+        loading={loading}
+        filters={
+          methods.length > 1 ? (
+            <Space wrap>
+              <Typography.Text strong>{t('portal.plans.methodPickerTitle')}</Typography.Text>
+              <Radio.Group
+                optionType="button"
+                options={methods.map((method) => ({ label: paymentMethodLabel(method, methodLabels), value: method }))}
+                value={effectiveMethod}
+                onChange={(event) => setSelectedMethod(event.target.value as PaymentMethod)}
+              />
+            </Space>
+          ) : undefined
+        }
+        listClassName="config-list-page-card-grid"
+        listContent={
+          enabledPlans.length > 0 || loading ? (
+            <>
+              {enabledPlans.map((plan) => (
+                <Card
+                  key={plan.id}
+                  actions={[
+                    <Button
+                      key="buy"
+                      block
+                      disabled={!canBuy(plan)}
+                      loading={buyingPlanId === plan.id}
+                      type="primary"
+                      onClick={() => void buy(plan)}
+                    >
+                      {effectiveMethod === 'balance' && !canAfford(plan)
+                        ? t('portal.plans.balanceInsufficient')
+                        : t('portal.plans.buyNow')}
+                    </Button>,
+                  ]}
                 >
-                  {effectiveMethod === 'balance' && !canAfford(plan)
-                    ? t('portal.plans.balanceInsufficient')
-                    : t('portal.plans.buyNow')}
-                </Button>,
-              ]}
-            >
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Typography.Title level={4} style={{ margin: 0 }}>
-                  {plan.name}
-                </Typography.Title>
-                {plan.description ? <Typography.Text type="secondary">{plan.description}</Typography.Text> : null}
-                <Typography.Title level={2} style={{ margin: 0 }}>
-                  {formatYuan(plan.price_cents)}
-                </Typography.Title>
-                <Space direction="vertical" size={6}>
-                  <Typography.Text>
-                    <CheckOutlined />{' '}
-                    {plan.traffic_limit_bytes === 0
-                      ? t('portal.plans.unlimitedTraffic')
-                      : `${formatTraffic(plan.traffic_limit_bytes)} ${t('portal.plans.trafficLabel')}`}
-                  </Typography.Text>
-                  <Typography.Text>
-                    <CheckOutlined /> {t('portal.plans.planDays', { days: plan.duration_days })}
-                  </Typography.Text>
-                  {plan.ip_limit ? (
-                    <Typography.Text>
-                      <CheckOutlined /> {t('portal.plans.ipLimitText', { n: plan.ip_limit })}
-                    </Typography.Text>
-                  ) : null}
-                </Space>
-              </Space>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <Typography.Text>{t('portal.plans.empty')}</Typography.Text>
-        </Card>
-      )}
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {plan.name}
+                    </Typography.Title>
+                    {plan.description ? <Typography.Text type="secondary">{plan.description}</Typography.Text> : null}
+                    <Typography.Title level={2} style={{ margin: 0 }}>
+                      {formatYuan(plan.price_cents)}
+                    </Typography.Title>
+                    <Space direction="vertical" size={6}>
+                      <Typography.Text>
+                        <CheckOutlined />{' '}
+                        {plan.traffic_limit_bytes === 0
+                          ? t('portal.plans.unlimitedTraffic')
+                          : `${formatTraffic(plan.traffic_limit_bytes)} ${t('portal.plans.trafficLabel')}`}
+                      </Typography.Text>
+                      <Typography.Text>
+                        <CheckOutlined /> {t('portal.plans.planDays', { days: plan.duration_days })}
+                      </Typography.Text>
+                      {plan.ip_limit ? (
+                        <Typography.Text>
+                          <CheckOutlined /> {t('portal.plans.ipLimitText', { n: plan.ip_limit })}
+                        </Typography.Text>
+                      ) : null}
+                    </Space>
+                  </Space>
+                </Card>
+              ))}
+            </>
+          ) : (
+            <EmptyState title={t('portal.plans.empty')} description={t('portal.plans.emptyDescription')} />
+          )
+        }
+      />
 
       <AlipayPayModal
         open={Boolean(alipayOrder)}

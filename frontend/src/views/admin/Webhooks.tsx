@@ -298,6 +298,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
     {
       title: t('admin.webhooks.column.method'),
       dataIndex: 'method',
+      align: 'center',
       width: 100,
       render: (method: WebhookMethod) => <Tag color={methodColor(method)}>{method}</Tag>,
     },
@@ -317,12 +318,16 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
     {
       title: t('admin.webhooks.column.status'),
       dataIndex: 'enabled',
+      align: 'center',
+      width: 110,
       render: (enabled: boolean) => <Tag color={enabled ? 'green' : 'default'}>{enabled ? t('admin.webhooks.enabled') : t('admin.webhooks.disabled')}</Tag>,
     },
     {
       title: t('admin.webhooks.column.actions'),
       key: 'actions',
-      align: 'right',
+      align: 'center',
+      className: 'table-cell-actions',
+      width: 260,
       render: (_value, webhook) => (
         <Space wrap>
           <Button size="small" onClick={() => toggleDeliveries(webhook)}>
@@ -381,6 +386,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
           ) : undefined
         }
         alerts={error ? <Alert type="error" showIcon message={t('admin.webhooks.operationFailed')} /> : null}
+        viewport={!embedded}
         rowKey="id"
         columns={columns}
         dataSource={webhooks}
