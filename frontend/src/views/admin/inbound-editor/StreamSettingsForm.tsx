@@ -1,5 +1,9 @@
-import { Button, Form, Input, InputNumber, Select, Space, Switch } from 'antd'
+import { SettingOutlined } from '@ant-design/icons'
+import { Button, Form, Input, InputNumber, Select, Space, Switch, Typography } from 'antd'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { RealityConfigModal } from './RealityConfigModal'
+import { TLSConfigModal } from './TLSConfigModal'
 
 export function StreamSettingsForm() {
   const { t } = useTranslation()
@@ -8,24 +12,37 @@ export function StreamSettingsForm() {
   const security = Form.useWatch('security')
   const httpHeader = Form.useWatch('httpHeader')
   const quicSecurity = Form.useWatch('quicSecurity')
-  const generateKeypair = Form.useWatch('realityGenerateKeypair', form)
-  const generateMldsa65 = Form.useWatch('realityGenerateMldsa65', form)
 
-  const clearRealityKeypair = () => {
-    form.setFieldsValue({
-      realityPrivateKey: '',
-      realityPublicKey: '',
-      realityGenerateKeypair: false,
-    })
-  }
+  const [tlsOpen, setTlsOpen] = useState(false)
+  const [realityOpen, setRealityOpen] = useState(false)
 
-  const clearMldsa65 = () => {
-    form.setFieldsValue({
-      realityMldsa65Seed: '',
-      realityMldsa65Verify: '',
-      realityGenerateMldsa65: false,
-    })
-  }
+  const tlsServerName = Form.useWatch('tlsServerName', form)
+  const tlsAlpn = Form.useWatch('tlsAlpn', form)
+  const tlsAllowInsecure = Form.useWatch('tlsAllowInsecure', form)
+  const tlsCert = Form.useWatch('tlsCertificateFile', form)
+
+  const realityDest = Form.useWatch('realityDest', form)
+  const realityGenerateKeypair = Form.useWatch('realityGenerateKeypair', form)
+  const realityGenerateMldsa65 = Form.useWatch('realityGenerateMldsa65', form)
+  const realityHasKey = Form.useWatch('realityPrivateKey', form)
+
+  const tlsSummary = (() => {
+    const bits: string[] = []
+    if (tlsServerName) bits.push(`SNI=${tlsServerName}`)
+    if (Array.isArray(tlsAlpn) && tlsAlpn.length) bits.push(`ALPN=${tlsAlpn.join(',')}`)
+    if (tlsAllowInsecure) bits.push(t('admin.inboundEditor.stream.allowInsecure'))
+    if (tlsCert) bits.push(t('admin.inboundEditor.stream.tlsCertSet'))
+    return bits.length ? bits.join(' · ') : t('admin.inboundEditor.stream.notConfigured')
+  })()
+
+  const realitySummary = (() => {
+    const bits: string[] = []
+    if (realityDest) bits.push(`target=${realityDest}`)
+    if (realityGenerateKeypair) bits.push(t('admin.inboundEditor.stream.willGenerateKeypair'))
+    else if (realityHasKey) bits.push(t('admin.inboundEditor.stream.keypairSet'))
+    if (realityGenerateMldsa65) bits.push(t('admin.inboundEditor.stream.willGenerateMldsa65'))
+    return bits.length ? bits.join(' · ') : t('admin.inboundEditor.stream.notConfigured')
+  })()
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -191,140 +208,29 @@ export function StreamSettingsForm() {
       </Form.Item>
 
       {security === 'tls' ? (
-        <Space align="start" wrap>
-          <Form.Item name="tlsServerName" label={t('admin.inboundEditor.stream.serverName')}>
-            <Input placeholder="example.com" />
-          </Form.Item>
-          <Form.Item name="tlsAlpn" label="ALPN">
-            <Select
-              mode="multiple"
-              style={{ minWidth: 220 }}
-              options={['h2', 'http/1.1'].map((value) => ({ label: value, value }))}
-            />
-          </Form.Item>
-          <Form.Item name="tlsFingerprint" label="Fingerprint">
-            <Select
-              style={{ width: 160 }}
-              options={['', 'chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random', 'randomized'].map((value) => ({
-                label: value || t('admin.inboundEditor.stream.fingerprintNone'),
-                value,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="tlsAllowInsecure" label={t('admin.inboundEditor.stream.allowInsecure')} valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item name="tlsCertificateFile" label={t('admin.inboundEditor.stream.certFile')}>
-            <Input placeholder="/etc/letsencrypt/live/example.com/fullchain.pem" />
-          </Form.Item>
-          <Form.Item name="tlsKeyFile" label={t('admin.inboundEditor.stream.keyFile')}>
-            <Input placeholder="/etc/letsencrypt/live/example.com/privkey.pem" />
-          </Form.Item>
+        <Space direction="vertical" size={4}>
+          <Space size={12} align="center">
+            <Button icon={<SettingOutlined />} onClick={() => setTlsOpen(true)}>
+              {t('admin.inboundEditor.stream.configureTLS')}
+            </Button>
+          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{tlsSummary}</Typography.Text>
         </Space>
       ) : null}
 
       {security === 'reality' ? (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Space align="start" wrap>
-            <Form.Item name="realityShow" label="Show" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="realityXver" label="Xver">
-              <InputNumber min={0} max={2} />
-            </Form.Item>
-            <Form.Item name="realityFingerprint" label="uTLS">
-              <Select
-                style={{ width: 160 }}
-                options={['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random', 'randomized'].map((value) => ({ label: value, value }))}
-              />
-            </Form.Item>
+        <Space direction="vertical" size={4}>
+          <Space size={12} align="center">
+            <Button icon={<SettingOutlined />} onClick={() => setRealityOpen(true)}>
+              {t('admin.inboundEditor.stream.configureReality')}
+            </Button>
           </Space>
-          <Space align="start" wrap>
-            <Form.Item
-              name="realityDest"
-              label={
-                <Space size={4}>
-                  <span>Target</span>
-                  <Form.Item name="realityRandomizeTarget" valuePropName="checked" noStyle>
-                    <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
-                  </Form.Item>
-                </Space>
-              }
-              tooltip={t('admin.inboundEditor.stream.realityRandomizeHint')}
-            >
-              <Input style={{ width: 280 }} placeholder="www.amazon.com:443" />
-            </Form.Item>
-            <Form.Item
-              name="realityServerNames"
-              label={
-                <Space size={4}>
-                  <span>SNI</span>
-                  <Form.Item name="realityRandomizeSNI" valuePropName="checked" noStyle>
-                    <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
-                  </Form.Item>
-                </Space>
-              }
-            >
-              <Input style={{ width: 280 }} placeholder="www.amazon.com" />
-            </Form.Item>
-            <Form.Item name="realityMaxTimeDiff" label="Max Time Diff (ms)">
-              <InputNumber min={0} />
-            </Form.Item>
-          </Space>
-          <Space align="start" wrap>
-            <Form.Item name="realityMinClientVer" label="Min Client Ver">
-              <Input placeholder="25.9.11" style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item name="realityMaxClientVer" label="Max Client Ver">
-              <Input placeholder="25.9.11" style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item
-              name="realityShortIds"
-              label={
-                <Space size={4}>
-                  <span>Short IDs</span>
-                  <Form.Item name="realityRandomizeShortIds" valuePropName="checked" noStyle>
-                    <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
-                  </Form.Item>
-                </Space>
-              }
-            >
-              <Input.TextArea rows={2} style={{ width: 420 }} placeholder={t('admin.inboundEditor.stream.shortIDsPlaceholder')} />
-            </Form.Item>
-            <Form.Item name="realitySpiderX" label="SpiderX">
-              <Input style={{ width: 160 }} placeholder="/" />
-            </Form.Item>
-          </Space>
-          <Space align="start" wrap>
-            <Form.Item name="realityPublicKey" label={t('admin.inboundEditor.stream.publicKey')}>
-              <Input style={{ width: 360 }} disabled={generateKeypair} />
-            </Form.Item>
-            <Form.Item name="realityPrivateKey" label={t('admin.inboundEditor.stream.privateKey')}>
-              <Input style={{ width: 360 }} disabled={generateKeypair} />
-            </Form.Item>
-          </Space>
-          <Space align="center">
-            <Form.Item name="realityGenerateKeypair" valuePropName="checked" label={t('admin.inboundEditor.stream.getNewCert')}>
-              <Switch />
-            </Form.Item>
-            <Button onClick={clearRealityKeypair}>{t('admin.inboundEditor.stream.clear')}</Button>
-          </Space>
-          <Space align="start" wrap>
-            <Form.Item name="realityMldsa65Seed" label="mldsa65 Seed">
-              <Input.TextArea rows={2} style={{ width: 420 }} disabled={generateMldsa65} />
-            </Form.Item>
-            <Form.Item name="realityMldsa65Verify" label="mldsa65 Verify">
-              <Input.TextArea rows={2} style={{ width: 420 }} disabled={generateMldsa65} />
-            </Form.Item>
-          </Space>
-          <Space align="center">
-            <Form.Item name="realityGenerateMldsa65" valuePropName="checked" label={t('admin.inboundEditor.stream.getNewSeed')}>
-              <Switch />
-            </Form.Item>
-            <Button onClick={clearMldsa65}>{t('admin.inboundEditor.stream.clear')}</Button>
-          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{realitySummary}</Typography.Text>
         </Space>
       ) : null}
+
+      <TLSConfigModal open={tlsOpen} onClose={() => setTlsOpen(false)} />
+      <RealityConfigModal open={realityOpen} onClose={() => setRealityOpen(false)} />
     </Space>
   )
 }

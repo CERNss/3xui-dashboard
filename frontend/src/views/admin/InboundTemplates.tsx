@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -78,7 +78,7 @@ function transportText(template: InboundTemplate) {
   }
 }
 
-// ---- Editor (Drawer + Tabs) ------------------------------------------------
+// ---- Editor (Modal + Tabs) -------------------------------------------------
 
 interface EditorState {
   open: boolean
@@ -257,20 +257,17 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
   ]
 
   return (
-    <Drawer
+    <Modal
       title={mode === 'create' ? t('admin.inboundTemplates.createTitle') : t('admin.inboundTemplates.editTitle', { id: source?.id ?? '' })}
       open={open}
       width={920}
-      onClose={onClose}
+      onCancel={onClose}
       destroyOnClose
-      extra={
-        <Space>
-          <Button onClick={onClose}>{t('admin.inboundEditor.close')}</Button>
-          <Button type="primary" loading={busy} onClick={save}>
-            {mode === 'create' ? t('common.create') : t('common.save')}
-          </Button>
-        </Space>
-      }
+      okText={mode === 'create' ? t('common.create') : t('common.save')}
+      cancelText={t('admin.inboundEditor.close')}
+      confirmLoading={busy}
+      onOk={save}
+      maskClosable={false}
     >
       {error ? <Alert type="error" showIcon message={t('admin.inboundTemplates.operationFailed')} style={{ marginBottom: 16 }} /> : null}
       <Form
@@ -283,7 +280,7 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
       >
         <Tabs items={tabs} />
       </Form>
-    </Drawer>
+    </Modal>
   )
 }
 
