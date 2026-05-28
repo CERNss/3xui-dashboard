@@ -360,7 +360,6 @@ export const zh = {
       descriptionPlaceholder: '说明这个模板的用途',
       edit: '编辑',
       editTitle: '编辑模板 #{id}',
-      editorHint: '模板存的是入站的"协议 + 流 + 安全 + 嗅探"配置预设，不包含端口、tag、客户端。建入站时再现场指定。',
       empty: '还没有入站模板',
       emptyDescription: '建一个模板后，可在"建入站"时一键预填这套配置。',
       enabled: '启用',

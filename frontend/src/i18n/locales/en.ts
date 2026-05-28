@@ -360,7 +360,6 @@ export const en = {
       descriptionPlaceholder: 'What this template is used for',
       edit: 'Edit',
       editTitle: 'Edit template #{id}',
-      editorHint: 'Templates carry the protocol / stream / security / sniffing preset for "what to fill in" when building an inbound. Port, tag and clients are decided at inbound-creation time.',
       empty: 'No inbound templates yet',
       emptyDescription: 'Create a template, then one-click prefill it when building an inbound.',
       enabled: 'Enabled',

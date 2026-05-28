@@ -178,11 +178,6 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
       label: t('admin.inboundEditor.tab.basic'),
       children: (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message={t('admin.inboundTemplates.editorHint')}
-          />
           <Space align="start" wrap>
             <Form.Item label={t('admin.inboundTemplates.enabled')}>
               <Switch
