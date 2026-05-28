@@ -355,6 +355,7 @@ export const zh = {
       createTitle: '新建入站模板',
       defaultRemarkLabel: '默认备注',
       defaultRemarkPlaceholder: '例如：us-vless-tmpl',
+      defaultsSection: '默认值',
       delete: '删除',
       description: '描述',
       descriptionPlaceholder: '说明这个模板的用途',

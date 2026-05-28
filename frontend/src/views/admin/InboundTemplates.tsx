@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -177,34 +177,38 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
       key: 'basic',
       label: t('admin.inboundEditor.tab.basic'),
       children: (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Space align="start" wrap>
-            <Form.Item label={t('admin.inboundTemplates.enabled')}>
-              <Switch
-                checked={meta.enabled}
-                aria-label={t('admin.inboundTemplates.enabled')}
-                onChange={(checked) => setMeta((m) => ({ ...m, enabled: checked }))}
-              />
-            </Form.Item>
-            <Form.Item label={t('admin.inboundTemplates.name')} required>
-              <Input
-                value={meta.name}
-                style={{ minWidth: 240 }}
-                placeholder={t('admin.inboundTemplates.namePlaceholder')}
-                onChange={(event) => setMeta((m) => ({ ...m, name: event.target.value }))}
-              />
-            </Form.Item>
-            <Form.Item name="protocol" label={t('admin.inboundEditor.basicProtocol')} rules={[{ required: true }]}>
-              <Select
-                style={{ width: 180 }}
-                onChange={(value) => {
-                  form.setFieldValue('protocol', value)
-                  setProtocol(value)
-                }}
-                options={PROTOCOL_OPTIONS.map((value) => ({ label: PROTOCOL_LABELS[value], value }))}
-              />
-            </Form.Item>
-          </Space>
+        <div>
+          <Row gutter={[20, 0]}>
+            <Col span={4}>
+              <Form.Item label={t('admin.inboundTemplates.enabled')}>
+                <Switch
+                  checked={meta.enabled}
+                  aria-label={t('admin.inboundTemplates.enabled')}
+                  onChange={(checked) => setMeta((m) => ({ ...m, enabled: checked }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label={t('admin.inboundTemplates.name')} required>
+                <Input
+                  value={meta.name}
+                  placeholder={t('admin.inboundTemplates.namePlaceholder')}
+                  onChange={(event) => setMeta((m) => ({ ...m, name: event.target.value }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="protocol" label={t('admin.inboundEditor.basicProtocol')} rules={[{ required: true }]}>
+                <Select
+                  onChange={(value) => {
+                    form.setFieldValue('protocol', value)
+                    setProtocol(value)
+                  }}
+                  options={PROTOCOL_OPTIONS.map((value) => ({ label: PROTOCOL_LABELS[value], value }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item label={t('admin.inboundTemplates.description')}>
             <Input.TextArea
               value={meta.description}
@@ -213,32 +217,51 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
               onChange={(event) => setMeta((m) => ({ ...m, description: event.target.value }))}
             />
           </Form.Item>
-          {protocol === 'wireguard' ? <Alert type="info" showIcon message={t('admin.inboundEditor.wireguardStreamHidden')} /> : null}
-          {protocol === 'hysteria' ? <Alert type="info" showIcon message={t('admin.inboundEditor.hysteriaStreamFixed')} /> : null}
-          <Space align="start" wrap>
-            <Form.Item name="remark" label={t('admin.inboundTemplates.defaultRemarkLabel')}>
-              <Input placeholder={t('admin.inboundTemplates.defaultRemarkPlaceholder')} />
-            </Form.Item>
-            <Form.Item name="listen" label={t('admin.inboundEditor.basicAddress')}>
-              <Input placeholder={t('admin.inboundEditor.basicAddressPlaceholder')} />
-            </Form.Item>
-            <Form.Item name="total_gb" label={t('admin.inboundEditor.basicTotalGB')}>
-              <InputNumber min={0} step={0.01} />
-            </Form.Item>
-            <Form.Item name="trafficReset" label={t('admin.inboundEditor.basicTrafficReset')}>
-              <Select
-                style={{ width: 160 }}
-                options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({
-                  label: t(`admin.inboundEditor.trafficReset.${value}`),
-                  value,
-                }))}
-              />
-            </Form.Item>
-            <Form.Item name="expiryTime" label={t('admin.inboundEditor.basicExpiry')}>
-              <Input type="datetime-local" />
-            </Form.Item>
-          </Space>
-        </Space>
+          {protocol === 'wireguard' ? (
+            <Alert type="info" showIcon message={t('admin.inboundEditor.wireguardStreamHidden')} style={{ marginBottom: 12 }} />
+          ) : null}
+          {protocol === 'hysteria' ? (
+            <Alert type="info" showIcon message={t('admin.inboundEditor.hysteriaStreamFixed')} style={{ marginBottom: 12 }} />
+          ) : null}
+
+          <Divider orientation="left" plain style={{ marginTop: 4, marginBottom: 12 }}>
+            {t('admin.inboundTemplates.defaultsSection')}
+          </Divider>
+          <Row gutter={[20, 0]}>
+            <Col span={12}>
+              <Form.Item name="remark" label={t('admin.inboundTemplates.defaultRemarkLabel')}>
+                <Input placeholder={t('admin.inboundTemplates.defaultRemarkPlaceholder')} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="listen" label={t('admin.inboundEditor.basicAddress')}>
+                <Input placeholder={t('admin.inboundEditor.basicAddressPlaceholder')} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={[20, 0]}>
+            <Col span={8}>
+              <Form.Item name="total_gb" label={t('admin.inboundEditor.basicTotalGB')}>
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="trafficReset" label={t('admin.inboundEditor.basicTrafficReset')}>
+                <Select
+                  options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({
+                    label: t(`admin.inboundEditor.trafficReset.${value}`),
+                    value,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="expiryTime" label={t('admin.inboundEditor.basicExpiry')}>
+                <Input type="datetime-local" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
       ),
     },
     { key: 'protocol', label: t('admin.inboundEditor.tab.protocol'), children: protocolFields() },

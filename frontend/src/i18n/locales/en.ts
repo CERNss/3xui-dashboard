@@ -355,6 +355,7 @@ export const en = {
       createTitle: 'New inbound template',
       defaultRemarkLabel: 'Default remark',
       defaultRemarkPlaceholder: 'e.g. us-vless-tmpl',
+      defaultsSection: 'Default values',
       delete: 'Delete',
       description: 'Description',
       descriptionPlaceholder: 'What this template is used for',
