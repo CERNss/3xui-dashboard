@@ -76,6 +76,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
                   <span>{t('admin.inboundEditor.fromTemplateLabel')}</span>
                   <Select
                     allowClear
+                    aria-label={t('admin.inboundEditor.fromTemplateLabel')}
                     placeholder={t('admin.inboundEditor.fromTemplatePlaceholder')}
                     style={{ minWidth: 240 }}
                     value={templateID ?? undefined}

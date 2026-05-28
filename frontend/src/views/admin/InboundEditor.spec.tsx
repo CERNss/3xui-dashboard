@@ -13,6 +13,20 @@ vi.mock('@/hooks/queries/admin/inbounds', () => ({
   useUpdateInbound: () => ({ error: null, isPending: false, mutateAsync: updateMutateAsync }),
 }))
 
+const inboundTemplatesData = [
+  { id: 11, name: 'VLESS TCP plain', enabled: true, protocol: 'vless' },
+  { id: 12, name: 'Trojan WS TLS', enabled: true, protocol: 'trojan' },
+  { id: 13, name: 'Disabled template', enabled: false, protocol: 'vless' },
+]
+vi.mock('@/hooks/queries/admin/inboundTemplates', () => ({
+  useInboundTemplatesList: () => ({
+    data: inboundTemplatesData,
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  }),
+}))
+
 function renderEditor(
   source?: Inbound | null,
   options: {
@@ -226,6 +240,55 @@ describe('InboundEditor', () => {
 
     const disabledOption = await screen.findByText('Osaka Node (disabled)')
     expect(disabledOption.closest('.ant-select-item-option')).toHaveClass('ant-select-item-option-disabled')
+  })
+
+  it('exposes only enabled templates in the "from template" select and passes template_id on create', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /Fill from template/ }))
+    // Enabled templates appear.
+    expect(await screen.findByText('VLESS TCP plain · vless')).toBeInTheDocument()
+    expect(screen.getByText('Trojan WS TLS · trojan')).toBeInTheDocument()
+    // Disabled one is filtered out.
+    expect(screen.queryByText('Disabled template · vless')).not.toBeInTheDocument()
+
+    await user.click(screen.getByText('VLESS TCP plain · vless'))
+    await user.type(screen.getByLabelText('Inbound name'), 'tpl-inbound')
+    await user.clear(screen.getByLabelText('Port'))
+    await user.type(screen.getByLabelText('Port'), '18081')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
+    const payload = createMutateAsync.mock.calls[0][0]
+    expect(payload.nodeID).toBe(1)
+    expect(payload.body).toEqual(
+      expect.objectContaining({
+        template_id: 11,
+        port: 18081,
+        remark: 'tpl-inbound',
+      }),
+    )
+  })
+
+  it('omits template_id when no template is chosen', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByLabelText('Inbound name'), 'plain-inbound')
+    await user.clear(screen.getByLabelText('Port'))
+    await user.type(screen.getByLabelText('Port'), '18082')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
+    const body = createMutateAsync.mock.calls[0][0].body
+    expect(body).not.toHaveProperty('template_id')
+  })
+
+  it('does not render the "from template" select in edit mode', () => {
+    renderEditor(makeInbound())
+
+    expect(screen.queryByRole('combobox', { name: /Fill from template/ })).not.toBeInTheDocument()
   })
 
   it('closes without running a create mutation', async () => {

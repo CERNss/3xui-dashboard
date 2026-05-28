@@ -87,6 +87,13 @@ func (h *InboundHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, in)
 }
 
+// inboundCreateAlias shadows runtime.Inbound's custom UnmarshalJSON
+// so the embedded JSON decode path also reads the sidecar
+// `template_id` field. With the custom method in place, the embedded
+// type consumes the entire payload and our outer template_id stays
+// nil — i.e. silent template lookup bypass.
+type inboundCreateAlias runtime.Inbound
+
 func (h *InboundHandler) Create(c *gin.Context) {
 	nodeID, ok := h.parseNodeID(c)
 	if !ok {
@@ -98,14 +105,14 @@ func (h *InboundHandler) Create(c *gin.Context) {
 	// port/tag/listen/remark and ignore protocol/settings/stream
 	// settings/sniffing from the body (template wins).
 	var body struct {
-		runtime.Inbound
+		inboundCreateAlias
 		TemplateID *int64 `json:"template_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
 		return
 	}
-	in := body.Inbound
+	in := runtime.Inbound(body.inboundCreateAlias)
 	if body.TemplateID != nil && *body.TemplateID > 0 {
 		if h.templates == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "template lookup not wired on this deployment"})
