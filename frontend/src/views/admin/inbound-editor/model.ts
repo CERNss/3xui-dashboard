@@ -50,14 +50,19 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     ssMethod: 'chacha20-ietf-poly1305',
     ssNetwork: 'tcp,udp',
     ssPassword: '',
+    ssIvCheck: false,
     wireguardMtu: 1420,
     wireguardSecretKey: '',
+    wireguardPublicKey: '',
     wireguardNoKernelTun: false,
+    wireguardGenerateKeypair: false,
+    hysteriaVersion: 2,
     hysteriaSni: '',
     hysteriaAuth: '',
     hysteriaObfs: '',
     hysteriaUpMbps: 100,
     hysteriaDownMbps: 100,
+    hysteriaUdpIdleTimeout: 60,
 
     httpAllowTransparent: false,
     mixedAuth: 'noauth',
@@ -183,13 +188,18 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   values.ssMethod = settings.method ?? values.ssMethod
   values.ssNetwork = settings.network ?? values.ssNetwork
   values.ssPassword = settings.password ?? ''
+  values.ssIvCheck = Boolean(settings.ivCheck)
   values.wireguardMtu = settings.mtu ?? 1420
   values.wireguardSecretKey = settings.secretKey ?? ''
+  values.wireguardPublicKey = settings.pubKey ?? settings.publicKey ?? ''
   values.wireguardNoKernelTun = Boolean(settings.noKernelTun)
+  values.wireguardGenerateKeypair = Boolean(intent.wireguardKeypair)
+  values.hysteriaVersion = settings.version === 1 ? 1 : 2
   values.hysteriaAuth = settings.auth ?? settings.auth_str ?? ''
   values.hysteriaObfs = settings.obfs ?? ''
   values.hysteriaUpMbps = settings.up_mbps ?? settings.upMbps ?? 100
   values.hysteriaDownMbps = settings.down_mbps ?? settings.downMbps ?? 100
+  values.hysteriaUdpIdleTimeout = Number(settings.udpIdleTimeout) || 60
   values.httpAllowTransparent = Boolean(settings.allowTransparent)
   values.mixedAuth = settings.auth === 'password' ? 'password' : 'noauth'
   values.mixedUdp = Boolean(settings.udp)
@@ -345,15 +355,26 @@ function settingsFromValues(values: InboundEditorValues) {
   if (values.protocol === 'vmess') return { clients: values.clients, disableInsecureEncryption: values.disableInsecureEncryption }
   if (values.protocol === 'trojan') return { clients: values.clients, fallbacks: [] }
   if (values.protocol === 'shadowsocks') {
-    return { clients: values.clients, method: values.ssMethod, network: values.ssNetwork, password: values.ssPassword }
+    return {
+      clients: values.clients,
+      method: values.ssMethod,
+      network: values.ssNetwork,
+      password: values.ssPassword,
+      ivCheck: values.ssIvCheck,
+    }
   }
   if (values.protocol === 'wireguard') {
-    return {
+    const out: Record<string, unknown> = {
       mtu: values.wireguardMtu,
       secretKey: values.wireguardSecretKey,
+      pubKey: values.wireguardPublicKey,
       peers: values.clients,
       noKernelTun: values.wireguardNoKernelTun,
     }
+    if (values.wireguardGenerateKeypair) {
+      out._intent = { wireguardKeypair: true }
+    }
+    return out
   }
   if (values.protocol === 'http') {
     return {
@@ -392,11 +413,12 @@ function settingsFromValues(values: InboundEditorValues) {
   }
   return {
     clients: values.clients,
-    version: 2,
+    version: values.hysteriaVersion,
     auth: values.hysteriaAuth,
     obfs: values.hysteriaObfs,
     up_mbps: values.hysteriaUpMbps,
     down_mbps: values.hysteriaDownMbps,
+    udpIdleTimeout: values.hysteriaUdpIdleTimeout,
   }
 }
 

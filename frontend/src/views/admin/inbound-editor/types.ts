@@ -33,14 +33,19 @@ export interface InboundEditorValues {
   ssMethod: string
   ssNetwork: 'tcp' | 'udp' | 'tcp,udp'
   ssPassword: string
+  ssIvCheck: boolean
   wireguardMtu: number
   wireguardSecretKey: string
+  wireguardPublicKey: string
   wireguardNoKernelTun: boolean
+  wireguardGenerateKeypair: boolean
+  hysteriaVersion: 1 | 2
   hysteriaSni: string
   hysteriaAuth: string
   hysteriaObfs: string
   hysteriaUpMbps: number
   hysteriaDownMbps: number
+  hysteriaUdpIdleTimeout: number
 
   httpAllowTransparent: boolean
   mixedAuth: 'noauth' | 'password'

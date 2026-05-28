@@ -1,9 +1,26 @@
-import { Form, Input, Select, Space } from 'antd'
+import { Form, Input, Select, Space, Switch } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
+const SS_METHODS = [
+  'chacha20-ietf-poly1305',
+  'chacha20-poly1305',
+  'xchacha20-ietf-poly1305',
+  'aes-256-gcm',
+  'aes-128-gcm',
+  '2022-blake3-aes-128-gcm',
+  '2022-blake3-aes-256-gcm',
+  '2022-blake3-chacha20-poly1305',
+]
+
+function isSS2022(method: string) {
+  return method?.startsWith('2022-')
+}
+
 export function ShadowsocksProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
+  const ssMethod = Form.useWatch<string>('ssMethod')
+  const ss2022 = isSS2022(ssMethod ?? '')
   return (
     <ProtocolClients
       hideClients={hideClients}
@@ -19,14 +36,7 @@ export function ShadowsocksProtocol({ hideClients }: { hideClients?: boolean } =
         <Form.Item name="ssMethod" label={t('admin.inboundEditor.ssMethod')} rules={[{ required: true }]}>
           <Select
             style={{ width: 260 }}
-            options={[
-              'chacha20-ietf-poly1305',
-              'aes-256-gcm',
-              'aes-128-gcm',
-              '2022-blake3-aes-128-gcm',
-              '2022-blake3-aes-256-gcm',
-              '2022-blake3-chacha20-poly1305',
-            ].map((value) => ({ label: value, value }))}
+            options={SS_METHODS.map((value) => ({ label: value, value }))}
           />
         </Form.Item>
         <Form.Item name="ssNetwork" label={t('admin.inboundEditor.ssNetwork')}>
@@ -39,9 +49,19 @@ export function ShadowsocksProtocol({ hideClients }: { hideClients?: boolean } =
             ]}
           />
         </Form.Item>
-        <Form.Item name="ssPassword" label={t('admin.inboundEditor.globalPassword')}>
-          <Input placeholder={t('admin.inboundEditor.globalPasswordPlaceholder')} />
+        <Form.Item name="ssIvCheck" label="ivCheck" valuePropName="checked">
+          <Switch />
         </Form.Item>
+        {ss2022 ? (
+          <Form.Item
+            name="ssPassword"
+            label={t('admin.inboundEditor.globalPassword')}
+            tooltip={t('admin.inboundEditor.ssPasswordTooltip')}
+            rules={[{ required: true, message: t('admin.inboundEditor.ssPasswordRequired') }]}
+          >
+            <Input placeholder={t('admin.inboundEditor.globalPasswordPlaceholder')} />
+          </Form.Item>
+        ) : null}
       </Space>
     </ProtocolClients>
   )

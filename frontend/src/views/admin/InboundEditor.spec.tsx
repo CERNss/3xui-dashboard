@@ -132,7 +132,7 @@ describe('InboundEditor', () => {
     expect(screen.getByText('Trojan passwords')).toBeInTheDocument()
 
     cleanup()
-    renderEditor(makeInbound({ protocol: 'shadowsocks', settings: JSON.stringify({ clients: [], method: 'aes-256-gcm', password: 'global-password' }) }))
+    renderEditor(makeInbound({ protocol: 'shadowsocks', settings: JSON.stringify({ clients: [], method: '2022-blake3-aes-256-gcm', password: 'global-password' }) }))
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
     expect(screen.getByLabelText('Method')).toBeInTheDocument()
     expect(screen.getByLabelText('Global password')).toBeInTheDocument()

@@ -9,7 +9,12 @@ interface FieldConfig {
   placeholder?: string
   numeric?: boolean
   switch?: boolean
-  defaultValue?: unknown
+  /**
+   * Static default applied when a new client row is added. Pass a
+   * function to derive a fresh value on each click (e.g. randomize
+   * a password each time the operator hits "Add account").
+   */
+  defaultValue?: unknown | (() => unknown)
 }
 
 interface ProtocolClientsProps {
@@ -30,10 +35,14 @@ interface ProtocolClientsProps {
 
 export function ProtocolClients({ title, name = 'clients', fields, addLabel, children, hideClients }: ProtocolClientsProps) {
   const { t } = useTranslation()
-  const initialValue = fields.reduce<Record<string, unknown>>((acc, field) => {
-    acc[field.name] = field.defaultValue ?? (field.switch ? true : field.numeric ? 0 : '')
-    return acc
-  }, {})
+  const buildInitialValue = () =>
+    fields.reduce<Record<string, unknown>>((acc, field) => {
+      const seed = typeof field.defaultValue === 'function'
+        ? (field.defaultValue as () => unknown)()
+        : field.defaultValue
+      acc[field.name] = seed ?? (field.switch ? true : field.numeric ? 0 : '')
+      return acc
+    }, {})
 
   if (hideClients) {
     return <Space direction="vertical" size={12} style={{ width: '100%' }}>{children}</Space>
@@ -47,7 +56,7 @@ export function ProtocolClients({ title, name = 'clients', fields, addLabel, chi
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Space style={{ justifyContent: 'space-between', width: '100%' }}>
               <strong>{title}</strong>
-              <Button size="small" icon={<PlusOutlined />} onClick={() => add(initialValue)}>
+              <Button size="small" icon={<PlusOutlined />} onClick={() => add(buildInitialValue())}>
                 {addLabel ?? t('admin.inboundEditor.clients.addClient')}
               </Button>
             </Space>

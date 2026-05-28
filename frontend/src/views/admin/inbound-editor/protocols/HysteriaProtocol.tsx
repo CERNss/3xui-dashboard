@@ -16,6 +16,15 @@ export function HysteriaProtocol({ hideClients }: { hideClients?: boolean } = {}
       ]}
     >
       <Space align="start" wrap>
+        <Form.Item name="hysteriaVersion" label={t('admin.inboundEditor.hysteriaVersion')}>
+          <Select
+            style={{ width: 100 }}
+            options={[
+              { label: 'v1', value: 1 },
+              { label: 'v2', value: 2 },
+            ]}
+          />
+        </Form.Item>
         <Form.Item name="hysteriaSni" label="SNI">
           <Input placeholder="vpn.example.com" />
         </Form.Item>
@@ -29,6 +38,9 @@ export function HysteriaProtocol({ hideClients }: { hideClients?: boolean } = {}
           <InputNumber min={0} />
         </Form.Item>
         <Form.Item name="hysteriaDownMbps" label={t('admin.inboundEditor.downMbps')}>
+          <InputNumber min={0} />
+        </Form.Item>
+        <Form.Item name="hysteriaUdpIdleTimeout" label={t('admin.inboundEditor.hysteriaUdpIdleTimeout')}>
           <InputNumber min={0} />
         </Form.Item>
         <Form.Item name="tlsFingerprint" label="Fingerprint">

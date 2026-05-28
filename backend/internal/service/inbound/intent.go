@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 )
 
 // resolveIntent reads the `_intent` sub-block (if any) on the inbound's
@@ -64,6 +65,15 @@ func resolveSettingsIntent(ctx context.Context, r *runtime.Remote, in *runtime.I
 		}
 		settings["decryption"] = picked.Decryption
 		settings["encryption"] = picked.Encryption
+	}
+
+	if asBool(intent["wireguardKeypair"]) {
+		kp, err := wgcrypto.GenerateKeypair()
+		if err != nil {
+			return fmt.Errorf("generate WG keypair: %w", err)
+		}
+		settings["secretKey"] = kp.Private
+		settings["pubKey"] = kp.Public
 	}
 
 	delete(settings, "_intent")

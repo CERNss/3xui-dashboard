@@ -211,6 +211,35 @@ func TestResolveIntent_ShortIdsRandom(t *testing.T) {
 	}
 }
 
+func TestResolveIntent_WireguardKeypair(t *testing.T) {
+	m := newMockPanelServer(t)
+	r := remoteFromMock(t, m)
+
+	in := &runtime.Inbound{
+		Protocol: "wireguard",
+		Settings: `{"mtu":1420,"secretKey":"","pubKey":"","peers":[],"_intent":{"wireguardKeypair":true}}`,
+	}
+	if err := resolveIntent(context.Background(), r, in); err != nil {
+		t.Fatalf("resolveIntent: %v", err)
+	}
+	if strings.Contains(in.Settings, "_intent") {
+		t.Errorf("settings still contains _intent: %s", in.Settings)
+	}
+	var parsed map[string]any
+	_ = json.Unmarshal([]byte(in.Settings), &parsed)
+	secret, _ := parsed["secretKey"].(string)
+	pub, _ := parsed["pubKey"].(string)
+	if len(secret) != 44 || len(pub) != 44 {
+		t.Errorf("WG keypair not filled: secret=%q pub=%q", secret, pub)
+	}
+	if secret == pub {
+		t.Errorf("secret and pub keys are identical")
+	}
+	if total := totalCalls(m.callCount); total != 0 {
+		t.Errorf("WG keypair generation should not hit panel, got %d calls", total)
+	}
+}
+
 func TestResolveIntent_NoIntentNoCall(t *testing.T) {
 	m := newMockPanelServer(t)
 	r := remoteFromMock(t, m)

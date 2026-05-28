@@ -1,6 +1,7 @@
 import { Form, Input, Select, Space, Switch } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
+import { randomLowerAlnum } from '../random'
 
 export function MixedProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
@@ -11,8 +12,8 @@ export function MixedProtocol({ hideClients }: { hideClients?: boolean } = {}) {
       title={t('admin.inboundEditor.clients.mixedTitle')}
       addLabel={t('admin.inboundEditor.clients.addAccount')}
       fields={[
-        { name: 'user', label: t('admin.inboundEditor.clients.user'), placeholder: 'alice' },
-        { name: 'pass', label: t('admin.inboundEditor.clients.pass'), placeholder: '••••••' },
+        { name: 'user', label: t('admin.inboundEditor.clients.user'), placeholder: 'alice', defaultValue: () => randomLowerAlnum(8) },
+        { name: 'pass', label: t('admin.inboundEditor.clients.pass'), placeholder: '••••••', defaultValue: () => randomLowerAlnum(12) },
       ]}
     >
       <Space align="start" wrap>
