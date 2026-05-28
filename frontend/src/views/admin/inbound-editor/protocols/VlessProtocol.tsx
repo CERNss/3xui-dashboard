@@ -1,5 +1,8 @@
-import { Alert, Form, Input, Radio, Space, Tag } from 'antd'
+import { SettingOutlined } from '@ant-design/icons'
+import { Alert, Button, Form, Input, Radio, Space, Tag, Typography } from 'antd'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FallbacksConfigModal } from '../FallbacksConfigModal'
 import { ProtocolClients } from '../ProtocolClients'
 
 type AuthMode = 'none' | 'x25519' | 'mlkem768'
@@ -14,6 +17,8 @@ export function VlessProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
   const form = Form.useFormInstance()
   const authMode = Form.useWatch<AuthMode>('vlessAuthMode', form) ?? 'none'
+  const fallbacks = Form.useWatch<Array<unknown>>('fallbacks', form) ?? []
+  const [fallbacksOpen, setFallbacksOpen] = useState(false)
 
   const setAuthMode = (mode: AuthMode) => {
     form.setFieldValue('vlessAuthMode', mode)
@@ -72,7 +77,18 @@ export function VlessProtocol({ hideClients }: { hideClients?: boolean } = {}) {
             message={t('admin.inboundEditor.vlessAuthHint')}
           />
         ) : null}
+        <Space size={12} align="center">
+          <Button icon={<SettingOutlined />} onClick={() => setFallbacksOpen(true)}>
+            {t('admin.inboundEditor.fallbacks.configure')}
+          </Button>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {fallbacks.length === 0
+              ? t('admin.inboundEditor.fallbacks.summaryEmpty')
+              : t('admin.inboundEditor.fallbacks.summaryCount', { n: fallbacks.length })}
+          </Typography.Text>
+        </Space>
       </Space>
+      <FallbacksConfigModal open={fallbacksOpen} onClose={() => setFallbacksOpen(false)} />
     </ProtocolClients>
   )
 }

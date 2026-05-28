@@ -30,6 +30,13 @@ export interface InboundEditorValues {
   encryption: string
   vlessAuthMode: 'none' | 'x25519' | 'mlkem768'
   disableInsecureEncryption: boolean
+  fallbacks: Array<{
+    name: string
+    alpn: string
+    path: string
+    dest: string
+    xver: number
+  }>
   ssMethod: string
   ssNetwork: 'tcp' | 'udp' | 'tcp,udp'
   ssPassword: string
@@ -46,6 +53,14 @@ export interface InboundEditorValues {
   hysteriaUpMbps: number
   hysteriaDownMbps: number
   hysteriaUdpIdleTimeout: number
+  hysteriaMasqueradeType: '' | 'proxy' | 'file' | 'string'
+  hysteriaMasqueradeProxyUrl: string
+  hysteriaMasqueradeProxyRewriteHost: boolean
+  hysteriaMasqueradeProxyInsecure: boolean
+  hysteriaMasqueradeFileDir: string
+  hysteriaMasqueradeStringContent: string
+  hysteriaMasqueradeStringStatusCode: number
+  hysteriaMasqueradeStringHeaders: Array<{ key: string; value: string }>
 
   httpAllowTransparent: boolean
   mixedAuth: 'noauth' | 'password'

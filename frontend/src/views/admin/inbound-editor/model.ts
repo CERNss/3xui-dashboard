@@ -47,6 +47,7 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     encryption: 'none',
     vlessAuthMode: 'none',
     disableInsecureEncryption: false,
+    fallbacks: [],
     ssMethod: 'chacha20-ietf-poly1305',
     ssNetwork: 'tcp,udp',
     ssPassword: '',
@@ -63,6 +64,14 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     hysteriaUpMbps: 100,
     hysteriaDownMbps: 100,
     hysteriaUdpIdleTimeout: 60,
+    hysteriaMasqueradeType: '',
+    hysteriaMasqueradeProxyUrl: '',
+    hysteriaMasqueradeProxyRewriteHost: false,
+    hysteriaMasqueradeProxyInsecure: false,
+    hysteriaMasqueradeFileDir: '',
+    hysteriaMasqueradeStringContent: '',
+    hysteriaMasqueradeStringStatusCode: 200,
+    hysteriaMasqueradeStringHeaders: [],
 
     httpAllowTransparent: false,
     mixedAuth: 'noauth',
@@ -200,6 +209,31 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   values.hysteriaUpMbps = settings.up_mbps ?? settings.upMbps ?? 100
   values.hysteriaDownMbps = settings.down_mbps ?? settings.downMbps ?? 100
   values.hysteriaUdpIdleTimeout = Number(settings.udpIdleTimeout) || 60
+  values.fallbacks = Array.isArray(settings.fallbacks)
+    ? settings.fallbacks.map((entry: Record<string, unknown>) => ({
+        name: typeof entry.name === 'string' ? entry.name : '',
+        alpn: typeof entry.alpn === 'string' ? entry.alpn : '',
+        path: typeof entry.path === 'string' ? entry.path : '',
+        dest: typeof entry.dest === 'string' ? entry.dest : String(entry.dest ?? ''),
+        xver: Number(entry.xver) || 0,
+      }))
+    : []
+  const masq = settings.masquerade as Record<string, unknown> | undefined
+  if (masq && typeof masq.type === 'string') {
+    values.hysteriaMasqueradeType = masq.type as InboundEditorValues['hysteriaMasqueradeType']
+    values.hysteriaMasqueradeProxyUrl = typeof masq.url === 'string' ? masq.url : ''
+    values.hysteriaMasqueradeProxyRewriteHost = Boolean(masq.rewriteHost)
+    values.hysteriaMasqueradeProxyInsecure = Boolean(masq.insecure)
+    values.hysteriaMasqueradeFileDir = typeof masq.dir === 'string' ? masq.dir : ''
+    values.hysteriaMasqueradeStringContent = typeof masq.content === 'string' ? masq.content : ''
+    values.hysteriaMasqueradeStringStatusCode = Number(masq.statusCode) || 200
+    values.hysteriaMasqueradeStringHeaders = Array.isArray(masq.headers)
+      ? (masq.headers as Array<{ key?: unknown; value?: unknown }>).map((entry) => ({
+          key: typeof entry?.key === 'string' ? entry.key : '',
+          value: typeof entry?.value === 'string' ? entry.value : '',
+        }))
+      : []
+  }
   values.httpAllowTransparent = Boolean(settings.allowTransparent)
   values.mixedAuth = settings.auth === 'password' ? 'password' : 'noauth'
   values.mixedUdp = Boolean(settings.udp)
@@ -335,13 +369,48 @@ function accountsFromClients(values: InboundEditorValues) {
   }))
 }
 
+function fallbacksFromValues(values: InboundEditorValues) {
+  return values.fallbacks
+    .filter((f) => f.dest || f.name || f.path || f.alpn)
+    .map((f) => ({
+      name: f.name,
+      alpn: f.alpn,
+      path: f.path,
+      dest: f.dest,
+      xver: f.xver,
+    }))
+}
+
+function masqueradeFromValues(values: InboundEditorValues) {
+  switch (values.hysteriaMasqueradeType) {
+    case 'proxy':
+      return {
+        type: 'proxy',
+        url: values.hysteriaMasqueradeProxyUrl,
+        rewriteHost: values.hysteriaMasqueradeProxyRewriteHost,
+        insecure: values.hysteriaMasqueradeProxyInsecure,
+      }
+    case 'file':
+      return { type: 'file', dir: values.hysteriaMasqueradeFileDir }
+    case 'string':
+      return {
+        type: 'string',
+        content: values.hysteriaMasqueradeStringContent,
+        statusCode: values.hysteriaMasqueradeStringStatusCode,
+        headers: values.hysteriaMasqueradeStringHeaders.filter((h) => h.key || h.value),
+      }
+    default:
+      return undefined
+  }
+}
+
 function settingsFromValues(values: InboundEditorValues) {
   if (values.protocol === 'vless') {
     const base: Record<string, unknown> = {
       clients: values.clients,
       decryption: values.decryption || 'none',
       encryption: values.encryption || 'none',
-      fallbacks: [],
+      fallbacks: fallbacksFromValues(values),
     }
     // Intent block: when the user picks an auth mode but hasn't yet
     // resolved it to concrete decryption/encryption strings, stash
@@ -353,7 +422,7 @@ function settingsFromValues(values: InboundEditorValues) {
     return base
   }
   if (values.protocol === 'vmess') return { clients: values.clients, disableInsecureEncryption: values.disableInsecureEncryption }
-  if (values.protocol === 'trojan') return { clients: values.clients, fallbacks: [] }
+  if (values.protocol === 'trojan') return { clients: values.clients, fallbacks: fallbacksFromValues(values) }
   if (values.protocol === 'shadowsocks') {
     return {
       clients: values.clients,
@@ -411,7 +480,7 @@ function settingsFromValues(values: InboundEditorValues) {
       autoOutboundsInterface: values.tunAutoOutboundsInterface,
     }
   }
-  return {
+  const hysteriaSettings: Record<string, unknown> = {
     clients: values.clients,
     version: values.hysteriaVersion,
     auth: values.hysteriaAuth,
@@ -420,6 +489,9 @@ function settingsFromValues(values: InboundEditorValues) {
     down_mbps: values.hysteriaDownMbps,
     udpIdleTimeout: values.hysteriaUdpIdleTimeout,
   }
+  const masq = masqueradeFromValues(values)
+  if (masq) hysteriaSettings.masquerade = masq
+  return hysteriaSettings
 }
 
 function streamFromValues(values: InboundEditorValues) {
