@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 )
@@ -94,6 +96,33 @@ func (s *Service) Add(ctx context.Context, nodeID int64, in *runtime.Inbound) (*
 		return nil, err
 	}
 	return r.AddInbound(ctx, in)
+}
+
+// BuildTemplateInbound materializes an inbound template into the
+// runtime wire shape expected by 3x-ui. Port and tag are supplied by
+// the provisioning pool allocator.
+func BuildTemplateInbound(t *model.InboundTemplate, port int, tag string) *runtime.Inbound {
+	if t == nil {
+		return nil
+	}
+	remark := strings.TrimSpace(t.Remark)
+	if remark == "" {
+		remark = strings.TrimSpace(t.Name)
+	}
+	return &runtime.Inbound{
+		Total:          t.Total,
+		Remark:         remark,
+		Enable:         true,
+		ExpiryTime:     t.ExpiryTime,
+		TrafficReset:   t.TrafficReset,
+		Listen:         t.Listen,
+		Port:           port,
+		Protocol:       t.Protocol,
+		Settings:       t.Settings,
+		StreamSettings: t.StreamSettings,
+		Tag:            tag,
+		Sniffing:       t.Sniffing,
+	}
 }
 
 // ensureWGSecretKey mutates in.Settings in place when the inbound

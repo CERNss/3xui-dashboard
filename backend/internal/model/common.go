@@ -44,6 +44,40 @@ func (s *StringSlice) Scan(value any) error {
 	return json.Unmarshal(bytes, (*[]string)(s))
 }
 
+// Int64Slice serializes []int64 as JSONB. It is used for compact
+// id allowlists where an empty list means "all eligible rows".
+type Int64Slice []int64
+
+// Value implements driver.Valuer.
+func (s Int64Slice) Value() (driver.Value, error) {
+	if s == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]int64(s))
+}
+
+// Scan implements sql.Scanner.
+func (s *Int64Slice) Scan(value any) error {
+	if value == nil {
+		*s = nil
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return fmt.Errorf("model.Int64Slice: unsupported scan type %T", value)
+	}
+	if len(bytes) == 0 {
+		*s = nil
+		return nil
+	}
+	return json.Unmarshal(bytes, (*[]int64)(s))
+}
+
 // StringMap serializes map[string]string as JSONB. Used for columns
 // holding arbitrary admin-defined key/value pairs — currently just
 // webhooks.headers, but reusable for future similar shapes.

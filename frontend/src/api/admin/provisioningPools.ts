@@ -1,8 +1,10 @@
 import { adminClient } from '../client/admin'
+import type { InboundTemplate } from './inboundTemplates'
 
 export interface ProvisioningPoolTarget {
   id: number
   pool_id: number
+  template_id?: number | null
   node_id: number
   node_name?: string
   inbound_tag: string
@@ -11,6 +13,8 @@ export interface ProvisioningPoolTarget {
   used_clients?: number
   priority: number
   enabled: boolean
+  generated?: boolean
+  template_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -21,9 +25,13 @@ export interface ProvisioningPool {
   description?: string
   enabled: boolean
   auto_create: boolean
+  template_id?: number | null
+  template?: InboundTemplate | null
   port_min?: number | null
   port_max?: number | null
+  max_clients?: number
   allowed_protocols: string[]
+  node_ids?: number[]
   targets?: ProvisioningPoolTarget[]
   created_at?: string
   updated_at?: string
@@ -34,9 +42,12 @@ export interface ProvisioningPoolInput {
   description?: string
   enabled: boolean
   auto_create: boolean
+  template_id?: number | null
   port_min?: number | null
   port_max?: number | null
+  max_clients: number
   allowed_protocols: string[]
+  node_ids: number[]
 }
 
 export interface ProvisioningPoolTargetInput {

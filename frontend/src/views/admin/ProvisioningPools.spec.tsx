@@ -1,23 +1,25 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProvisioningPools from './ProvisioningPools'
-import type { FleetResult } from '@/api/admin/inbounds'
+import type { InboundTemplate } from '@/api/admin/inboundTemplates'
+import type { Node } from '@/api/admin/nodes'
 import type { ProvisioningPool } from '@/api/admin/provisioningPools'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createPoolMutateAsync = vi.fn()
 const updatePoolMutateAsync = vi.fn()
 const removePoolMutateAsync = vi.fn()
-const addTargetMutateAsync = vi.fn()
 const updateTargetMutateAsync = vi.fn()
 const removeTargetMutateAsync = vi.fn()
 const poolsRefetch = vi.fn()
-const fleetRefetch = vi.fn()
+const templatesRefetch = vi.fn()
+const nodesRefetch = vi.fn()
 
 let pools: ProvisioningPool[] = []
-let fleet: FleetResult = { inbounds: [] }
+let templates: InboundTemplate[] = []
+let nodes: Node[] = []
 let loading = false
 
 vi.mock('@/hooks/queries/admin/provisioningPools', () => ({
@@ -31,18 +33,27 @@ vi.mock('@/hooks/queries/admin/provisioningPools', () => ({
   useCreateProvisioningPool: () => ({ error: null, isPending: false, mutateAsync: createPoolMutateAsync }),
   useUpdateProvisioningPool: () => ({ error: null, isPending: false, mutateAsync: updatePoolMutateAsync }),
   useRemoveProvisioningPool: () => ({ error: null, isPending: false, mutateAsync: removePoolMutateAsync }),
-  useAddProvisioningPoolTarget: () => ({ error: null, isPending: false, mutateAsync: addTargetMutateAsync }),
   useUpdateProvisioningPoolTarget: () => ({ error: null, isPending: false, mutateAsync: updateTargetMutateAsync }),
   useRemoveProvisioningPoolTarget: () => ({ error: null, isPending: false, mutateAsync: removeTargetMutateAsync }),
 }))
 
-vi.mock('@/hooks/queries/admin/inbounds', () => ({
-  useInboundsFleet: () => ({
-    data: fleet,
+vi.mock('@/hooks/queries/admin/inboundTemplates', () => ({
+  useInboundTemplatesList: () => ({
+    data: templates,
     error: null,
     isFetching: false,
     isLoading: loading,
-    refetch: fleetRefetch,
+    refetch: templatesRefetch,
+  }),
+}))
+
+vi.mock('@/hooks/queries/admin/nodes', () => ({
+  useNodesList: () => ({
+    data: nodes,
+    error: null,
+    isFetching: false,
+    isLoading: loading,
+    refetch: nodesRefetch,
   }),
 }))
 
@@ -57,14 +68,33 @@ beforeEach(() => {
       name: 'Default Pool',
       description: 'Primary pool',
       enabled: true,
-      auto_create: false,
+      auto_create: true,
+      template_id: 1,
+      template: {
+        id: 1,
+        name: 'Basic VLESS',
+        description: 'Default template',
+        enabled: true,
+        protocol: 'vless',
+        remark: 'basic-vless',
+        listen: '',
+        total: 0,
+        expiryTime: 0,
+        trafficReset: 'never',
+        settings: JSON.stringify({ clients: [], decryption: 'none' }),
+        streamSettings: JSON.stringify({ network: 'tcp', security: 'none' }),
+        sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls'] }),
+      },
       port_min: 10000,
       port_max: 20000,
+      max_clients: 20,
       allowed_protocols: ['vless', 'vmess'],
+      node_ids: [4],
       targets: [
         {
           id: 9,
           pool_id: 2,
+          template_id: 1,
           node_id: 4,
           node_name: 'Node A',
           inbound_tag: 'vless-100',
@@ -73,69 +103,58 @@ beforeEach(() => {
           used_clients: 7,
           priority: 50,
           enabled: true,
+          generated: true,
+          template_name: 'Basic VLESS',
         },
       ],
     },
   ]
-  fleet = {
-    inbounds: [
-      {
-        node_id: 4,
-        node_name: 'Node A',
-        inbound: {
-          id: 1,
-          up: 0,
-          down: 0,
-          total: 0,
-          allTime: 0,
-          remark: 'Public vless',
-          enable: true,
-          expiryTime: 0,
-          trafficReset: '',
-          clientStats: [],
-          listen: '',
-          port: 443,
-          protocol: 'vless',
-          settings: '{}',
-          streamSettings: '{}',
-          tag: 'vless-100',
-          sniffing: '{}',
-        },
-      },
-      {
-        node_id: 5,
-        node_name: 'Node B',
-        inbound: {
-          id: 2,
-          up: 0,
-          down: 0,
-          total: 0,
-          allTime: 0,
-          remark: 'Disabled vmess',
-          enable: false,
-          expiryTime: 0,
-          trafficReset: '',
-          clientStats: [],
-          listen: '',
-          port: 10086,
-          protocol: 'vmess',
-          settings: '{}',
-          streamSettings: '{}',
-          tag: 'vmess-disabled',
-          sniffing: '{}',
-        },
-      },
-    ],
-  }
+  templates = [
+    {
+      id: 1,
+      name: 'Basic VLESS',
+      description: 'Default template',
+      enabled: true,
+      protocol: 'vless',
+      remark: 'basic-vless',
+      listen: '',
+      total: 0,
+      expiryTime: 0,
+      trafficReset: 'never',
+      settings: JSON.stringify({ clients: [], decryption: 'none' }),
+      streamSettings: JSON.stringify({ network: 'tcp', security: 'none' }),
+      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls'] }),
+    },
+  ]
+  nodes = [
+    {
+      id: 4,
+      name: 'Node A',
+      area: 'us',
+      province: 'CA',
+      scheme: 'https',
+      host: 'node-a.example.com',
+      port: 2053,
+      base_path: '/panel/',
+      enabled: true,
+      status: 'online',
+      cpu_pct: 0,
+      mem_pct: 0,
+      xray_version: '1.8.24',
+      uptime_s: 0,
+      created_at: '',
+      updated_at: '',
+    },
+  ]
   loading = false
   createPoolMutateAsync.mockResolvedValue({})
   updatePoolMutateAsync.mockResolvedValue({})
   removePoolMutateAsync.mockResolvedValue({})
-  addTargetMutateAsync.mockResolvedValue({})
   updateTargetMutateAsync.mockResolvedValue({})
   removeTargetMutateAsync.mockResolvedValue({})
   poolsRefetch.mockReset()
-  fleetRefetch.mockReset()
+  templatesRefetch.mockReset()
+  nodesRefetch.mockReset()
   vi.restoreAllMocks()
 })
 
@@ -147,17 +166,26 @@ describe('ProvisioningPools', () => {
     expect(screen.getByText('Default Pool')).toBeInTheDocument()
     expect(screen.getByText('Primary pool')).toBeInTheDocument()
     expect(screen.getByText('Ports: 10000-20000')).toBeInTheDocument()
+    expect(screen.getByText('Template: Basic VLESS · vless')).toBeInTheDocument()
+    expect(screen.getByText('Nodes: 1 selected')).toBeInTheDocument()
+    expect(screen.getByText('Generated targets: 1')).toBeInTheDocument()
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(screen.getByText('Node A')).toBeInTheDocument()
+    expect(screen.getByText('Generated · Basic VLESS')).toBeInTheDocument()
     expect(screen.getByText('7 / 20')).toBeInTheDocument()
   })
 
-  it('creates pools with comma protocol parsing and validates port ranges', async () => {
+  it('creates template-driven pools and validates port ranges', async () => {
     const user = userEvent.setup()
     renderPools()
 
     await user.click(screen.getByRole('button', { name: 'New Pool' }))
+    const modal = screen.getByRole('dialog', { name: 'New provisioning pool' })
     await user.type(screen.getByLabelText('Name'), 'Fast Pool')
+    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: 'Template' }))
+    await user.click(await screen.findByText('Basic VLESS · vless'))
+    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: /Nodes/ }))
+    await user.click(await screen.findByText('Node A · node-a.example.com:2053'))
     await user.type(screen.getByLabelText('Port min'), '30000')
     await user.type(screen.getByLabelText('Port max'), '20000')
     await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -167,16 +195,23 @@ describe('ProvisioningPools', () => {
 
     await user.clear(screen.getByLabelText('Port max'))
     await user.type(screen.getByLabelText('Port max'), '40000')
-    await user.type(screen.getByLabelText('Allowed protocols'), ' VLESS, vmess, , Trojan ')
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Allowed protocols' }))
+    await user.click(await screen.findByTitle('VLESS'))
+    await user.click(await screen.findByTitle('VMess'))
+    await user.click(await screen.findByTitle('Trojan'))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
       expect(createPoolMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'Fast Pool',
+          auto_create: true,
+          template_id: 1,
           port_min: 30000,
           port_max: 40000,
+          max_clients: 0,
           allowed_protocols: ['vless', 'vmess', 'trojan'],
+          node_ids: [4],
         }),
       ),
     )
@@ -193,14 +228,25 @@ describe('ProvisioningPools', () => {
     renderPools()
 
     await user.click(screen.getByRole('button', { name: 'Edit Default Pool' }))
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Edited Pool')
+    const modal = screen.getByRole('dialog', { name: 'Edit pool #2' })
+    expect(within(modal).getByDisplayValue('Default Pool')).toBeInTheDocument()
+    expect(within(modal).getByDisplayValue('Primary pool')).toBeInTheDocument()
+    expect(within(modal).getByDisplayValue('10000')).toBeInTheDocument()
+    expect(within(modal).getByDisplayValue('20000')).toBeInTheDocument()
+    expect(within(modal).getByDisplayValue('20')).toBeInTheDocument()
+    expect(within(modal).getByText('Basic VLESS · vless')).toBeInTheDocument()
+    expect(within(modal).getByText('Node A · node-a.example.com:2053')).toBeInTheDocument()
+    expect(within(modal).getByText('VLESS')).toBeInTheDocument()
+    expect(within(modal).getByText('VMess')).toBeInTheDocument()
+
+    await user.clear(within(modal).getByLabelText('Name'))
+    await user.type(within(modal).getByLabelText('Name'), 'Edited Pool')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
       expect(updatePoolMutateAsync).toHaveBeenCalledWith({
         id: 2,
-        input: expect.objectContaining({ name: 'Edited Pool' }),
+        input: expect.objectContaining({ name: 'Edited Pool', template_id: 1, node_ids: [4], max_clients: 20 }),
       }),
     )
 
@@ -209,37 +255,13 @@ describe('ProvisioningPools', () => {
     await waitFor(() => expect(removePoolMutateAsync).toHaveBeenCalledWith(2))
   })
 
-  it('adds targets from enabled fleet inbound only', async () => {
-    const user = userEvent.setup()
+  it('does not expose manual target creation as the primary flow', () => {
     renderPools()
 
-    await user.click(screen.getByRole('button', { name: 'Add Target' }))
-    const modal = screen.getByRole('dialog', { name: 'Add Target' })
-    expect(within(modal).getByText('Node A · Public vless · :443 · vless')).toBeInTheDocument()
-    expect(screen.queryByText('Disabled vmess')).not.toBeInTheDocument()
-
-    await user.clear(screen.getByLabelText('Max clients'))
-    await user.type(screen.getByLabelText('Max clients'), '30')
-    await user.clear(screen.getByLabelText('Priority'))
-    await user.type(screen.getByLabelText('Priority'), '10')
-    await user.click(within(modal).getByRole('button', { name: 'Save' }))
-
-    await waitFor(() =>
-      expect(addTargetMutateAsync).toHaveBeenCalledWith({
-        poolID: 2,
-        input: {
-          node_id: 4,
-          inbound_tag: 'vless-100',
-          protocol: 'vless',
-          max_clients: 30,
-          priority: 10,
-          enabled: true,
-        },
-      }),
-    )
+    expect(screen.queryByRole('button', { name: 'Add Target' })).not.toBeInTheDocument()
   })
 
-  it('toggles and deletes targets, then refreshes pools plus fleet', async () => {
+  it('toggles and deletes generated targets, then refreshes pool dependencies', async () => {
     const user = userEvent.setup()
     renderPools()
 
@@ -251,6 +273,7 @@ describe('ProvisioningPools', () => {
 
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     expect(poolsRefetch).toHaveBeenCalledTimes(1)
-    expect(fleetRefetch).toHaveBeenCalledTimes(1)
+    expect(templatesRefetch).toHaveBeenCalledTimes(1)
+    expect(nodesRefetch).toHaveBeenCalledTimes(1)
   })
 })

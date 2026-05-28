@@ -3,6 +3,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout, AuthLayout, PortalLayout } from './components/layout'
 import AdminAuditLog from './views/admin/AuditLog'
 import AdminInbounds from './views/admin/Inbounds'
+import AdminInboundTemplates from './views/admin/InboundTemplates'
 import AdminNodes from './views/admin/Nodes'
 import AdminOpsMonitor from './views/admin/OpsMonitor'
 import AdminOrders from './views/admin/Orders'
@@ -49,6 +50,7 @@ export function AppRouter() {
           <Route path="ops-monitor" element={<AdminOpsMonitor />} />
           <Route path="nodes" element={<AdminNodes />} />
           <Route path="inbounds" element={<AdminInbounds />} />
+          <Route path="inbound-templates" element={<AdminInboundTemplates />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="plans" element={<AdminPlans />} />
           <Route path="provisioning-pools" element={<AdminProvisioningPools />} />

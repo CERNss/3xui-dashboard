@@ -142,4 +142,28 @@ describe('common components', () => {
     expect(screen.getByText('No nodes')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
+
+  it('keeps table pagination controls in the ConfigListPage footer', () => {
+    render(
+      <ConfigListPage
+        title="Nodes"
+        rowKey="id"
+        columns={[{ dataIndex: 'name', title: 'Name' }]}
+        dataSource={[
+          { id: 1, name: 'Node A' },
+          { id: 2, name: 'Node B' },
+        ]}
+        pagination={{ pageSize: 1 }}
+        mobileCard={(record) => <span>{record.name}</span>}
+      />,
+    )
+
+    const list = document.querySelector('.config-list-page-list')
+    const footer = document.querySelector('.config-list-page-footer')
+
+    expect(list?.querySelector('.ant-table-pagination')).not.toBeInTheDocument()
+    expect(footer?.querySelector('.ant-pagination')).toBeInTheDocument()
+    expect(screen.getByText('Node A')).toBeInTheDocument()
+    expect(screen.queryByText('Node B')).not.toBeInTheDocument()
+  })
 })

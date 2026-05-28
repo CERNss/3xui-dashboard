@@ -3,17 +3,15 @@ import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Sw
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { FleetInbound } from '@/api/admin/inbounds'
 import type {
   ProvisioningPool,
   ProvisioningPoolInput,
   ProvisioningPoolTarget,
-  ProvisioningPoolTargetInput,
 } from '@/api/admin/provisioningPools'
 import { ConfigListPage, EmptyState, RefreshButton, ResponsiveListTable } from '@/components/common'
-import { useInboundsFleet } from '@/hooks/queries/admin/inbounds'
+import { useInboundTemplatesList } from '@/hooks/queries/admin/inboundTemplates'
+import { useNodesList } from '@/hooks/queries/admin/nodes'
 import {
-  useAddProvisioningPoolTarget,
   useCreateProvisioningPool,
   useProvisioningPoolsList,
   useRemoveProvisioningPool,
@@ -21,22 +19,19 @@ import {
   useUpdateProvisioningPool,
   useUpdateProvisioningPoolTarget,
 } from '@/hooks/queries/admin/provisioningPools'
+import { PROTOCOL_OPTIONS } from './inbounds/utils'
 
 interface PoolFormValues {
   name: string
   description?: string
   enabled: boolean
   auto_create: boolean
+  template_id?: number | null
   port_min?: number | null
   port_max?: number | null
-  allowed_protocols_text?: string
-}
-
-interface TargetFormValues {
-  inbound_key: string
   max_clients: number
-  priority: number
-  enabled: boolean
+  allowed_protocols?: string[]
+  node_ids?: number[]
 }
 
 function blankPool(): PoolFormValues {
@@ -44,10 +39,13 @@ function blankPool(): PoolFormValues {
     name: '',
     description: '',
     enabled: true,
-    auto_create: false,
+    auto_create: true,
+    template_id: null,
     port_min: null,
     port_max: null,
-    allowed_protocols_text: '',
+    max_clients: 0,
+    allowed_protocols: [],
+    node_ids: [],
   }
 }
 
@@ -57,9 +55,12 @@ function poolToForm(pool: ProvisioningPool): PoolFormValues {
     description: pool.description ?? '',
     enabled: pool.enabled,
     auto_create: pool.auto_create,
+    template_id: pool.template_id ?? null,
     port_min: pool.port_min ?? null,
     port_max: pool.port_max ?? null,
-    allowed_protocols_text: (pool.allowed_protocols ?? []).join(', '),
+    max_clients: pool.max_clients ?? 0,
+    allowed_protocols: pool.allowed_protocols ?? [],
+    node_ids: pool.node_ids ?? [],
   }
 }
 
@@ -69,22 +70,35 @@ function formToPoolPayload(values: PoolFormValues): ProvisioningPoolInput {
     description: values.description?.trim() ?? '',
     enabled: values.enabled,
     auto_create: values.auto_create,
+    template_id: values.template_id ? Number(values.template_id) : null,
     port_min: values.port_min ? Math.round(values.port_min) : null,
     port_max: values.port_max ? Math.round(values.port_max) : null,
-    allowed_protocols: (values.allowed_protocols_text ?? '')
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean),
+    max_clients: Math.max(0, Math.round(values.max_clients ?? 0)),
+    allowed_protocols: Array.from(new Set(values.allowed_protocols ?? [])),
+    node_ids: Array.from(new Set((values.node_ids ?? []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))),
   }
 }
 
-function inboundKey(row: FleetInbound) {
-  return `${row.node_id}|${row.inbound.tag}`
-}
+const PROTOCOL_SELECT_OPTIONS = PROTOCOL_OPTIONS.map((protocol) => ({
+  value: protocol,
+  label:
+    protocol === 'vmess'
+      ? 'VMess'
+      : protocol === 'vless'
+        ? 'VLESS'
+        : protocol === 'shadowsocks'
+          ? 'Shadowsocks'
+          : protocol === 'wireguard'
+            ? 'WireGuard'
+            : protocol === 'hysteria'
+              ? 'Hysteria'
+              : 'Trojan',
+}))
 
-function parseInboundKey(key: string) {
-  const [nodeID, tag] = key.split('|')
-  return { nodeID: Number(nodeID), tag }
+function templateLabel(pool: ProvisioningPool, fallback: string) {
+  if (pool.template?.name) return `${pool.template.name} · ${pool.template.protocol}`
+  if (pool.template_id) return `#${pool.template_id}`
+  return fallback
 }
 
 function capacityText(target: ProvisioningPoolTarget, unlimited: string) {
@@ -96,59 +110,67 @@ function protocolsText(pool: ProvisioningPool, unlimited: string) {
   return pool.allowed_protocols?.length ? pool.allowed_protocols.join(', ') : unlimited
 }
 
+function nodeScopeText(pool: ProvisioningPool, allNodes: string, countLabel: string) {
+  const count = pool.node_ids?.length ?? 0
+  if (!count) return allNodes
+  return countLabel.replace('{n}', String(count))
+}
+
+function targetSourceText(target: ProvisioningPoolTarget, generated: string, manual: string) {
+  if (target.generated) return target.template_name ? `${generated} · ${target.template_name}` : generated
+  return manual
+}
+
+function portRangeText(pool: ProvisioningPool, anyLabel: string) {
+  return pool.port_min && pool.port_max ? `${pool.port_min}-${pool.port_max}` : anyLabel
+}
+
 export default function ProvisioningPools() {
   const { t } = useTranslation()
   const [poolForm] = Form.useForm<PoolFormValues>()
-  const [targetForm] = Form.useForm<TargetFormValues>()
   const [poolModalOpen, setPoolModalOpen] = useState(false)
-  const [targetModalOpen, setTargetModalOpen] = useState(false)
   const [editingPool, setEditingPool] = useState<ProvisioningPool | null>(null)
-  const [targetPool, setTargetPool] = useState<ProvisioningPool | null>(null)
 
   const poolsQuery = useProvisioningPoolsList()
-  const fleetQuery = useInboundsFleet()
+  const templatesQuery = useInboundTemplatesList()
+  const nodesQuery = useNodesList()
   const createPool = useCreateProvisioningPool()
   const updatePool = useUpdateProvisioningPool()
   const removePool = useRemoveProvisioningPool()
-  const addTarget = useAddProvisioningPoolTarget()
   const updateTarget = useUpdateProvisioningPoolTarget()
   const removeTarget = useRemoveProvisioningPoolTarget()
 
   const pools = poolsQuery.data ?? []
-  const fleet = useMemo(() => fleetQuery.data?.inbounds ?? [], [fleetQuery.data])
-  const enabledInbounds = useMemo(
-    () =>
-      fleet
-        .filter((row) => row.inbound.enable)
-        .sort((a, b) => a.node_name.localeCompare(b.node_name) || a.inbound.port - b.inbound.port),
-    [fleet],
-  )
-  const loading = poolsQuery.isLoading || fleetQuery.isLoading
-  const saving = createPool.isPending || updatePool.isPending || addTarget.isPending
+  const templates = useMemo(() => (templatesQuery.data ?? []).filter((template) => template.enabled), [templatesQuery.data])
+  const nodes = useMemo(() => (nodesQuery.data ?? []).filter((node) => node.enabled), [nodesQuery.data])
+  const loading = poolsQuery.isLoading || templatesQuery.isLoading || nodesQuery.isLoading
+  const saving = createPool.isPending || updatePool.isPending
   const error =
     poolsQuery.error ??
-    fleetQuery.error ??
+    templatesQuery.error ??
+    nodesQuery.error ??
     createPool.error ??
     updatePool.error ??
     removePool.error ??
-    addTarget.error ??
     updateTarget.error ??
     removeTarget.error
 
   const refresh = () => {
     poolsQuery.refetch()
-    fleetQuery.refetch()
+    templatesQuery.refetch()
+    nodesQuery.refetch()
   }
+
+  const poolInitialValues = editingPool ? poolToForm(editingPool) : blankPool()
+  const poolFormKey = editingPool ? `edit-${editingPool.id}` : 'create'
 
   const openCreatePool = () => {
     setEditingPool(null)
-    poolForm.setFieldsValue(blankPool())
     setPoolModalOpen(true)
   }
 
   const openEditPool = (pool: ProvisioningPool) => {
     setEditingPool(pool)
-    poolForm.setFieldsValue(poolToForm(pool))
     setPoolModalOpen(true)
   }
 
@@ -180,43 +202,6 @@ export default function ProvisioningPools() {
     })
   }
 
-  const openAddTarget = (pool: ProvisioningPool) => {
-    setTargetPool(pool)
-    targetForm.setFieldsValue({
-      inbound_key: enabledInbounds[0] ? inboundKey(enabledInbounds[0]) : '',
-      max_clients: 0,
-      priority: 100,
-      enabled: true,
-    })
-    setTargetModalOpen(true)
-  }
-
-  const closeTargetModal = () => {
-    setTargetModalOpen(false)
-    setTargetPool(null)
-    targetForm.resetFields()
-  }
-
-  const saveTarget = async () => {
-    if (!targetPool) return
-    const values = await targetForm.validateFields().catch(() => null)
-    if (!values) return
-    const { nodeID, tag } = parseInboundKey(values.inbound_key)
-    const row = enabledInbounds.find((item) => item.node_id === nodeID && item.inbound.tag === tag)
-    if (!row) return
-
-    const payload: ProvisioningPoolTargetInput = {
-      node_id: nodeID,
-      inbound_tag: tag,
-      protocol: row.inbound.protocol,
-      max_clients: Math.max(0, Math.round(values.max_clients)),
-      priority: Math.max(0, Math.round(values.priority)),
-      enabled: values.enabled,
-    }
-    await addTarget.mutateAsync({ poolID: targetPool.id, input: payload })
-    closeTargetModal()
-  }
-
   const toggleTarget = async (target: ProvisioningPoolTarget) => {
     await updateTarget.mutateAsync({ targetID: target.id, input: { enabled: !target.enabled } })
   }
@@ -234,6 +219,9 @@ export default function ProvisioningPools() {
           <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
           <Typography.Text type="secondary">
             {target.inbound_tag} · {target.protocol || '-'}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            {targetSourceText(target, t('admin.provisioningPools.generatedTarget'), t('admin.provisioningPools.manualTarget'))}
           </Typography.Text>
         </Space>
       ),
@@ -305,7 +293,7 @@ export default function ProvisioningPools() {
             <Button type="primary" aria-label={t('admin.provisioningPools.add')} icon={<PlusOutlined />} onClick={openCreatePool}>
               {t('admin.provisioningPools.add')}
             </Button>
-            <RefreshButton loading={poolsQuery.isFetching || fleetQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
+            <RefreshButton loading={poolsQuery.isFetching || templatesQuery.isFetching || nodesQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
           </>
         }
         alerts={error ? <Alert type="error" showIcon message={t('admin.provisioningPools.saveFailed')} /> : null}
@@ -318,18 +306,20 @@ export default function ProvisioningPools() {
               {pools.map((pool) => (
                 <Card
                   key={pool.id}
+                  className="provisioning-pool-card"
                   title={
-                    <Space>
+                    <div className="provisioning-pool-card-title">
                       <Typography.Text strong>{pool.name}</Typography.Text>
-                      <Tag color={pool.enabled ? 'green' : 'default'}>{pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}</Tag>
-                      {pool.auto_create ? <Tag color="blue">{t('admin.provisioningPools.autoCreate')}</Tag> : null}
-                    </Space>
+                      <Space size={6} wrap>
+                        <Tag color={pool.enabled ? 'green' : 'default'}>
+                          {pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}
+                        </Tag>
+                        {pool.auto_create ? <Tag color="blue">{t('admin.provisioningPools.autoCreate')}</Tag> : null}
+                      </Space>
+                    </div>
                   }
                   extra={
                     <Space>
-                      <Button size="small" aria-label={t('admin.provisioningPools.addTarget')} icon={<PlusOutlined />} onClick={() => openAddTarget(pool)}>
-                        {t('admin.provisioningPools.addTarget')}
-                      </Button>
                       <Button size="small" aria-label={`${t('admin.provisioningPools.edit')} ${pool.name}`} icon={<EditOutlined />} onClick={() => openEditPool(pool)} />
                       <Button
                         danger
@@ -341,11 +331,30 @@ export default function ProvisioningPools() {
                     </Space>
                   }
                 >
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Typography.Text type="secondary">{pool.description || protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Typography.Text>
-                    <Typography.Text>
-                      {t('admin.provisioningPools.portRange')}: {pool.port_min && pool.port_max ? `${pool.port_min}-${pool.port_max}` : t('admin.commonAny', { defaultValue: t('common.all') })}
-                    </Typography.Text>
+                  <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                    <div className="provisioning-pool-summary">
+                      <Typography.Text type="secondary">
+                        {pool.description || templateLabel(pool, t('admin.provisioningPools.noTemplate'))}
+                      </Typography.Text>
+                      <Space size={[8, 6]} wrap>
+                        <Tag color={pool.template_id ? 'cyan' : 'default'}>
+                          {t('admin.provisioningPools.template')}: {templateLabel(pool, t('admin.provisioningPools.noTemplate'))}
+                        </Tag>
+                        <Tag>
+                          {t('admin.provisioningPools.nodes')}: {nodeScopeText(pool, t('admin.provisioningPools.allEnabledNodes'), t('admin.provisioningPools.selectedNodeCount'))}
+                        </Tag>
+                        <Tag>{protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Tag>
+                        <Tag>
+                          {t('admin.provisioningPools.portRange')}: {portRangeText(pool, t('admin.commonAny', { defaultValue: t('common.all') }))}
+                        </Tag>
+                        <Tag>
+                          {t('admin.provisioningPools.maxClients')}: {pool.max_clients || t('admin.provisioningPools.unlimited')}
+                        </Tag>
+                        <Tag>
+                          {t('admin.provisioningPools.generatedTargets')}: {(pool.targets ?? []).filter((target) => target.generated).length}
+                        </Tag>
+                      </Space>
+                    </div>
                     {pool.targets?.length ? (
                       <ResponsiveListTable
                         rowKey="id"
@@ -359,6 +368,7 @@ export default function ProvisioningPools() {
                               <Typography.Text type="secondary">
                                 {target.inbound_tag} · {target.protocol || '-'}
                               </Typography.Text>
+                              <Typography.Text>{t('admin.provisioningPools.source')}: {targetSourceText(target, t('admin.provisioningPools.generatedTarget'), t('admin.provisioningPools.manualTarget'))}</Typography.Text>
                               <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
                               <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
                               <Space>
@@ -376,7 +386,7 @@ export default function ProvisioningPools() {
                         )}
                       />
                     ) : (
-                      <Typography.Text type="secondary">{t('admin.provisioningPools.noTargets')}</Typography.Text>
+                      <Typography.Text type="secondary">{t('admin.provisioningPools.noGeneratedTargets')}</Typography.Text>
                     )}
                   </Space>
                 </Card>
@@ -402,12 +412,37 @@ export default function ProvisioningPools() {
         confirmLoading={saving}
         destroyOnHidden
       >
-        <Form form={poolForm} layout="vertical" initialValues={blankPool()} preserve={false}>
+        <Form key={poolFormKey} form={poolForm} layout="vertical" initialValues={poolInitialValues} preserve={false}>
           <Form.Item name="name" label={t('admin.provisioningPools.name')} rules={[{ required: true, whitespace: true, message: t('admin.provisioningPools.name') }]}>
             <Input placeholder={t('admin.provisioningPools.namePlaceholder')} />
           </Form.Item>
           <Form.Item name="description" label={t('admin.provisioningPools.description')}>
             <Input placeholder={t('admin.provisioningPools.descriptionPlaceholder')} />
+          </Form.Item>
+          <Form.Item
+            name="template_id"
+            label={t('admin.provisioningPools.template')}
+            rules={[{ required: true, message: t('admin.provisioningPools.chooseTemplate') }]}
+          >
+            <Select
+              allowClear
+              placeholder={t('admin.provisioningPools.chooseTemplate')}
+              options={templates.map((template) => ({
+                value: template.id,
+                label: `${template.name} · ${template.protocol}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="node_ids" label={t('admin.provisioningPools.nodes')} tooltip={t('admin.provisioningPools.nodesHelp')}>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder={t('admin.provisioningPools.nodesPlaceholder')}
+              options={nodes.map((node) => ({
+                value: node.id,
+                label: `${node.name} · ${node.host}:${node.port}`,
+              }))}
+            />
           </Form.Item>
           <Space align="start" wrap>
             <Form.Item
@@ -432,46 +467,6 @@ export default function ProvisioningPools() {
             >
               <InputNumber min={1} max={65535} precision={0} placeholder="20000" />
             </Form.Item>
-          </Space>
-          <Form.Item name="allowed_protocols_text" label={t('admin.provisioningPools.allowedProtocols')}>
-            <Input placeholder={t('admin.provisioningPools.protocolPlaceholder')} />
-          </Form.Item>
-          <Space>
-            <Form.Item name="enabled" label={t('admin.provisioningPools.enabled')} valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="auto_create" label={t('admin.provisioningPools.autoCreate')} valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          </Space>
-        </Form>
-      </Modal>
-
-      <Modal
-        title={t('admin.provisioningPools.targetCreateTitle')}
-        open={targetModalOpen}
-        onCancel={closeTargetModal}
-        onOk={saveTarget}
-        okText={saving ? t('admin.provisioningPools.saving') : t('admin.provisioningPools.submit')}
-        confirmLoading={saving}
-        okButtonProps={{ disabled: enabledInbounds.length === 0 }}
-        destroyOnHidden
-      >
-        <Form form={targetForm} layout="vertical" preserve={false}>
-          <Form.Item
-            name="inbound_key"
-            label={t('admin.provisioningPools.inbound')}
-            rules={[{ required: true, message: t('admin.provisioningPools.chooseInbound') }]}
-          >
-            <Select
-              placeholder={t('admin.provisioningPools.chooseInbound')}
-              options={enabledInbounds.map((row) => ({
-                value: inboundKey(row),
-                label: `${row.node_name} · ${row.inbound.remark || row.inbound.tag} · :${row.inbound.port} · ${row.inbound.protocol}`,
-              }))}
-            />
-          </Form.Item>
-          <Space align="start" wrap>
             <Form.Item
               name="max_clients"
               label={t('admin.provisioningPools.maxClients')}
@@ -480,17 +475,35 @@ export default function ProvisioningPools() {
             >
               <InputNumber min={0} precision={0} />
             </Form.Item>
-            <Form.Item
-              name="priority"
-              label={t('admin.provisioningPools.priority')}
-              rules={[{ required: true, type: 'number', min: 0, message: t('admin.provisioningPools.priority') }]}
-            >
-              <InputNumber min={0} precision={0} />
-            </Form.Item>
           </Space>
-          <Form.Item name="enabled" label={t('admin.provisioningPools.enabled')} valuePropName="checked">
-            <Switch />
+          <Form.Item name="allowed_protocols" label={t('admin.provisioningPools.allowedProtocols')}>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder={t('admin.provisioningPools.protocolPlaceholder')}
+              options={PROTOCOL_SELECT_OPTIONS}
+            />
           </Form.Item>
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <div className="provisioning-pool-switch-row">
+              <Space direction="vertical" size={2}>
+                <Typography.Text strong>{t('admin.provisioningPools.enabled')}</Typography.Text>
+                <Typography.Text type="secondary">{t('admin.provisioningPools.enabledHelp')}</Typography.Text>
+              </Space>
+              <Form.Item name="enabled" valuePropName="checked" noStyle>
+                <Switch aria-label={t('admin.provisioningPools.enabled')} />
+              </Form.Item>
+            </div>
+            <div className="provisioning-pool-switch-row">
+              <Space direction="vertical" size={2}>
+                <Typography.Text strong>{t('admin.provisioningPools.autoCreate')}</Typography.Text>
+                <Typography.Text type="secondary">{t('admin.provisioningPools.autoCreateHelp')}</Typography.Text>
+              </Space>
+              <Form.Item name="auto_create" valuePropName="checked" noStyle>
+                <Switch aria-label={t('admin.provisioningPools.autoCreate')} />
+              </Form.Item>
+            </div>
+          </Space>
         </Form>
       </Modal>
     </div>

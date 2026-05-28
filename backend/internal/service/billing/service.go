@@ -6,6 +6,7 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/client"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 	"github.com/cern/3xui-dashboard/internal/service/event/payload"
+	"github.com/cern/3xui-dashboard/internal/service/inbound"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
 )
 
@@ -46,6 +48,7 @@ type Service struct {
 	settings *repository.SettingRepo
 	pools    *repository.ProvisioningPoolRepo
 	client   *client.Service
+	inbounds *inbound.Service
 	bus      *event.Bus
 	gateways *payment.Registry
 	log      *slog.Logger
@@ -76,6 +79,12 @@ func (s *Service) SetSettings(settings *repository.SettingRepo) {
 // billing construction stays compact.
 func (s *Service) SetProvisioningPools(pools *repository.ProvisioningPoolRepo) {
 	s.pools = pools
+}
+
+// SetInboundService attaches the real upstream inbound service used
+// by template-driven pools to create inbounds on demand.
+func (s *Service) SetInboundService(inbounds *inbound.Service) {
+	s.inbounds = inbounds
 }
 
 // Gateways exposes the registry so handlers can call EnabledProviders
@@ -132,6 +141,51 @@ func (s *Service) ListPlansForUser(ctx context.Context, userID int64) ([]model.P
 }
 
 // ---- Provisioning pools --------------------------------------------------
+
+func (s *Service) ListInboundTemplates(ctx context.Context) ([]model.InboundTemplate, error) {
+	if s.pools == nil {
+		return nil, fmt.Errorf("%w: provisioning pools are not configured", ErrInvalidInput)
+	}
+	return s.pools.ListTemplates(ctx)
+}
+
+func (s *Service) CreateInboundTemplate(ctx context.Context, t *model.InboundTemplate) (*model.InboundTemplate, error) {
+	if s.pools == nil {
+		return nil, fmt.Errorf("%w: provisioning pools are not configured", ErrInvalidInput)
+	}
+	if err := normalizeInboundTemplate(t); err != nil {
+		return nil, err
+	}
+	if err := s.pools.CreateTemplate(ctx, t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *Service) UpdateInboundTemplate(ctx context.Context, id int64, fields map[string]any) (*model.InboundTemplate, error) {
+	if s.pools == nil {
+		return nil, fmt.Errorf("%w: provisioning pools are not configured", ErrInvalidInput)
+	}
+	fields = normalizeInboundTemplateFields(fields)
+	if err := s.pools.UpdateTemplate(ctx, id, fields); err != nil {
+		return nil, err
+	}
+	updated, err := s.pools.GetTemplate(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return updated, nil
+}
+
+func (s *Service) DeleteInboundTemplate(ctx context.Context, id int64) error {
+	if s.pools == nil {
+		return fmt.Errorf("%w: provisioning pools are not configured", ErrInvalidInput)
+	}
+	return s.pools.DeleteTemplate(ctx, id)
+}
 
 func (s *Service) ListProvisioningPools(ctx context.Context) ([]model.ProvisioningPool, error) {
 	if s.pools == nil {
@@ -800,6 +854,73 @@ func normalizePlanFields(fields map[string]any) map[string]any {
 	return out
 }
 
+func normalizeInboundTemplate(t *model.InboundTemplate) error {
+	t.Name = strings.TrimSpace(t.Name)
+	t.Description = strings.TrimSpace(t.Description)
+	t.Protocol = strings.ToLower(strings.TrimSpace(t.Protocol))
+	t.Remark = strings.TrimSpace(t.Remark)
+	t.Listen = strings.TrimSpace(t.Listen)
+	t.TrafficReset = strings.TrimSpace(t.TrafficReset)
+	if t.TrafficReset == "" {
+		t.TrafficReset = "never"
+	}
+	if t.Name == "" {
+		return fmt.Errorf("%w: template name is required", ErrInvalidInput)
+	}
+	if t.Protocol == "" {
+		return fmt.Errorf("%w: template protocol is required", ErrInvalidInput)
+	}
+	if t.Total < 0 || t.ExpiryTime < 0 {
+		return fmt.Errorf("%w: template total and expiry_time must be >= 0", ErrInvalidInput)
+	}
+	if err := ensureJSONString(&t.Settings, "{}"); err != nil {
+		return fmt.Errorf("%w: settings must be valid JSON: %v", ErrInvalidInput, err)
+	}
+	if err := ensureJSONString(&t.StreamSettings, "{}"); err != nil {
+		return fmt.Errorf("%w: stream_settings must be valid JSON: %v", ErrInvalidInput, err)
+	}
+	if err := ensureJSONString(&t.Sniffing, "{}"); err != nil {
+		return fmt.Errorf("%w: sniffing must be valid JSON: %v", ErrInvalidInput, err)
+	}
+	if t.Protocol != "wireguard" && !settingsHasClients(t.Settings) {
+		return fmt.Errorf("%w: template settings must include clients array", ErrInvalidInput)
+	}
+	return nil
+}
+
+func normalizeInboundTemplateFields(fields map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range fields {
+		switch k {
+		case "name":
+			out[k] = strings.TrimSpace(fmt.Sprint(v))
+		case "description", "remark", "listen", "trafficReset", "traffic_reset":
+			col := k
+			if k == "trafficReset" {
+				col = "traffic_reset"
+			}
+			out[col] = strings.TrimSpace(fmt.Sprint(v))
+		case "protocol":
+			out[k] = strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
+		case "settings", "sniffing":
+			if s, err := normalizedJSONString(fmt.Sprint(v), "{}"); err == nil {
+				out[k] = s
+			}
+		case "streamSettings", "stream_settings":
+			if s, err := normalizedJSONString(fmt.Sprint(v), "{}"); err == nil {
+				out["stream_settings"] = s
+			}
+		case "enabled", "total", "expiryTime", "expiry_time":
+			col := k
+			if k == "expiryTime" {
+				col = "expiry_time"
+			}
+			out[col] = v
+		}
+	}
+	return out
+}
+
 func normalizeProvisioningPool(p *model.ProvisioningPool) error {
 	p.Name = strings.TrimSpace(p.Name)
 	p.Description = strings.TrimSpace(p.Description)
@@ -814,6 +935,10 @@ func normalizeProvisioningPool(p *model.ProvisioningPool) error {
 			return fmt.Errorf("%w: invalid port range", ErrInvalidInput)
 		}
 	}
+	if p.MaxClients < 0 {
+		return fmt.Errorf("%w: max_clients must be >= 0", ErrInvalidInput)
+	}
+	p.NodeIDs = normalizeInt64Slice(p.NodeIDs)
 	return nil
 }
 
@@ -842,7 +967,9 @@ func normalizeProvisioningPoolFields(fields map[string]any) map[string]any {
 			out[k] = strings.TrimSpace(fmt.Sprint(v))
 		case "allowed_protocols":
 			out[k] = normalizeStringSlice(v)
-		case "enabled", "auto_create", "port_min", "port_max":
+		case "node_ids":
+			out[k] = normalizeInt64Slice(v)
+		case "enabled", "auto_create", "port_min", "port_max", "template_id", "max_clients":
 			out[k] = v
 		}
 	}
@@ -961,20 +1088,146 @@ func (s *Service) resolveProvisioningTarget(ctx context.Context, plan *model.Pla
 	if err != nil {
 		return provisioningTarget{}, err
 	}
+	if target, ok := s.firstProvisionableCandidate(ctx, *plan.ProvisioningPoolID, candidates); ok {
+		return target, nil
+	}
+	target, err := s.autoCreateProvisioningTarget(ctx, *plan.ProvisioningPoolID, userID)
+	if err == nil {
+		return target, nil
+	}
+	if !errors.Is(err, ErrNoProvisioningTarget) {
+		return provisioningTarget{}, err
+	}
+	return provisioningTarget{}, fmt.Errorf("%w: pool_id=%d", ErrNoProvisioningTarget, *plan.ProvisioningPoolID)
+}
+
+func (s *Service) firstProvisionableCandidate(ctx context.Context, poolID int64, candidates []repository.Candidate) (provisioningTarget, bool) {
 	for _, c := range candidates {
 		pv := s.checkCandidateProvisionability(ctx, c)
 		if pv.Reason != "" {
 			s.log.Warn("skip provisioning candidate after preflight",
-				slog.Int64("pool_id", *plan.ProvisioningPoolID),
+				slog.Int64("pool_id", poolID),
 				slog.Int64("node_id", pv.Target.NodeID),
 				slog.String("inbound", pv.Target.InboundTag),
 				slog.String("err", pv.Reason),
 			)
 			continue
 		}
-		return pv.Target, nil
+		return pv.Target, true
 	}
-	return provisioningTarget{}, fmt.Errorf("%w: pool_id=%d", ErrNoProvisioningTarget, *plan.ProvisioningPoolID)
+	return provisioningTarget{}, false
+}
+
+func (s *Service) autoCreateProvisioningTarget(ctx context.Context, poolID, userID int64) (provisioningTarget, error) {
+	if s.pools == nil || s.inbounds == nil {
+		return provisioningTarget{}, ErrNoProvisioningTarget
+	}
+	pool, err := s.pools.Get(ctx, poolID)
+	if err != nil {
+		return provisioningTarget{}, err
+	}
+	if pool == nil || !pool.Enabled || !pool.AutoCreate || pool.TemplateID == nil || pool.PortMin == nil || pool.PortMax == nil {
+		return provisioningTarget{}, ErrNoProvisioningTarget
+	}
+	template, err := s.pools.GetTemplate(ctx, *pool.TemplateID)
+	if err != nil {
+		return provisioningTarget{}, err
+	}
+	if template == nil || !template.Enabled {
+		return provisioningTarget{}, ErrNoProvisioningTarget
+	}
+	if !protocolAllowed(template.Protocol, pool.AllowedProtocols) {
+		return provisioningTarget{}, fmt.Errorf("%w: template protocol %q is not allowed by pool", ErrInvalidInput, template.Protocol)
+	}
+	nodes, err := s.pools.ListEnabledNodes(ctx, pool.NodeIDs)
+	if err != nil {
+		return provisioningTarget{}, err
+	}
+	for _, n := range nodes {
+		target, err := s.autoCreateTargetOnNode(ctx, pool, template, n.ID)
+		if err == nil {
+			return target, nil
+		}
+		if !errors.Is(err, ErrNoProvisioningTarget) {
+			s.log.Warn("skip node during provisioning target auto-create",
+				slog.Int64("pool_id", pool.ID),
+				slog.Int64("node_id", n.ID),
+				slog.String("err", err.Error()),
+			)
+		}
+	}
+	return provisioningTarget{}, ErrNoProvisioningTarget
+}
+
+func (s *Service) autoCreateTargetOnNode(ctx context.Context, pool *model.ProvisioningPool, template *model.InboundTemplate, nodeID int64) (provisioningTarget, error) {
+	usedTags := map[string]bool{}
+	usedPorts := map[int]bool{}
+
+	tags, err := s.pools.InboundTagsOnNode(ctx, nodeID)
+	if err != nil {
+		return provisioningTarget{}, err
+	}
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			usedTags[tag] = true
+		}
+	}
+	inbounds, err := s.inbounds.List(ctx, nodeID)
+	if err != nil {
+		return provisioningTarget{}, err
+	}
+	for _, in := range inbounds {
+		if tag := strings.TrimSpace(in.Tag); tag != "" {
+			usedTags[tag] = true
+		}
+		if in.Port > 0 {
+			usedPorts[in.Port] = true
+		}
+	}
+
+	for port := *pool.PortMin; port <= *pool.PortMax; port++ {
+		if usedPorts[port] {
+			continue
+		}
+		tag := generatedInboundTag(pool.ID, port)
+		if usedTags[tag] {
+			continue
+		}
+		in := inbound.BuildTemplateInbound(template, port, tag)
+		created, err := s.inbounds.Add(ctx, nodeID, in)
+		if err != nil {
+			return provisioningTarget{}, err
+		}
+		if created != nil {
+			if created.Tag != "" {
+				tag = created.Tag
+			}
+			if created.Port > 0 {
+				port = created.Port
+			}
+		}
+		target := &model.ProvisioningPoolTarget{
+			PoolID:     pool.ID,
+			TemplateID: pool.TemplateID,
+			NodeID:     nodeID,
+			InboundTag: tag,
+			Protocol:   strings.ToLower(strings.TrimSpace(template.Protocol)),
+			MaxClients: pool.MaxClients,
+			Priority:   100,
+			Enabled:    true,
+			Generated:  true,
+		}
+		if err := s.pools.CreateTarget(ctx, target); err != nil {
+			return provisioningTarget{}, err
+		}
+		return provisioningTarget{NodeID: nodeID, InboundTag: tag}, nil
+	}
+	return provisioningTarget{}, ErrNoProvisioningTarget
+}
+
+func generatedInboundTag(poolID int64, port int) string {
+	return fmt.Sprintf("pool-%d-%d", poolID, port)
 }
 
 func (s *Service) validateProvisioningTargetNow(ctx context.Context, plan *model.Plan, userID int64, target provisioningTarget, excludeOrderID int64) error {
@@ -1056,6 +1309,77 @@ func normalizeStringSlice(v any) model.StringSlice {
 		}
 	}
 	return out
+}
+
+func normalizeInt64Slice(v any) model.Int64Slice {
+	out := model.Int64Slice{}
+	seen := map[int64]bool{}
+	appendOne := func(raw any) {
+		n, ok := numericInt64(raw)
+		if !ok || n <= 0 || seen[n] {
+			return
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	switch vv := v.(type) {
+	case model.Int64Slice:
+		for _, item := range vv {
+			appendOne(item)
+		}
+	case []int64:
+		for _, item := range vv {
+			appendOne(item)
+		}
+	case []int:
+		for _, item := range vv {
+			appendOne(item)
+		}
+	case []any:
+		for _, item := range vv {
+			appendOne(item)
+		}
+	case nil:
+	default:
+		for _, item := range strings.Split(fmt.Sprint(vv), ",") {
+			appendOne(item)
+		}
+	}
+	return out
+}
+
+func ensureJSONString(target *string, fallback string) error {
+	s, err := normalizedJSONString(*target, fallback)
+	if err != nil {
+		return err
+	}
+	*target = s
+	return nil
+}
+
+func normalizedJSONString(raw string, fallback string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		raw = fallback
+	}
+	var v any
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func settingsHasClients(raw string) bool {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return false
+	}
+	_, ok := obj["clients"]
+	return ok
 }
 
 func protocolAllowed(protocol string, allowed model.StringSlice) bool {

@@ -42,6 +42,7 @@ export const BRAND_INFO_KEYS = new Set([
   BRAND_HOMEPAGE_CONTENT_KEY,
 ])
 export const OIDC_KEYS = new Set([
+  'oidc_enabled',
   'oidc_issuer',
   'oidc_client_id',
   'oidc_client_secret',

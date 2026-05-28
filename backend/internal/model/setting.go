@@ -34,6 +34,7 @@ const (
 	SettingBrandHomepageContent        = "brand_homepage_content"
 	SettingNewUserInitialBalanceCents  = "new_user_initial_balance_cents"
 	SettingNewUserPlanIDs              = "new_user_plan_ids"
+	SettingOIDCEnabled                 = "oidc_enabled"
 	SettingOIDCIssuer                  = "oidc_issuer"
 	SettingOIDCClientID                = "oidc_client_id"
 	SettingOIDCClientSecret            = "oidc_client_secret"

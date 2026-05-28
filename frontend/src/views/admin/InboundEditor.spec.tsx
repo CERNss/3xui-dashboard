@@ -70,15 +70,15 @@ describe('InboundEditor', () => {
     renderEditor(makeInbound())
 
     expect(screen.getByRole('dialog', { name: 'Edit inbound inbound-443' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Remark')).toHaveValue('Main inbound')
+    expect(screen.getByLabelText('Inbound name')).toHaveValue('Main inbound')
     expect(screen.getByLabelText('Port')).toHaveValue('443')
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
     expect(screen.getByText('VLESS clients')).toBeInTheDocument()
     expect(screen.getByTitle('none')).toBeInTheDocument()
     expect(screen.getByDisplayValue('alice@example.com')).toBeInTheDocument()
 
-    await user.clear(screen.getByLabelText('Remark'))
-    await user.type(screen.getByLabelText('Remark'), 'Updated inbound')
+    await user.clear(screen.getByLabelText('Inbound name'))
+    await user.type(screen.getByLabelText('Inbound name'), 'Updated inbound')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
@@ -140,7 +140,7 @@ describe('InboundEditor', () => {
     const user = userEvent.setup()
     renderEditor()
 
-    await user.type(screen.getByLabelText('Remark'), 'Create inbound')
+    await user.type(screen.getByLabelText('Inbound name'), 'Create inbound')
     await user.clear(screen.getByLabelText('Port'))
     await user.type(screen.getByLabelText('Port'), '8443')
     await user.click(screen.getByRole('tab', { name: 'Stream' }))
@@ -167,7 +167,7 @@ describe('InboundEditor', () => {
     await user.clear(screen.getByLabelText('Port'))
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
-    expect(await screen.findByText('Remark is required')).toBeInTheDocument()
+    expect(await screen.findByText('Inbound name is required')).toBeInTheDocument()
     expect(await screen.findByText('Port is required')).toBeInTheDocument()
     expect(createMutateAsync).not.toHaveBeenCalled()
   })
@@ -191,7 +191,7 @@ describe('InboundEditor', () => {
     const user = userEvent.setup()
     renderEditor()
 
-    await user.type(screen.getByLabelText('Remark'), 'Advanced inbound')
+    await user.type(screen.getByLabelText('Inbound name'), 'Advanced inbound')
     await user.click(screen.getByRole('tab', { name: 'Advanced' }))
     await user.click(screen.getByLabelText('Override settings JSON'))
     await user.click(screen.getByLabelText('Override streamSettings JSON'))

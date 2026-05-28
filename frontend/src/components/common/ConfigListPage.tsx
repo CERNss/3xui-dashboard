@@ -1,5 +1,7 @@
-import { Space } from 'antd'
+import { Pagination, Space } from 'antd'
+import type { TablePaginationConfig } from 'antd/es/table'
 import type { ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, type EmptyStateProps } from './EmptyState'
 import { PageHeader, type PageHeaderProps } from './PageHeader'
@@ -54,13 +56,50 @@ export function ConfigListPage<T extends object>({
     .join(' ')
   const hasToolbar = Boolean(filters || actions)
   const tablePagination = tableProps.pagination
-  const shouldRenderFooter = Boolean(footer) || tablePagination === false || Boolean(listContent) || (viewport && !showTable)
+  const paginationConfig = useMemo<TablePaginationConfig>(() => {
+    if (tablePagination && typeof tablePagination === 'object') return tablePagination
+    return {}
+  }, [tablePagination])
+  const [currentPage, setCurrentPage] = useState(() => Number(paginationConfig.current ?? paginationConfig.defaultCurrent ?? 1))
+  const [pageSize, setPageSize] = useState(() => Number(paginationConfig.pageSize ?? paginationConfig.defaultPageSize ?? 20))
+  const canPaginateTable = showTable && Boolean(rowKey && mobileCard) && !listContent
+  const showFooterPagination = viewport && canPaginateTable && rows.length > 0
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
+  const shouldRenderFooter = Boolean(footer) || Boolean(listContent) || viewport
   const tableScroll = viewport
     ? {
         ...tableProps.scroll,
         y: tableProps.scroll?.y ?? '100%',
       }
     : tableProps.scroll
+  const paginationPosition: TablePaginationConfig['position'] = ['none']
+
+  useEffect(() => {
+    const nextPageSize = Number(paginationConfig.pageSize ?? paginationConfig.defaultPageSize ?? 20)
+    setPageSize(nextPageSize)
+  }, [paginationConfig.defaultPageSize, paginationConfig.pageSize])
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(Math.max(1, page), pageCount))
+  }, [pageCount])
+
+  const changePage = (page: number, nextPageSize: number) => {
+    setCurrentPage(page)
+    setPageSize(nextPageSize)
+    paginationConfig.onChange?.(page, nextPageSize)
+  }
+
+  const controlledPagination =
+    canPaginateTable && viewport
+      ? {
+          ...paginationConfig,
+          current: currentPage,
+          pageSize,
+          total: paginationConfig.total ?? rows.length,
+          position: paginationPosition,
+          onChange: changePage,
+        }
+      : tablePagination
 
   return (
     <div className={pageClassName} data-component="config-list-page">
@@ -86,6 +125,7 @@ export function ConfigListPage<T extends object>({
             dataSource={rows}
             loading={loading}
             mobileCard={mobileCard}
+            pagination={controlledPagination}
             rowKey={rowKey}
             scroll={tableScroll}
           />
@@ -99,7 +139,24 @@ export function ConfigListPage<T extends object>({
       </div>
       {shouldRenderFooter ? (
         <div className="config-list-page-footer">
-          {footer ?? <span className="config-list-page-footer-summary">{t('common.resultCount', { n: rows.length })}</span>}
+          <div className="config-list-page-footer-content">
+            <div className="config-list-page-footer-main">
+              {footer ?? <span className="config-list-page-footer-summary">{t('common.resultCount', { n: rows.length })}</span>}
+            </div>
+            {showFooterPagination ? (
+              <Pagination
+                className="config-list-page-footer-pagination"
+                current={currentPage}
+                pageSize={pageSize}
+                pageSizeOptions={['10', '20', '50', '100']}
+                showSizeChanger
+                size="small"
+                total={paginationConfig.total ?? rows.length}
+                onChange={changePage}
+                onShowSizeChange={changePage}
+              />
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

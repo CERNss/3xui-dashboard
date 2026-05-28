@@ -151,8 +151,32 @@ CREATE INDEX traffic_samples_client_time   ON traffic_samples (client_email, tak
 CREATE INDEX traffic_samples_inbound_time  ON traffic_samples (node_id, inbound_tag, taken_at) WHERE inbound_tag IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- provisioning_pools — bounded sets of inbounds a plan may auto-provision onto.
--- auto_create_* fields are deliberately inert in the first implementation.
+-- inbound_templates — reusable inbound wire-shapes used by provisioning pools
+-- to create real upstream inbounds on demand.
+-- ---------------------------------------------------------------------------
+CREATE TABLE inbound_templates (
+  id              BIGSERIAL    PRIMARY KEY,
+  name            TEXT         NOT NULL,
+  description     TEXT         NOT NULL DEFAULT '',
+  enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+  protocol        TEXT         NOT NULL,
+  remark          TEXT         NOT NULL DEFAULT '',
+  listen          TEXT         NOT NULL DEFAULT '',
+  total           BIGINT       NOT NULL DEFAULT 0,
+  expiry_time     BIGINT       NOT NULL DEFAULT 0,
+  traffic_reset   TEXT         NOT NULL DEFAULT 'never',
+  settings        TEXT         NOT NULL DEFAULT '{}',
+  stream_settings TEXT         NOT NULL DEFAULT '{}',
+  sniffing        TEXT         NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  CONSTRAINT inbound_templates_name_unique UNIQUE (name),
+  CONSTRAINT inbound_templates_protocol_not_blank_chk CHECK (protocol <> '')
+);
+
+-- ---------------------------------------------------------------------------
+-- provisioning_pools — template-driven automatic inbound allocation pools.
+-- Targets are generated real upstream inbounds, not the primary admin workflow.
 -- ---------------------------------------------------------------------------
 CREATE TABLE provisioning_pools (
   id                BIGSERIAL    PRIMARY KEY,
@@ -160,27 +184,36 @@ CREATE TABLE provisioning_pools (
   description       TEXT         NOT NULL DEFAULT '',
   enabled           BOOLEAN      NOT NULL DEFAULT TRUE,
   auto_create       BOOLEAN      NOT NULL DEFAULT FALSE,
+  template_id       BIGINT       REFERENCES inbound_templates(id) ON DELETE SET NULL,
   port_min          INTEGER,
   port_max          INTEGER,
+  max_clients       INTEGER      NOT NULL DEFAULT 0,
   allowed_protocols JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  node_ids          JSONB        NOT NULL DEFAULT '[]'::jsonb,
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
   CONSTRAINT provisioning_pools_name_unique UNIQUE (name),
+  CONSTRAINT provisioning_pools_max_clients_chk CHECK (max_clients >= 0),
   CONSTRAINT provisioning_pools_port_range_chk CHECK (
     (port_min IS NULL AND port_max IS NULL)
     OR (port_min BETWEEN 1 AND 65535 AND port_max BETWEEN 1 AND 65535 AND port_min <= port_max)
   )
 );
+CREATE INDEX provisioning_pools_template_id
+  ON provisioning_pools (template_id)
+  WHERE template_id IS NOT NULL;
 
 CREATE TABLE provisioning_pool_targets (
   id             BIGSERIAL    PRIMARY KEY,
   pool_id        BIGINT       NOT NULL REFERENCES provisioning_pools(id) ON DELETE CASCADE,
+  template_id    BIGINT       REFERENCES inbound_templates(id) ON DELETE SET NULL,
   node_id        BIGINT       NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   inbound_tag    TEXT         NOT NULL,
   protocol       TEXT         NOT NULL DEFAULT '',
   max_clients    INTEGER      NOT NULL DEFAULT 0,
   priority       INTEGER      NOT NULL DEFAULT 100,
   enabled        BOOLEAN      NOT NULL DEFAULT TRUE,
+  generated      BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
   CONSTRAINT provisioning_pool_targets_max_clients_chk CHECK (max_clients >= 0),

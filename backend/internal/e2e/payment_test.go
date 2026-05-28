@@ -37,8 +37,8 @@ func seedNodeInboundPlan(t *testing.T, h *harness, adminTok string) (planID, nod
 		token:  adminTok,
 		body: map[string]any{
 			"name": "mock-node", "scheme": "http",
-			"host": h.panel.server.Listener.Addr().(*net.TCPAddr).IP.String(),
-			"port": h.panel.server.Listener.Addr().(*net.TCPAddr).Port,
+			"host":      h.panel.server.Listener.Addr().(*net.TCPAddr).IP.String(),
+			"port":      h.panel.server.Listener.Addr().(*net.TCPAddr).Port,
 			"api_token": "x", "enabled": true,
 		},
 	}, nil); got != http.StatusCreated {
@@ -54,7 +54,9 @@ func seedNodeInboundPlan(t *testing.T, h *harness, adminTok string) (planID, nod
 
 	poolID := seedProvisioningPool(t, h, adminTok, nodeID, inboundTag)
 
-	var plan struct{ ID int64 `json:"id"` }
+	var plan struct {
+		ID int64 `json:"id"`
+	}
 	if got := h.do(t, req{
 		method: http.MethodPost, path: "/api/admin/plans", token: adminTok,
 		body: map[string]any{
@@ -73,7 +75,9 @@ func seedNodeInboundPlan(t *testing.T, h *harness, adminTok string) (planID, nod
 // protocol / port-range constraints so any inbound is accepted.
 func seedProvisioningPool(t *testing.T, h *harness, adminTok string, nodeID int64, inboundTag string) int64 {
 	t.Helper()
-	var pool struct{ ID int64 `json:"id"` }
+	var pool struct {
+		ID int64 `json:"id"`
+	}
 	if got := h.do(t, req{
 		method: http.MethodPost, path: "/api/admin/provisioning-pools", token: adminTok,
 		body: map[string]any{
@@ -96,6 +100,81 @@ func seedProvisioningPool(t *testing.T, h *harness, adminTok string, nodeID int6
 		t.Fatalf("create provisioning target: status=%d", got)
 	}
 	return pool.ID
+}
+
+func seedAutoCreatePlan(t *testing.T, h *harness, adminTok string) int64 {
+	t.Helper()
+	u, _ := url.Parse(h.panel.URL())
+	port, _ := strconv.Atoi(u.Port())
+	var node struct {
+		ID int64 `json:"id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/nodes",
+		token:  adminTok,
+		body: map[string]any{
+			"name": "auto-node", "scheme": "http", "host": u.Hostname(),
+			"port": port, "api_token": "x", "enabled": true,
+		},
+	}, &node); got != http.StatusCreated {
+		t.Fatalf("create node: status=%d", got)
+	}
+
+	var tmpl struct {
+		ID int64 `json:"id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/inbound-templates",
+		token:  adminTok,
+		body: map[string]any{
+			"name": "auto-vless", "enabled": true, "protocol": "vless",
+			"remark": "auto-vless", "listen": "",
+			"settings":       `{"clients":[]}`,
+			"streamSettings": `{"network":"tcp","security":"none"}`,
+			"sniffing":       `{}`,
+			"trafficReset":   "never",
+			"total":          0,
+			"expiryTime":     0,
+		},
+	}, &tmpl); got != http.StatusCreated {
+		t.Fatalf("create inbound template: status=%d", got)
+	}
+
+	var pool struct {
+		ID int64 `json:"id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/provisioning-pools",
+		token:  adminTok,
+		body: map[string]any{
+			"name": "auto-pool", "enabled": true, "auto_create": true,
+			"template_id": tmpl.ID, "node_ids": []int64{node.ID},
+			"port_min": 18081, "port_max": 18082, "max_clients": 1,
+			"allowed_protocols": []string{"vless"},
+		},
+	}, &pool); got != http.StatusCreated {
+		t.Fatalf("create auto provisioning pool: status=%d", got)
+	}
+
+	var plan struct {
+		ID int64 `json:"id"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/plans",
+		token:  adminTok,
+		body: map[string]any{
+			"name": "auto-30d", "duration_days": 30, "traffic_limit_bytes": 0,
+			"price_cents": 500, "enabled": true,
+			"provisioning_pool_id": pool.ID,
+		},
+	}, &plan); got != http.StatusCreated {
+		t.Fatalf("create plan: status=%d", got)
+	}
+	return plan.ID
 }
 
 // orderRow reads a single order row directly from the DB so tests
@@ -204,6 +283,55 @@ func TestAlipay_Notify_BadSignature(t *testing.T) {
 	final := orderRow(t, h, order.ID)
 	if final.Status != "payment_pending" {
 		t.Errorf("bad-sig should not advance order; got status %q", final.Status)
+	}
+}
+
+func TestBalancePurchase_AutoCreatesProvisioningTargetFromTemplate(t *testing.T) {
+	h := setupHarness(t)
+	adminTok := h.adminLogin(t)
+	userID, userTok := h.registerUser(t, "auto@example.com", "hunter2hunter2")
+	planID := seedAutoCreatePlan(t, h, adminTok)
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/users/" + itoa(userID) + "/balance",
+		token:  adminTok,
+		body:   map[string]any{"delta_cents": 1000, "note": "auto-create e2e topup"},
+	}, nil); got != http.StatusOK {
+		t.Fatalf("balance adjust: status=%d", got)
+	}
+
+	var order struct {
+		ID                     int64  `json:"id"`
+		Status                 string `json:"status"`
+		ProvisioningInboundTag string `json:"provisioning_inbound_tag"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/user/purchase",
+		token:  userTok,
+		body: map[string]any{
+			"plan_id": planID, "idempotency_key": "auto-create-balance-1",
+		},
+	}, &order); got != http.StatusOK {
+		t.Fatalf("purchase: status=%d", got)
+	}
+	if order.Status != model.OrderStatusCompleted {
+		t.Fatalf("order status = %q, want completed", order.Status)
+	}
+	if order.ProvisioningInboundTag != "pool-1-18081" {
+		t.Fatalf("provisioning tag = %q, want pool-1-18081", order.ProvisioningInboundTag)
+	}
+	clients := h.panel.ClientsOn(order.ProvisioningInboundTag)
+	if len(clients) != 1 {
+		t.Fatalf("clients on generated inbound = %d, want 1", len(clients))
+	}
+
+	var targets []model.ProvisioningPoolTarget
+	if err := h.db.Where("generated = TRUE").Find(&targets).Error; err != nil {
+		t.Fatalf("read generated targets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].InboundTag != order.ProvisioningInboundTag || targets[0].MaxClients != 1 {
+		t.Fatalf("generated targets = %+v", targets)
 	}
 }
 
@@ -350,9 +478,9 @@ func TestPaymentMethods_IncludesAlipayWhenConfigured(t *testing.T) {
 // configures the dashboard to point at it. `bind` finishes the
 // keypair handoff after the harness is built (needs t for keygen).
 type alipayHarness struct {
-	alipay      *mockAlipay
-	privPEM     string
-	opt         harnessOption
+	alipay  *mockAlipay
+	privPEM string
+	opt     harnessOption
 }
 
 func newMockAlipayHarness(t *testing.T) *alipayHarness {
@@ -435,4 +563,3 @@ func postRaw(t *testing.T, h *harness, path string, body []byte, headers map[str
 	raw, _ := io.ReadAll(resp.Body)
 	return rawResponse{StatusCode: resp.StatusCode, body: string(raw)}
 }
-

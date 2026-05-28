@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS plans;
 DROP TABLE IF EXISTS provisioning_pool_targets;
 DROP TABLE IF EXISTS provisioning_pools;
+DROP TABLE IF EXISTS inbound_templates;
 DROP TABLE IF EXISTS traffic_samples;
 DROP TABLE IF EXISTS client_ownerships;
 DROP TABLE IF EXISTS nodes;

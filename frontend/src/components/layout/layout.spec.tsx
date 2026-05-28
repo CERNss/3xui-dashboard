@@ -22,6 +22,7 @@ const translations: Record<string, string> = {
   'nav.admin': 'Admin',
   'nav.audit': 'Audit log',
   'nav.inbounds': 'Inbounds',
+  'nav.inboundTemplates': 'Inbound templates',
   'nav.nodes': 'Nodes',
   'nav.logout': 'Log out',
   'nav.opsMonitor': 'ops',

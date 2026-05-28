@@ -343,84 +343,42 @@ func (r *Remote) wireInbound(in *Inbound) url.Values {
 // ---------------------------------------------------------------------------
 
 // AddClient appends client to the named inbound.
-//
-// Wire shape verified on production fork 2026-05-21:
-//
-//	POST /panel/api/inbounds/addClient
-//	{"id": <inbound_id>, "settings": "<stringified-json {\"clients\":[{...}]}>"}
-//
-// The /clients/* route group was reachable in some MHSanaei/3x-ui
-// source readings but is absent on real deployed forks (verified
-// against node-1 v26.5.9). Don't migrate to /clients/* without
-// running the T1 probe against the actual target node first.
 func (r *Remote) AddClient(ctx context.Context, inboundTag string, client Client) error {
 	id, err := r.resolveTagToID(ctx, inboundTag)
 	if err != nil {
 		return err
 	}
 
-	settings, err := json.Marshal(InboundSettings{Clients: []Client{client}})
-	if err != nil {
-		return fmt.Errorf("marshal client settings: %w", err)
-	}
-	body := map[string]any{"id": id, "settings": string(settings)}
-	_, err = r.doJSON(ctx, "/inbounds/addClient", body)
+	body := struct {
+		Client     Client `json:"client"`
+		InboundIDs []int  `json:"inboundIds"`
+	}{Client: client, InboundIDs: []int{int(id)}}
+	_, err = r.doJSON(ctx, "/clients/add", body)
 	return err
 }
 
-// UpdateClient finds the client by email on the named inbound,
-// resolves its UUID/password/auth, and calls
-// POST /inbounds/updateClient/:clientId.
+// UpdateClient mutates the client identified by Email. The real
+// /clients/update route is keyed by email globally; inboundTag is kept
+// in the interface because callers operate in an inbound-scoped domain.
 func (r *Remote) UpdateClient(ctx context.Context, inboundTag string, client Client) error {
-	in, err := r.GetInbound(ctx, inboundTag)
-	if err != nil {
-		return err
+	_ = inboundTag
+	if client.Email == "" {
+		return fmt.Errorf("UpdateClient: client.Email is required")
 	}
-	var settings InboundSettings
-	if err := json.Unmarshal([]byte(in.Settings), &settings); err != nil {
-		return fmt.Errorf("decode inbound settings: %w", err)
-	}
-
-	var existing *Client
-	for i := range settings.Clients {
-		if settings.Clients[i].Email == client.Email {
-			existing = &settings.Clients[i]
-			break
-		}
-	}
-	if existing == nil {
-		return fmt.Errorf("%w: email=%q on inbound=%q", ErrClientNotFound, client.Email, inboundTag)
-	}
-
-	clientID := existing.ID
-	if clientID == "" {
-		clientID = existing.Password
-	}
-	if clientID == "" {
-		clientID = existing.Auth
-	}
-
-	mergedSettings, err := json.Marshal(InboundSettings{Clients: []Client{client}})
-	if err != nil {
-		return fmt.Errorf("marshal client: %w", err)
-	}
-	body := map[string]any{"id": in.ID, "settings": string(mergedSettings)}
-	_, err = r.doJSON(ctx, "/inbounds/updateClient/"+url.PathEscape(clientID), body)
+	_, err := r.doJSON(ctx, "/clients/update/"+url.PathEscape(client.Email), client)
 	return err
 }
 
 // DeleteClientByEmail removes the named client. Idempotent: returns
 // nil when the client is not present.
 func (r *Remote) DeleteClientByEmail(ctx context.Context, inboundTag, email string) error {
-	id, err := r.resolveTagToID(ctx, inboundTag)
-	if err != nil {
+	if _, err := r.resolveTagToID(ctx, inboundTag); err != nil {
 		if errors.Is(err, ErrTagNotFound) {
 			return nil
 		}
 		return err
 	}
-	path := fmt.Sprintf("/inbounds/%d/delClientByEmail/%s", id, url.PathEscape(email))
-	_, err = r.doPostEmpty(ctx, path)
+	_, err := r.doPostEmpty(ctx, "/clients/del/"+url.PathEscape(email))
 	return err
 }
 
@@ -430,7 +388,7 @@ func (r *Remote) DeleteClientByEmail(ctx context.Context, inboundTag, email stri
 
 // GetClientTraffic returns one client's cumulative usage by email.
 func (r *Remote) GetClientTraffic(ctx context.Context, email string) (*ClientTraffic, error) {
-	env, err := r.doGet(ctx, "/inbounds/getClientTraffics/"+url.PathEscape(email))
+	env, err := r.doGet(ctx, "/clients/traffic/"+url.PathEscape(email))
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +413,7 @@ func (r *Remote) FetchTrafficSnapshot(ctx context.Context) (*TrafficSnapshot, er
 	}
 	snap := &TrafficSnapshot{Inbounds: inbounds}
 
-	if env, err := r.doPostEmpty(ctx, "/inbounds/onlines"); err == nil {
+	if env, err := r.doPostEmpty(ctx, "/clients/onlines"); err == nil {
 		var emails []string
 		if err := env.DecodeObj(&emails); err != nil && !errors.Is(err, ErrEmptyObj) {
 			r.log.Warn("decode /onlines obj", slog.String("error", err.Error()))
@@ -465,7 +423,7 @@ func (r *Remote) FetchTrafficSnapshot(ctx context.Context) (*TrafficSnapshot, er
 		r.log.Warn("/onlines failed; snapshot proceeds without it", slog.String("error", err.Error()))
 	}
 
-	if env, err := r.doPostEmpty(ctx, "/inbounds/lastOnline"); err == nil {
+	if env, err := r.doPostEmpty(ctx, "/clients/lastOnline"); err == nil {
 		var lastOnline map[string]int64
 		if err := env.DecodeObj(&lastOnline); err != nil && !errors.Is(err, ErrEmptyObj) {
 			r.log.Warn("decode /lastOnline obj", slog.String("error", err.Error()))
@@ -480,11 +438,8 @@ func (r *Remote) FetchTrafficSnapshot(ctx context.Context) (*TrafficSnapshot, er
 
 // ResetClientTraffic resets one client's up/down counters.
 func (r *Remote) ResetClientTraffic(ctx context.Context, inboundTag, email string) error {
-	id, err := r.resolveTagToID(ctx, inboundTag)
-	if err != nil {
-		return err
-	}
-	_, err = r.doPostEmpty(ctx, fmt.Sprintf("/inbounds/%d/resetClientTraffic/%s", id, url.PathEscape(email)))
+	_ = inboundTag
+	_, err := r.doPostEmpty(ctx, "/clients/resetTraffic/"+url.PathEscape(email))
 	return err
 }
 
@@ -498,15 +453,27 @@ func (r *Remote) ResetInboundTraffic(ctx context.Context, inboundTag string) err
 	return err
 }
 
-// ResetAllClientTraffics zeroes every client on an inbound via
-// POST /inbounds/resetAllClientTraffics/:id.
+// ResetAllClientTraffics zeroes every client on an inbound.
 func (r *Remote) ResetAllClientTraffics(ctx context.Context, inboundTag string) error {
-	id, err := r.resolveTagToID(ctx, inboundTag)
+	in, err := r.GetInbound(ctx, inboundTag)
 	if err != nil {
 		return err
 	}
-	_, err = r.doPostEmpty(ctx, fmt.Sprintf("/inbounds/resetAllClientTraffics/%d", id))
-	return err
+	var settings InboundSettings
+	if in.Settings != "" {
+		if err := json.Unmarshal([]byte(in.Settings), &settings); err != nil {
+			return fmt.Errorf("decode inbound settings: %w", err)
+		}
+	}
+	for _, c := range settings.Clients {
+		if c.Email == "" {
+			continue
+		}
+		if _, err := r.doPostEmpty(ctx, "/clients/resetTraffic/"+url.PathEscape(c.Email)); err != nil {
+			return fmt.Errorf("reset client traffic %q: %w", c.Email, err)
+		}
+	}
+	return nil
 }
 
 // ResetAllTraffics zeroes every counter on the node.

@@ -143,10 +143,9 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 	clientEmail := user.SubID
 
 	// WireGuard branch: peer mutation goes through the advisory-locked
-	// RMW path, not the unified /clients/add endpoint. The WG flow
-	// also persists the encrypted private key in wg_peers and applies
-	// expiry/limit on the ownership row only (the panel's WG inbound
-	// has no per-peer expiry / traffic-cap concept).
+	// inbound RMW path because the panel has no /clients/* peer endpoint
+	// for WG. The WG flow also persists the encrypted private key in
+	// wg_peers and applies expiry/limit on the ownership row only.
 	if in.IsWireguard() {
 		if s.wg == nil {
 			return nil, fmt.Errorf("provision: WG inbound %q encountered but WG_MASTER_KEY not configured", inboundTag)

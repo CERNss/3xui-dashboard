@@ -332,6 +332,16 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "逗号分隔的套餐 ID。用户没有付款中/已付款/已完成订单前，只能看到并购买这些套餐；空 = 不限制。",
 	},
 	{
+		Key:           model.SettingOIDCEnabled,
+		Label:         "OIDC login enabled",
+		LabelZh:       "启用 OIDC 登录",
+		Type:          "bool",
+		Group:         "other",
+		Default:       "true",
+		Description:   "When false, hides OIDC sign-in even if provider settings are complete.",
+		DescriptionZh: "关闭后即使 Provider 配置完整，也不会在登录页显示 OIDC 入口。",
+	},
+	{
 		Key:           model.SettingOIDCIssuer,
 		Label:         "OIDC issuer",
 		LabelZh:       "OIDC Issuer",
@@ -800,6 +810,8 @@ func (h *SettingHandler) envFallback(key string) string {
 		return strconv.FormatBool(h.cfg.SMTP.Enabled())
 	case model.SettingEmailDomainAllowlist:
 		return strings.Join(h.cfg.EmailDomainAllowlist, ",")
+	case model.SettingOIDCEnabled:
+		return "true"
 	case model.SettingOIDCIssuer:
 		return h.cfg.OIDC.Issuer
 	case model.SettingOIDCClientID:

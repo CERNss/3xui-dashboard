@@ -4,3 +4,4 @@
 // re-export point so views import from '@/api/admin'.
 
 export { adminClient, ADMIN_TOKEN_KEY } from '../client/admin'
+export * from './inboundTemplates'

@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -93,20 +92,26 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 		m.mu.Unlock()
 		writeEnv(w, out)
 
-	case req.URL.Path == "/panel/api/inbounds/onlines":
+	case req.URL.Path == "/panel/api/clients/onlines":
 		writeEnv(w, []string{})
 
-	case req.URL.Path == "/panel/api/inbounds/lastOnline":
+	case req.URL.Path == "/panel/api/clients/lastOnline":
 		writeEnv(w, map[string]int64{})
 
-	case req.URL.Path == "/panel/api/inbounds/addClient":
+	case req.URL.Path == "/panel/api/clients/add":
 		m.handleAddClient(w, req)
 
-	case strings.HasPrefix(req.URL.Path, "/panel/api/inbounds/updateClient/"):
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/update/"):
 		m.handleUpdateClient(w, req)
 
-	case strings.Contains(req.URL.Path, "/delClientByEmail/"):
-		m.handleDelClientByEmail(w, req)
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/del/"):
+		m.handleDelClient(w, req)
+
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/resetTraffic/"):
+		writeEnv(w, nil)
+
+	case strings.HasPrefix(req.URL.Path, "/panel/api/clients/traffic/"):
+		m.handleClientTraffic(w, req)
 
 	case strings.HasPrefix(req.URL.Path, "/panel/api/inbounds/update/"):
 		m.handleUpdateInbound(w, req)
@@ -120,34 +125,25 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// handleAddClient mirrors the fork's POST /panel/api/inbounds/addClient.
-// Body shape verified on the production fork 2026-05-21:
-//
-//	{"id": <inbound_id>, "settings": "<stringified-json {\"clients\":[{...}]}>"}
+// handleAddClient mirrors POST /panel/api/clients/add.
 func (m *mockPanel) handleAddClient(w http.ResponseWriter, req *http.Request) {
-	body, _ := io.ReadAll(req.Body)
 	var r struct {
-		ID       int64  `json:"id"`
-		Settings string `json:"settings"`
+		Client     runtime.Client `json:"client"`
+		InboundIDs []int          `json:"inboundIds"`
 	}
-	if err := json.Unmarshal(body, &r); err != nil {
+	if err := json.NewDecoder(req.Body).Decode(&r); err != nil {
 		http.Error(w, "bad body", http.StatusBadRequest)
-		return
-	}
-	var s runtime.InboundSettings
-	if err := json.Unmarshal([]byte(r.Settings), &s); err != nil {
-		http.Error(w, "bad inner json", http.StatusBadRequest)
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, in := range m.inbounds {
-		if in.ID != r.ID {
+		if !containsInboundID(r.InboundIDs, in.ID) {
 			continue
 		}
 		var existing runtime.InboundSettings
 		_ = json.Unmarshal([]byte(in.Settings), &existing)
-		existing.Clients = append(existing.Clients, s.Clients...)
+		existing.Clients = append(existing.Clients, r.Client)
 		out, _ := json.Marshal(existing)
 		in.Settings = string(out)
 		break
@@ -155,31 +151,16 @@ func (m *mockPanel) handleAddClient(w http.ResponseWriter, req *http.Request) {
 	writeEnv(w, nil)
 }
 
-// handleUpdateClient mirrors POST /panel/api/inbounds/updateClient/:clientId.
-// Path param is the existing client's UUID/password/auth; body is
-// the same {id, settings} envelope as addClient.
+// handleUpdateClient mirrors POST /panel/api/clients/update/:email.
 func (m *mockPanel) handleUpdateClient(w http.ResponseWriter, req *http.Request) {
-	body, _ := io.ReadAll(req.Body)
-	var r struct {
-		ID       int64  `json:"id"`
-		Settings string `json:"settings"`
-	}
-	if err := json.Unmarshal(body, &r); err != nil {
+	var newClient runtime.Client
+	if err := json.NewDecoder(req.Body).Decode(&newClient); err != nil {
 		writeEnv(w, nil)
 		return
 	}
-	var s runtime.InboundSettings
-	if err := json.Unmarshal([]byte(r.Settings), &s); err != nil || len(s.Clients) == 0 {
-		writeEnv(w, nil)
-		return
-	}
-	newClient := s.Clients[0]
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, in := range m.inbounds {
-		if in.ID != r.ID {
-			continue
-		}
 		var existing runtime.InboundSettings
 		_ = json.Unmarshal([]byte(in.Settings), &existing)
 		for i := range existing.Clients {
@@ -195,15 +176,14 @@ func (m *mockPanel) handleUpdateClient(w http.ResponseWriter, req *http.Request)
 	writeEnv(w, nil)
 }
 
-// handleDelClientByEmail mirrors POST /panel/api/inbounds/:id/delClientByEmail/:email.
-func (m *mockPanel) handleDelClientByEmail(w http.ResponseWriter, req *http.Request) {
+// handleDelClient mirrors POST /panel/api/clients/del/:email.
+func (m *mockPanel) handleDelClient(w http.ResponseWriter, req *http.Request) {
 	parts := strings.Split(req.URL.Path, "/")
-	// "" "panel" "api" "inbounds" "<id>" "delClientByEmail" "<email>"
-	if len(parts) < 7 {
+	if len(parts) < 6 {
 		writeEnv(w, nil)
 		return
 	}
-	email := parts[6]
+	email := parts[5]
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, in := range m.inbounds {
@@ -219,6 +199,36 @@ func (m *mockPanel) handleDelClientByEmail(w http.ResponseWriter, req *http.Requ
 		existing.Clients = filtered
 		out, _ := json.Marshal(existing)
 		in.Settings = string(out)
+	}
+	writeEnv(w, nil)
+}
+
+func (m *mockPanel) handleClientTraffic(w http.ResponseWriter, req *http.Request) {
+	parts := strings.Split(req.URL.Path, "/")
+	if len(parts) < 6 {
+		writeEnv(w, nil)
+		return
+	}
+	email := parts[5]
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, in := range m.inbounds {
+		var settings runtime.InboundSettings
+		_ = json.Unmarshal([]byte(in.Settings), &settings)
+		for _, c := range settings.Clients {
+			if c.Email == email {
+				writeEnv(w, runtime.ClientTraffic{
+					InboundID:  in.ID,
+					Enable:     c.Enable,
+					Email:      c.Email,
+					UUID:       c.ID,
+					SubID:      c.SubID,
+					ExpiryTime: c.ExpiryTime,
+					Total:      c.TotalGB,
+				})
+				return
+			}
+		}
 	}
 	writeEnv(w, nil)
 }
@@ -280,6 +290,7 @@ func (m *mockPanel) handleAddInbound(w http.ResponseWriter, req *http.Request) {
 		ID:             m.idCount,
 		Tag:            tag,
 		Protocol:       req.FormValue("protocol"),
+		Port:           atoi(req.FormValue("port")),
 		Settings:       req.FormValue("settings"),
 		StreamSettings: req.FormValue("streamSettings"),
 		Sniffing:       req.FormValue("sniffing"),
@@ -312,6 +323,26 @@ func intToStr(n int64) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return n
+		}
+		n = n*10 + int(ch-'0')
+	}
+	return n
+}
+
+func containsInboundID(ids []int, id int64) bool {
+	for _, got := range ids {
+		if int64(got) == id {
+			return true
+		}
+	}
+	return false
 }
 
 func writeEnv(w http.ResponseWriter, obj any) {

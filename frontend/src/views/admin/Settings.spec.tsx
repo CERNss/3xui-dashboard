@@ -64,7 +64,18 @@ beforeEach(() => {
     item({ key: 'traffic_collect_concurrency', label: 'Traffic collection concurrency', group: 'data_collection', type: 'int', value: '8' }),
     item({ key: 'traffic_collect_retry_attempts', label: 'Traffic retry attempts', group: 'data_collection', type: 'int', value: '0' }),
     item({ key: 'public_registration_enabled', label: 'Public registration enabled', group: 'registration', type: 'bool', value: 'true' }),
+    item({ key: 'oidc_enabled', label: 'OIDC login enabled', group: 'other', type: 'bool', value: 'true', has_override: true }),
+    item({ key: 'oidc_display_name', label: 'OIDC display name', group: 'other', type: 'string', value: 'Acme SSO' }),
+    item({ key: 'oidc_client_id', label: 'OIDC client ID', group: 'other', type: 'string', value: 'client-123' }),
+    item({ key: 'oidc_client_secret', label: 'OIDC client secret', group: 'other', type: 'string', value: 'secret-123' }),
     item({ key: 'oidc_issuer', label: 'OIDC issuer', group: 'other', type: 'string', value: 'https://auth.example.test', has_override: true }),
+    item({ key: 'oidc_auth_url', label: 'OIDC auth URL', group: 'other', type: 'string', value: 'https://auth.example.test/oauth/authorize' }),
+    item({ key: 'oidc_token_url', label: 'OIDC token URL', group: 'other', type: 'string', value: 'https://auth.example.test/oauth/token' }),
+    item({ key: 'oidc_userinfo_url', label: 'OIDC userinfo URL', group: 'other', type: 'string', value: 'https://auth.example.test/userinfo' }),
+    item({ key: 'oidc_jwks_url', label: 'OIDC JWKS URL', group: 'other', type: 'string', value: 'https://auth.example.test/jwks' }),
+    item({ key: 'oidc_scopes', label: 'OIDC scopes', group: 'other', type: 'string', value: 'openid,email,profile' }),
+    item({ key: 'oidc_redirect_url', label: 'OIDC redirect URL', group: 'other', type: 'string', value: 'https://dash.example.test/oidc/callback' }),
+    item({ key: 'oidc_icon_url', label: 'OIDC icon URL', group: 'other', type: 'string', value: 'https://auth.example.test/icon.svg' }),
     item({ key: 'new_user_initial_balance_cents', label: 'New-user initial balance', group: 'registration', type: 'int', value: '100' }),
     item({ key: 'smtp_host', label: 'SMTP host', group: 'other', type: 'string', value: 'smtp.example.test' }),
     item({ key: 'brand_title', label: 'Brand title', group: 'other', type: 'string', value: 'Hidden brand row' }),
@@ -138,15 +149,29 @@ describe('Settings', () => {
     expect(container.querySelector('[data-setting-key="oidc_issuer"]')).not.toBeInTheDocument()
   })
 
-  it('keeps registration and OIDC settings on the security auth tab without brand rows', async () => {
+  it('renders registration rows and the composite OIDC form on the security auth tab', async () => {
     const { container } = renderSettings('/admin/settings?tab=securityAuth')
 
     expect(screen.getByRole('heading', { name: 'Security & auth' })).toBeInTheDocument()
     expect(container.querySelector('[data-setting-key="public_registration_enabled"]')).toBeInTheDocument()
-    expect(container.querySelector('[data-setting-key="oidc_issuer"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="oidc_issuer"]')).not.toBeInTheDocument()
+    expect(screen.getByTestId('oidc-settings-panel')).toBeInTheDocument()
     expect(screen.getByLabelText('Public registration enabled')).toHaveValue('true')
-    expect(screen.getByLabelText('OIDC issuer')).toHaveValue('https://auth.example.test')
+    expect(screen.getByLabelText('Issuer URL')).toHaveValue('https://auth.example.test')
+    expect(screen.getByLabelText('Discovery URL')).toHaveValue('https://auth.example.test/.well-known/openid-configuration')
+    expect(screen.getByLabelText('Enable OIDC login')).toBeChecked()
     expect(container.querySelector('[data-setting-key="brand_title"]')).not.toBeInTheDocument()
+  })
+
+  it('saves the composite OIDC form through existing setting keys', async () => {
+    const user = userEvent.setup()
+    renderSettings('/admin/settings?tab=securityAuth')
+
+    await user.clear(screen.getByLabelText('Provider name'))
+    await user.type(screen.getByLabelText('Provider name'), 'New SSO')
+    await user.click(screen.getByRole('button', { name: 'Save OIDC' }))
+
+    await waitFor(() => expect(setMutateAsync).toHaveBeenCalledWith({ key: 'oidc_display_name', value: 'New SSO' }))
   })
 
   it('keeps new-user defaults on the user defaults tab', async () => {

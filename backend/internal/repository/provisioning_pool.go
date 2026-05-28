@@ -23,12 +23,14 @@ func (r *ProvisioningPoolRepo) List(ctx context.Context) ([]model.ProvisioningPo
 	var rows []model.ProvisioningPool
 	if err := r.db.WithContext(ctx).
 		Order("id ASC").
+		Preload("Template").
 		Preload("Targets", func(db *gorm.DB) *gorm.DB {
 			return db.Table("provisioning_pool_targets AS ppt").
-				Select("ppt.*, n.name AS node_name, COUNT(co.id)::int AS used_clients").
+				Select("ppt.*, n.name AS node_name, it.name AS template_name, COUNT(co.id)::int AS used_clients").
 				Joins("LEFT JOIN nodes n ON n.id = ppt.node_id").
+				Joins("LEFT JOIN inbound_templates it ON it.id = ppt.template_id").
 				Joins("LEFT JOIN client_ownerships co ON co.node_id = ppt.node_id AND co.inbound_tag = ppt.inbound_tag AND co.enabled = TRUE").
-				Group("ppt.id, n.name").
+				Group("ppt.id, n.name, it.name").
 				Order("ppt.priority ASC, ppt.id ASC")
 		}).
 		Find(&rows).Error; err != nil {
@@ -40,6 +42,7 @@ func (r *ProvisioningPoolRepo) List(ctx context.Context) ([]model.ProvisioningPo
 func (r *ProvisioningPoolRepo) Get(ctx context.Context, id int64) (*model.ProvisioningPool, error) {
 	var row model.ProvisioningPool
 	if err := r.db.WithContext(ctx).
+		Preload("Template").
 		Preload("Targets", func(db *gorm.DB) *gorm.DB {
 			return db.Order("priority ASC, id ASC")
 		}).
@@ -86,6 +89,85 @@ func (r *ProvisioningPoolRepo) Delete(ctx context.Context, id int64) error {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func (r *ProvisioningPoolRepo) ListTemplates(ctx context.Context) ([]model.InboundTemplate, error) {
+	var rows []model.InboundTemplate
+	if err := r.db.WithContext(ctx).Order("id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("InboundTemplate.List: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *ProvisioningPoolRepo) GetTemplate(ctx context.Context, id int64) (*model.InboundTemplate, error) {
+	var row model.InboundTemplate
+	if err := r.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("InboundTemplate.Get: %w", err)
+	}
+	return &row, nil
+}
+
+func (r *ProvisioningPoolRepo) CreateTemplate(ctx context.Context, t *model.InboundTemplate) error {
+	if err := r.db.WithContext(ctx).Select("*").Omit("ID", "CreatedAt", "UpdatedAt").Create(t).Error; err != nil {
+		return fmt.Errorf("InboundTemplate.Create: %w", err)
+	}
+	return nil
+}
+
+func (r *ProvisioningPoolRepo) UpdateTemplate(ctx context.Context, id int64, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	fields["updated_at"] = time.Now().UTC()
+	res := r.db.WithContext(ctx).
+		Model(&model.InboundTemplate{}).
+		Where("id = ?", id).
+		Updates(fields)
+	if res.Error != nil {
+		return fmt.Errorf("InboundTemplate.Update: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (r *ProvisioningPoolRepo) DeleteTemplate(ctx context.Context, id int64) error {
+	res := r.db.WithContext(ctx).Delete(&model.InboundTemplate{}, id)
+	if res.Error != nil {
+		return fmt.Errorf("InboundTemplate.Delete: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (r *ProvisioningPoolRepo) ListEnabledNodes(ctx context.Context, ids model.Int64Slice) ([]model.Node, error) {
+	var rows []model.Node
+	q := r.db.WithContext(ctx).Where("enabled = TRUE")
+	if len(ids) > 0 {
+		q = q.Where("id IN ?", []int64(ids))
+	}
+	if err := q.Order("id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("ProvisioningPool.ListEnabledNodes: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *ProvisioningPoolRepo) InboundTagsOnNode(ctx context.Context, nodeID int64) ([]string, error) {
+	var tags []string
+	err := r.db.WithContext(ctx).
+		Model(&model.ProvisioningPoolTarget{}).
+		Where("node_id = ?", nodeID).
+		Pluck("inbound_tag", &tags).Error
+	if err != nil {
+		return nil, fmt.Errorf("ProvisioningPool.InboundTagsOnNode: %w", err)
+	}
+	return tags, nil
 }
 
 func (r *ProvisioningPoolRepo) CreateTarget(ctx context.Context, t *model.ProvisioningPoolTarget) error {
@@ -139,6 +221,7 @@ func (r *ProvisioningPoolRepo) DeleteTarget(ctx context.Context, id int64) error
 type Candidate struct {
 	ID               int64
 	PoolID           int64
+	TemplateID        *int64
 	NodeID           int64
 	NodeName         string
 	InboundTag       string
@@ -208,6 +291,7 @@ func (r *ProvisioningPoolRepo) ListCandidatesForUserExcludingOrder(ctx context.C
 		Select(strings.Join([]string{
 			"ppt.id",
 			"ppt.pool_id",
+			"ppt.template_id",
 			"ppt.node_id",
 			"n.name AS node_name",
 			"ppt.inbound_tag",

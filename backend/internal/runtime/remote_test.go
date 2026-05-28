@@ -276,22 +276,14 @@ func TestDeleteClientByEmail_MissingTagIsNoop(t *testing.T) {
 	}
 }
 
-// TestAddClient_UsesInboundsAddClient asserts AddClient hits the
-// real fork route /panel/api/inbounds/addClient with body shape
-// {id, settings: stringified-json}. This was wrongly migrated to
-// /panel/api/clients/add in commit d2598ec (#11) based on outdated
-// MHSanaei/3x-ui source reading; the production fork (verified
-// against node-1 on 2026-05-21) has the /clients/* group absent
-// and the /inbounds/* routes active. Don't migrate again
-// without running the T1 probe on the actual target fork first.
-func TestAddClient_UsesInboundsAddClient(t *testing.T) {
+func TestAddClient_RoutesToClientsAddPath(t *testing.T) {
 	var seenPath string
 	var seenBody []byte
 	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/panel/api/inbounds/list":
 			okEnvelope(w, []Inbound{{ID: 7, Tag: "vless-in"}})
-		case "/panel/api/inbounds/addClient":
+		case "/panel/api/clients/add":
 			seenPath = req.URL.Path
 			seenBody, _ = io.ReadAll(req.Body)
 			okEnvelope(w, nil)
@@ -303,22 +295,22 @@ func TestAddClient_UsesInboundsAddClient(t *testing.T) {
 	if err := r.AddClient(context.Background(), "vless-in", Client{Email: "alice@example.com", ID: "uuid-1"}); err != nil {
 		t.Fatalf("AddClient: %v", err)
 	}
-	if seenPath != "/panel/api/inbounds/addClient" {
-		t.Errorf("AddClient hit %q, want /panel/api/inbounds/addClient", seenPath)
+	if seenPath != "/panel/api/clients/add" {
+		t.Errorf("AddClient hit %q, want /panel/api/clients/add", seenPath)
 	}
 
 	var got struct {
-		ID       int64  `json:"id"`
-		Settings string `json:"settings"`
+		Client     Client `json:"client"`
+		InboundIDs []int  `json:"inboundIds"`
 	}
 	if err := json.Unmarshal(seenBody, &got); err != nil {
 		t.Fatalf("decode body: %v (body=%s)", err, seenBody)
 	}
-	if got.ID != 7 {
-		t.Errorf("id = %d, want 7 (resolved from tag)", got.ID)
+	if got.Client.Email != "alice@example.com" || got.Client.ID != "uuid-1" {
+		t.Errorf("client envelope = %+v, want email/id propagated", got.Client)
 	}
-	if !strings.Contains(got.Settings, `"alice@example.com"`) || !strings.Contains(got.Settings, `"uuid-1"`) {
-		t.Errorf("settings JSON doesn't carry client fields: %q", got.Settings)
+	if len(got.InboundIDs) != 1 || got.InboundIDs[0] != 7 {
+		t.Errorf("inboundIds = %v, want [7]", got.InboundIDs)
 	}
 }
 
@@ -394,7 +386,7 @@ func TestAddClient_404SurfacesPath(t *testing.T) {
 		switch req.URL.Path {
 		case "/panel/api/inbounds/list":
 			okEnvelope(w, []Inbound{{ID: 3, Tag: "vless-in"}})
-		case "/panel/api/inbounds/addClient":
+		case "/panel/api/clients/add":
 			w.WriteHeader(http.StatusNotFound)
 		default:
 			t.Errorf("unexpected path %s", req.URL.Path)
@@ -405,8 +397,8 @@ func TestAddClient_404SurfacesPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected 404 to surface as error, got nil")
 	}
-	if !strings.Contains(err.Error(), "/panel/api/inbounds/addClient") {
-		t.Errorf("error %q does not name the 404'd path /panel/api/inbounds/addClient", err.Error())
+	if !strings.Contains(err.Error(), "/panel/api/clients/add") {
+		t.Errorf("error %q does not name the 404'd path /panel/api/clients/add", err.Error())
 	}
 }
 

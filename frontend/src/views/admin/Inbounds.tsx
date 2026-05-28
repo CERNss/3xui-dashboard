@@ -19,6 +19,7 @@ import {
   useSetInboundEnable,
 } from '@/hooks/queries/admin/inbounds'
 import { useNodesList } from '@/hooks/queries/admin/nodes'
+import { useProvisioningPoolsList } from '@/hooks/queries/admin/provisioningPools'
 import InboundEditor from './InboundEditor'
 import {
   buildClientLink,
@@ -45,8 +46,23 @@ function transportText(row: FleetInbound) {
   return `${row.inbound.protocol} / ${stream.network || 'tcp'} / ${stream.security || 'none'}`
 }
 
+interface InboundSource {
+  type: 'generated' | 'manual'
+  label: string
+  detail?: string
+}
+
+function inboundSourceKey(nodeID: number, tag: string) {
+  return `${nodeID}|${tag}`
+}
+
+function inboundSourceDetail(poolName: string, templateName?: string) {
+  const template = templateName?.trim()
+  return template && template !== poolName ? `${poolName} / ${template}` : poolName
+}
+
 export default function Inbounds() {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const [query, setQuery] = useState('')
   const [protocols, setProtocols] = useState<ProtocolFilter[]>([...PROTOCOL_OPTIONS])
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([])
@@ -55,15 +71,38 @@ export default function Inbounds() {
 
   const fleetQuery = useInboundsFleet()
   const nodesQuery = useNodesList()
+  const poolsQuery = useProvisioningPoolsList()
   const setEnable = useSetInboundEnable()
   const removeInbound = useRemoveInbound()
   const resetInboundTraffic = useResetInboundTraffic()
 
   const rows = useMemo(() => fleetQuery.data?.inbounds ?? [], [fleetQuery.data])
   const nodes = useMemo(() => nodesQuery.data ?? [], [nodesQuery.data])
+  const pools = useMemo(() => poolsQuery.data ?? [], [poolsQuery.data])
+  const isChinese = i18n.resolvedLanguage?.startsWith('zh') || i18n.language.startsWith('zh')
+  const sourceColumnTitle = isChinese ? '来源' : 'Source'
+  const generatedSourceLabel = isChinese ? '池生成' : 'Generated'
+  const manualSourceLabel = isChinese ? '手动' : 'Manual'
+  const sourceByInbound = useMemo(() => {
+    const sources = new Map<string, InboundSource>()
+
+    for (const pool of pools) {
+      for (const target of pool.targets ?? []) {
+        if (!target.generated) continue
+
+        sources.set(inboundSourceKey(target.node_id, target.inbound_tag), {
+          type: 'generated',
+          label: generatedSourceLabel,
+          detail: inboundSourceDetail(pool.name, target.template_name),
+        })
+      }
+    }
+
+    return sources
+  }, [generatedSourceLabel, pools])
   const filtered = useMemo(() => filterInbounds(rows, query, protocols), [protocols, query, rows])
-  const loading = fleetQuery.isLoading || nodesQuery.isLoading
-  const error = fleetQuery.error ?? nodesQuery.error ?? setEnable.error ?? removeInbound.error ?? resetInboundTraffic.error
+  const loading = fleetQuery.isLoading || nodesQuery.isLoading || poolsQuery.isLoading
+  const error = fleetQuery.error ?? nodesQuery.error ?? poolsQuery.error ?? setEnable.error ?? removeInbound.error ?? resetInboundTraffic.error
   const nodeErrors = fleetQuery.data?.node_errors
   const hasNodeErrors = Boolean(nodeErrors && Object.keys(nodeErrors).length)
 
@@ -80,6 +119,7 @@ export default function Inbounds() {
   const refresh = () => {
     fleetQuery.refetch()
     nodesQuery.refetch()
+    poolsQuery.refetch()
   }
 
   const openCreate = () => {
@@ -125,6 +165,19 @@ export default function Inbounds() {
     setQr({ title: `${row.inbound.tag} · ${client.email}`, url })
   }
 
+  const inboundSource = (row: FleetInbound): InboundSource =>
+    sourceByInbound.get(inboundSourceKey(row.node_id, row.inbound.tag)) ?? { type: 'manual', label: manualSourceLabel }
+
+  const renderInboundSource = (row: FleetInbound) => {
+    const source = inboundSource(row)
+    return (
+      <Space size={4} wrap>
+        <Tag color={source.type === 'generated' ? 'blue' : 'default'}>{source.label}</Tag>
+        {source.detail ? <Typography.Text type="secondary">{source.detail}</Typography.Text> : null}
+      </Space>
+    )
+  }
+
   const columns: ColumnsType<FleetInbound> = [
     {
       title: t('admin.inbounds.column.remark'),
@@ -138,6 +191,12 @@ export default function Inbounds() {
           </Typography.Text>
         </Space>
       ),
+    },
+    {
+      title: sourceColumnTitle,
+      key: 'source',
+      width: 180,
+      render: (_value, row) => renderInboundSource(row),
     },
     {
       title: t('admin.inbounds.column.protocol'),
@@ -228,7 +287,7 @@ export default function Inbounds() {
             <Button type="primary" aria-label={t('admin.inbounds.addInbound')} icon={<PlusOutlined />} onClick={openCreate}>
               {t('admin.inbounds.addInbound')}
             </Button>
-            <RefreshButton loading={fleetQuery.isFetching || nodesQuery.isFetching} onClick={refresh} label={t('admin.inbounds.reload')} />
+            <RefreshButton loading={fleetQuery.isFetching || nodesQuery.isFetching || poolsQuery.isFetching} onClick={refresh} label={t('admin.inbounds.reload')} />
           </>
         }
         filters={
@@ -245,12 +304,15 @@ export default function Inbounds() {
             <Tag>{filtered.length} / {rows.length}</Tag>
           </Space>
         }
-        stats={
-          <Space wrap>
-            <Card size="small">{t('admin.inbounds.kpi.sentReceived')}: {formatBytes(stats.up)} / {formatBytes(stats.down)}</Card>
-            <Card size="small">{t('admin.inbounds.kpi.inbounds')}: {rows.length} ({stats.enabled} {t('admin.inbounds.kpi.enabledSuffix')})</Card>
-            <Card size="small">{t('admin.inbounds.kpi.clients')}: {stats.clients}</Card>
-          </Space>
+        footer={
+          <div className="inbounds-list-footer">
+            <span className="config-list-page-footer-summary">{t('common.resultCount', { n: filtered.length })}</span>
+            <Space className="inbounds-list-footer-metrics" size={[12, 4]} wrap>
+              <Typography.Text type="secondary">{t('admin.inbounds.kpi.sentReceived')}: {formatBytes(stats.up)} / {formatBytes(stats.down)}</Typography.Text>
+              <Typography.Text type="secondary">{t('admin.inbounds.kpi.inbounds')}: {rows.length} ({stats.enabled} {t('admin.inbounds.kpi.enabledSuffix')})</Typography.Text>
+              <Typography.Text type="secondary">{t('admin.inbounds.kpi.clients')}: {stats.clients}</Typography.Text>
+            </Space>
+          </div>
         }
         alerts={
           error || hasNodeErrors ? (
@@ -292,6 +354,7 @@ export default function Inbounds() {
                 <Tag>{row.inbound.protocol}</Tag>
               </Space>
               <Typography.Text type="secondary">{row.node_name} #{row.node_id} · {row.inbound.port}</Typography.Text>
+              {renderInboundSource(row)}
               <Typography.Text>{t('admin.inbounds.column.clients')}: {parseClients(row.inbound).length}</Typography.Text>
               <Typography.Text>{t('admin.inbounds.column.traffic')}: {formatBytes(row.inbound.up + row.inbound.down)} / {formatLimit(row.inbound.total, t('admin.stats.unlimited'))}</Typography.Text>
               <Space wrap>

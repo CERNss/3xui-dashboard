@@ -224,7 +224,9 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
 	billingService.SetSettings(settingRepo)
 	billingService.SetProvisioningPools(provisioningPoolRepo)
+	billingService.SetInboundService(inboundService)
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
+	adminhandler.NewInboundTemplateHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewProvisioningPoolHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
 	// Public payment notify endpoints — RSA-signed callbacks from

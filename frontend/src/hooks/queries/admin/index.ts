@@ -1,6 +1,7 @@
 export * from './audit'
 export * from './auth'
 export * from './inbounds'
+export * from './inboundTemplates'
 export * from './nodes'
 export * from './orders'
 export * from './plans'

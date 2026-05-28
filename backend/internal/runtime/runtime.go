@@ -29,11 +29,10 @@ type NodeRuntime interface {
 	SetInboundEnable(ctx context.Context, tag string, enable bool) error
 
 	// ---- Clients ---------------------------------------------------------
-	// AddClient appends client to the named inbound via POST /addClient.
+	// AddClient appends client to the named inbound via /clients/add.
 	AddClient(ctx context.Context, inboundTag string, client Client) error
 	// UpdateClient mutates the client identified by Email on the
-	// named inbound. Implementation resolves the client's UUID/
-	// password via /list and calls /updateClient/:clientId.
+	// named inbound via /clients/update/:email.
 	UpdateClient(ctx context.Context, inboundTag string, client Client) error
 	// DeleteClientByEmail removes the client by its email handle.
 	// Idempotent: a missing client is treated as success.

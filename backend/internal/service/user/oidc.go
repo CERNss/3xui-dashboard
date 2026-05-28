@@ -210,7 +210,13 @@ func (s *Service) effectiveOIDC(ctx context.Context) (config.OIDC, error) {
 	if s.settings == nil {
 		return oidc, nil
 	}
-	var err error
+	enabled, err := s.settings.GetBool(ctx, model.SettingOIDCEnabled, true)
+	if err != nil {
+		return oidc, err
+	}
+	if !enabled {
+		return config.OIDC{}, nil
+	}
 	read := func(key, fallback string) string {
 		if err != nil {
 			return fallback
@@ -301,6 +307,9 @@ func (s *Service) getOIDCProvider(ctx context.Context, providerKey string) (*mod
 	if providerKey == "" {
 		return nil, ErrOIDCProviderRequired
 	}
+	if !s.oidcLoginEnabled(ctx) {
+		return nil, ErrOIDCProviderNotFound
+	}
 	if s.users != nil {
 		if p, err := s.users.GetOIDCProvider(ctx, providerKey); err != nil {
 			return nil, err
@@ -332,6 +341,9 @@ func (s *Service) ensureOIDCProvider(ctx context.Context, p model.OIDCProvider) 
 // state for a user profile. It includes the env/runtime single-provider
 // fallback as "default" until admins move config into oidc_providers.
 func (s *Service) ListOIDCProviders(ctx context.Context, userID int64) ([]OIDCProviderView, error) {
+	if !s.oidcLoginEnabled(ctx) {
+		return []OIDCProviderView{}, nil
+	}
 	seen := map[string]struct{}{}
 	var providers []model.OIDCProvider
 	if s.users != nil {
@@ -379,6 +391,14 @@ func (s *Service) ListOIDCProviders(ctx context.Context, userID int64) ([]OIDCPr
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+func (s *Service) oidcLoginEnabled(ctx context.Context) bool {
+	if s.settings == nil {
+		return true
+	}
+	enabled, err := s.settings.GetBool(ctx, model.SettingOIDCEnabled, true)
+	return err == nil && enabled
 }
 
 // LinkOIDCIdentityToUser links a verified provider identity to an

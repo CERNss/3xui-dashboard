@@ -39,6 +39,7 @@ vi.mock('@/api/portal/auth', () => ({
 
 vi.mock('./views/admin/AuditLog', () => ({ default: () => <h1>Audit Log</h1> }))
 vi.mock('./views/admin/Inbounds', () => ({ default: () => <h1>Inbounds</h1> }))
+vi.mock('./views/admin/InboundTemplates', () => ({ default: () => <h1>Inbound Templates</h1> }))
 vi.mock('./views/admin/Nodes', () => ({ default: () => <h1>Nodes</h1> }))
 vi.mock('./views/admin/OpsMonitor', () => ({ default: () => <h1>Ops Monitor</h1> }))
 vi.mock('./views/admin/Orders', () => ({ default: () => <h1>Orders</h1> }))
@@ -80,6 +81,7 @@ describe('AppRouter', () => {
     ['/admin/ops-monitor', 'Ops Monitor'],
     ['/admin/nodes', 'Nodes'],
     ['/admin/inbounds', 'Inbounds'],
+    ['/admin/inbound-templates', 'Inbound Templates'],
     ['/admin/users', 'Users'],
     ['/admin/plans', 'Plans'],
     ['/admin/provisioning-pools', 'Provisioning Pools'],
