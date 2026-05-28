@@ -1,4 +1,5 @@
 import type { Inbound } from '@/api/admin/inbounds'
+import type { InboundTemplate, InboundTemplateInput } from '@/api/admin/inboundTemplates'
 import type { InboundEditorValues, ProtocolName, SecurityName, TransmissionName } from './types'
 
 const BYTES_PER_GB = 1024 * 1024 * 1024
@@ -348,6 +349,57 @@ function jsonOrFallback(text: string, fallback: unknown) {
     return stringify(JSON.parse(text))
   } catch {
     return stringify(fallback)
+  }
+}
+
+/**
+ * Hydrate an InboundTemplate into the InboundEditorValues shape so
+ * the template editor can reuse the inbound-editor's form fields,
+ * tabs, and protocol components. Template doesn't store port / tag /
+ * node — those stay at their blank defaults.
+ */
+export function templateToValues(template: InboundTemplate): InboundEditorValues {
+  const synthetic: Inbound = {
+    id: 0,
+    up: 0,
+    down: 0,
+    allTime: 0,
+    clientStats: [],
+    tag: '',
+    enable: true,
+    remark: template.remark,
+    protocol: template.protocol,
+    listen: template.listen,
+    port: 0,
+    total: template.total,
+    expiryTime: template.expiryTime,
+    trafficReset: template.trafficReset,
+    settings: template.settings,
+    streamSettings: template.streamSettings,
+    sniffing: template.sniffing,
+  }
+  return inboundToValues(synthetic, null)
+}
+
+/**
+ * Serialize an editor form back into the InboundTemplateInput shape.
+ * Templates don't carry port / tag / node — those are runtime
+ * decisions made when the operator creates a real inbound from this
+ * template. Top-level template-only fields (name, description,
+ * enabled) are supplied by the caller and not derived here.
+ */
+export function valuesToTemplateBody(values: InboundEditorValues): Omit<InboundTemplateInput, 'name' | 'description' | 'enabled'> {
+  const body = valuesToInboundBody(values)
+  return {
+    protocol: body.protocol ?? '',
+    remark: (body.remark ?? '').trim(),
+    listen: (body.listen ?? '').trim(),
+    total: body.total ?? 0,
+    expiryTime: body.expiryTime ?? 0,
+    trafficReset: body.trafficReset ?? 'never',
+    settings: body.settings ?? '{}',
+    streamSettings: body.streamSettings ?? '{}',
+    sniffing: body.sniffing ?? '{}',
   }
 }
 

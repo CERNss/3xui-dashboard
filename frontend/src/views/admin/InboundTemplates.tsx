@@ -1,7 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { InboundTemplate, InboundTemplateInput } from '@/api/admin/inboundTemplates'
 import { ConfigListPage, RefreshButton } from '@/components/common'
@@ -11,9 +11,19 @@ import {
   useRemoveInboundTemplate,
   useUpdateInboundTemplate,
 } from '@/hooks/queries/admin/inboundTemplates'
+import { AdvancedJsonForm } from './inbound-editor/AdvancedJsonForm'
+import { blankInboundValues, templateToValues, valuesToTemplateBody } from './inbound-editor/model'
+import { SniffingForm } from './inbound-editor/SniffingForm'
+import { StreamSettingsForm } from './inbound-editor/StreamSettingsForm'
+import { HysteriaProtocol } from './inbound-editor/protocols/HysteriaProtocol'
+import { ShadowsocksProtocol } from './inbound-editor/protocols/ShadowsocksProtocol'
+import { TrojanProtocol } from './inbound-editor/protocols/TrojanProtocol'
+import { VlessProtocol } from './inbound-editor/protocols/VlessProtocol'
+import { VmessProtocol } from './inbound-editor/protocols/VmessProtocol'
+import { WireguardProtocol } from './inbound-editor/protocols/WireguardProtocol'
+import type { InboundEditorValues, ProtocolName } from './inbound-editor/types'
 
 const PROTOCOL_OPTIONS = ['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria'] as const
-type ProtocolName = (typeof PROTOCOL_OPTIONS)[number]
 
 const PROTOCOL_LABELS: Record<ProtocolName, string> = {
   vless: 'VLESS',
@@ -22,116 +32,6 @@ const PROTOCOL_LABELS: Record<ProtocolName, string> = {
   shadowsocks: 'Shadowsocks',
   wireguard: 'WireGuard',
   hysteria: 'Hysteria',
-}
-
-const TRAFFIC_RESET_OPTIONS = ['never', 'daily', 'weekly', 'monthly', 'yearly'] as const
-
-interface TemplateFormValues {
-  name: string
-  description: string
-  enabled: boolean
-  protocol: ProtocolName
-  remark: string
-  listen: string
-  total: number
-  expiryTime: number
-  trafficReset: string
-  settings: string
-  streamSettings: string
-  sniffing: string
-}
-
-function prettyJSON(value: unknown) {
-  return JSON.stringify(value, null, 2)
-}
-
-function parseJSON(value: string, fallback: Record<string, unknown> = {}) {
-  try {
-    return JSON.parse(value || '{}') as Record<string, unknown>
-  } catch {
-    return fallback
-  }
-}
-
-function defaultSettings(protocol: ProtocolName) {
-  if (protocol === 'vless') return { clients: [], decryption: 'none', fallbacks: [] }
-  if (protocol === 'vmess') return { clients: [], disableInsecureEncryption: false }
-  if (protocol === 'trojan') return { clients: [], fallbacks: [] }
-  if (protocol === 'shadowsocks') {
-    return { clients: [], method: 'chacha20-ietf-poly1305', network: 'tcp,udp', password: '' }
-  }
-  if (protocol === 'wireguard') return { clients: [], peers: [], mtu: 1420, secretKey: '', noKernelTun: false }
-  return { clients: [], version: 2, auth: '', obfs: '', up_mbps: 100, down_mbps: 100 }
-}
-
-function defaultStreamSettings(protocol: ProtocolName) {
-  if (protocol === 'hysteria') {
-    return {
-      network: 'hysteria',
-      security: 'tls',
-      tlsSettings: { serverName: '', alpn: ['h3'], allowInsecure: false, certificates: [] },
-      hysteriaSettings: { version: 2, udpIdleTimeout: 60 },
-    }
-  }
-  return { network: 'tcp', security: 'none' }
-}
-
-function blankTemplate(protocol: ProtocolName = 'vless'): TemplateFormValues {
-  return {
-    name: '',
-    description: '',
-    enabled: true,
-    protocol,
-    remark: '',
-    listen: '',
-    total: 0,
-    expiryTime: 0,
-    trafficReset: 'never',
-    settings: prettyJSON(defaultSettings(protocol)),
-    streamSettings: prettyJSON(defaultStreamSettings(protocol)),
-    sniffing: prettyJSON({ enabled: true, destOverride: ['http', 'tls'] }),
-  }
-}
-
-function templateToForm(template: InboundTemplate): TemplateFormValues {
-  const protocol = PROTOCOL_OPTIONS.includes(template.protocol as ProtocolName)
-    ? (template.protocol as ProtocolName)
-    : 'vless'
-  return {
-    name: template.name,
-    description: template.description ?? '',
-    enabled: template.enabled,
-    protocol,
-    remark: template.remark ?? '',
-    listen: template.listen ?? '',
-    total: template.total ?? 0,
-    expiryTime: template.expiryTime ?? 0,
-    trafficReset: template.trafficReset || 'never',
-    settings: template.settings || prettyJSON(defaultSettings(protocol)),
-    streamSettings: template.streamSettings || prettyJSON(defaultStreamSettings(protocol)),
-    sniffing: template.sniffing || prettyJSON({ enabled: true, destOverride: ['http', 'tls'] }),
-  }
-}
-
-function normalizeJSONText(value: string, fallback = '{}') {
-  return JSON.stringify(JSON.parse((value || fallback).trim()))
-}
-
-function formToPayload(values: TemplateFormValues): InboundTemplateInput {
-  return {
-    name: values.name.trim(),
-    description: values.description?.trim() ?? '',
-    enabled: values.enabled,
-    protocol: values.protocol,
-    remark: values.remark?.trim() ?? '',
-    listen: values.listen?.trim() ?? '',
-    total: Math.max(0, Math.round(values.total || 0)),
-    expiryTime: Math.max(0, Math.round(values.expiryTime || 0)),
-    trafficReset: values.trafficReset || 'never',
-    settings: normalizeJSONText(values.settings),
-    streamSettings: normalizeJSONText(values.streamSettings),
-    sniffing: normalizeJSONText(values.sniffing),
-  }
 }
 
 function formatBytes(value: number) {
@@ -150,34 +50,233 @@ function formatExpiry(value: number, never: string) {
   return value ? new Date(value).toLocaleString() : never
 }
 
-function clientsCount(template: InboundTemplate) {
-  const settings = parseJSON(template.settings)
-  return Array.isArray(settings.clients) ? settings.clients.length : 0
-}
-
 function transportText(template: InboundTemplate) {
-  const stream = parseJSON(template.streamSettings)
-  return `${stream.network || 'tcp'} / ${stream.security || 'none'}`
+  try {
+    const stream = JSON.parse(template.streamSettings || '{}') as { network?: string; security?: string }
+    return `${stream.network || 'tcp'} / ${stream.security || 'none'}`
+  } catch {
+    return 'tcp / none'
+  }
 }
 
-function hasClientsArray(value: unknown) {
-  return Boolean(value && typeof value === 'object' && Array.isArray((value as { clients?: unknown }).clients))
+// ---- Editor (Drawer + Tabs) ------------------------------------------------
+
+interface EditorState {
+  open: boolean
+  mode: 'create' | 'edit'
+  source: InboundTemplate | null
 }
+
+interface TemplateMeta {
+  name: string
+  description: string
+  enabled: boolean
+}
+
+function blankMeta(): TemplateMeta {
+  return { name: '', description: '', enabled: true }
+}
+
+function metaFromTemplate(template: InboundTemplate): TemplateMeta {
+  return {
+    name: template.name,
+    description: template.description ?? '',
+    enabled: template.enabled,
+  }
+}
+
+interface TemplateEditorProps {
+  open: boolean
+  mode: 'create' | 'edit'
+  source: InboundTemplate | null
+  onClose: () => void
+  onSaved?: (template: InboundTemplate) => void
+}
+
+function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditorProps) {
+  const { t } = useTranslation()
+  const [form] = Form.useForm<InboundEditorValues>()
+  const [protocol, setProtocol] = useState<ProtocolName>('vless')
+  const [meta, setMeta] = useState<TemplateMeta>(blankMeta)
+  const createTemplate = useCreateInboundTemplate()
+  const updateTemplate = useUpdateInboundTemplate()
+  const busy = createTemplate.isPending || updateTemplate.isPending
+  const error = createTemplate.error ?? updateTemplate.error
+
+  useEffect(() => {
+    if (!open) return
+    if (source && mode === 'edit') {
+      const values = templateToValues(source)
+      form.setFieldsValue(values as unknown as Parameters<typeof form.setFieldsValue>[0])
+      setProtocol(values.protocol)
+      setMeta(metaFromTemplate(source))
+    } else {
+      form.setFieldsValue(blankInboundValues(null) as unknown as Parameters<typeof form.setFieldsValue>[0])
+      setProtocol('vless')
+      setMeta(blankMeta())
+    }
+  }, [form, mode, open, source])
+
+  const save = async () => {
+    if (!meta.name.trim()) {
+      Modal.error({ title: t('admin.inboundTemplates.nameRequired') })
+      return
+    }
+    const validated = await form.validateFields().catch(() => null)
+    if (!validated) return
+    const values = { ...form.getFieldsValue(true), ...validated } as InboundEditorValues
+    const wire = valuesToTemplateBody(values)
+    const payload: InboundTemplateInput = {
+      name: meta.name.trim(),
+      description: meta.description.trim(),
+      enabled: meta.enabled,
+      ...wire,
+    }
+    const result =
+      mode === 'create'
+        ? await createTemplate.mutateAsync(payload)
+        : await updateTemplate.mutateAsync({ id: source!.id, input: payload })
+    onSaved?.(result)
+    onClose()
+  }
+
+  const protocolFields = () => {
+    if (protocol === 'vmess') return <VmessProtocol hideClients />
+    if (protocol === 'trojan') return <TrojanProtocol hideClients />
+    if (protocol === 'shadowsocks') return <ShadowsocksProtocol hideClients />
+    if (protocol === 'wireguard') return <WireguardProtocol hideClients />
+    if (protocol === 'hysteria') return <HysteriaProtocol hideClients />
+    return <VlessProtocol hideClients />
+  }
+
+  const tabs = [
+    {
+      key: 'basic',
+      label: t('admin.inboundEditor.tab.basic'),
+      children: (
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message={t('admin.inboundTemplates.editorHint')}
+          />
+          <Space align="start" wrap>
+            <Form.Item label={t('admin.inboundTemplates.enabled')}>
+              <Switch
+                checked={meta.enabled}
+                aria-label={t('admin.inboundTemplates.enabled')}
+                onChange={(checked) => setMeta((m) => ({ ...m, enabled: checked }))}
+              />
+            </Form.Item>
+            <Form.Item label={t('admin.inboundTemplates.name')} required>
+              <Input
+                value={meta.name}
+                style={{ minWidth: 240 }}
+                placeholder={t('admin.inboundTemplates.namePlaceholder')}
+                onChange={(event) => setMeta((m) => ({ ...m, name: event.target.value }))}
+              />
+            </Form.Item>
+            <Form.Item name="protocol" label={t('admin.inboundEditor.basicProtocol')} rules={[{ required: true }]}>
+              <Select
+                style={{ width: 180 }}
+                onChange={(value) => {
+                  form.setFieldValue('protocol', value)
+                  setProtocol(value)
+                }}
+                options={PROTOCOL_OPTIONS.map((value) => ({ label: PROTOCOL_LABELS[value], value }))}
+              />
+            </Form.Item>
+          </Space>
+          <Form.Item label={t('admin.inboundTemplates.description')}>
+            <Input.TextArea
+              value={meta.description}
+              rows={2}
+              placeholder={t('admin.inboundTemplates.descriptionPlaceholder')}
+              onChange={(event) => setMeta((m) => ({ ...m, description: event.target.value }))}
+            />
+          </Form.Item>
+          {protocol === 'wireguard' ? <Alert type="info" showIcon message={t('admin.inboundEditor.wireguardStreamHidden')} /> : null}
+          {protocol === 'hysteria' ? <Alert type="info" showIcon message={t('admin.inboundEditor.hysteriaStreamFixed')} /> : null}
+          <Space align="start" wrap>
+            <Form.Item name="remark" label={t('admin.inboundTemplates.defaultRemarkLabel')}>
+              <Input placeholder={t('admin.inboundTemplates.defaultRemarkPlaceholder')} />
+            </Form.Item>
+            <Form.Item name="listen" label={t('admin.inboundEditor.basicAddress')}>
+              <Input placeholder={t('admin.inboundEditor.basicAddressPlaceholder')} />
+            </Form.Item>
+            <Form.Item name="total_gb" label={t('admin.inboundEditor.basicTotalGB')}>
+              <InputNumber min={0} step={0.01} />
+            </Form.Item>
+            <Form.Item name="trafficReset" label={t('admin.inboundEditor.basicTrafficReset')}>
+              <Select
+                style={{ width: 160 }}
+                options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({
+                  label: t(`admin.inboundEditor.trafficReset.${value}`),
+                  value,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="expiryTime" label={t('admin.inboundEditor.basicExpiry')}>
+              <Input type="datetime-local" />
+            </Form.Item>
+          </Space>
+        </Space>
+      ),
+    },
+    { key: 'protocol', label: t('admin.inboundEditor.tab.protocol'), children: protocolFields() },
+    ...(protocol === 'wireguard' || protocol === 'hysteria'
+      ? []
+      : [
+          { key: 'stream', label: t('admin.inboundEditor.tab.stream'), children: <StreamSettingsForm /> },
+          { key: 'sniffing', label: t('admin.inboundEditor.tab.sniffing'), children: <SniffingForm /> },
+        ]),
+    { key: 'advanced', label: t('admin.inboundEditor.tab.advanced'), children: <AdvancedJsonForm /> },
+  ]
+
+  return (
+    <Drawer
+      title={mode === 'create' ? t('admin.inboundTemplates.createTitle') : t('admin.inboundTemplates.editTitle', { id: source?.id ?? '' })}
+      open={open}
+      width={920}
+      onClose={onClose}
+      destroyOnClose
+      extra={
+        <Space>
+          <Button onClick={onClose}>{t('admin.inboundEditor.close')}</Button>
+          <Button type="primary" loading={busy} onClick={save}>
+            {mode === 'create' ? t('common.create') : t('common.save')}
+          </Button>
+        </Space>
+      }
+    >
+      {error ? <Alert type="error" showIcon message={t('admin.inboundTemplates.operationFailed')} style={{ marginBottom: 16 }} /> : null}
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={blankInboundValues(null)}
+        onValuesChange={(changed) => {
+          if (changed.protocol) setProtocol(changed.protocol)
+        }}
+      >
+        <Tabs items={tabs} />
+      </Form>
+    </Drawer>
+  )
+}
+
+// ---- List view -------------------------------------------------------------
 
 export default function InboundTemplates() {
   const { t } = useTranslation()
-  const [form] = Form.useForm<TemplateFormValues>()
   const [query, setQuery] = useState('')
   const [protocols, setProtocols] = useState<ProtocolName[]>([...PROTOCOL_OPTIONS])
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<InboundTemplate | null>(null)
+  const [editor, setEditor] = useState<EditorState>({ open: false, mode: 'create', source: null })
 
   const templatesQuery = useInboundTemplatesList()
-  const createTemplate = useCreateInboundTemplate()
   const updateTemplate = useUpdateInboundTemplate()
   const removeTemplate = useRemoveInboundTemplate()
 
-  const templates = templatesQuery.data ?? []
+  const templates = useMemo(() => templatesQuery.data ?? [], [templatesQuery.data])
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const selected = new Set(protocols)
@@ -195,51 +294,14 @@ export default function InboundTemplates() {
   }, [protocols, query, templates])
   const enabledCount = templates.filter((template) => template.enabled).length
   const loading = templatesQuery.isLoading
-  const saving = createTemplate.isPending || updateTemplate.isPending
-  const error = templatesQuery.error ?? createTemplate.error ?? updateTemplate.error ?? removeTemplate.error
-
-  const formInitialValues = editing ? templateToForm(editing) : blankTemplate()
-  const formKey = editing ? `edit-${editing.id}` : 'create'
+  const error = templatesQuery.error ?? updateTemplate.error ?? removeTemplate.error
 
   const refresh = () => {
     templatesQuery.refetch()
   }
 
-  const openCreate = () => {
-    setEditing(null)
-    setModalOpen(true)
-  }
-
-  const openEdit = (template: InboundTemplate) => {
-    setEditing(template)
-    setModalOpen(true)
-  }
-
-  const closeModal = () => {
-    setModalOpen(false)
-    setEditing(null)
-    form.resetFields()
-  }
-
-  const applyProtocolDefaults = (protocol: ProtocolName) => {
-    form.setFieldsValue({
-      settings: prettyJSON(defaultSettings(protocol)),
-      streamSettings: prettyJSON(defaultStreamSettings(protocol)),
-      sniffing: prettyJSON({ enabled: true, destOverride: ['http', 'tls'] }),
-    })
-  }
-
-  const saveTemplate = async () => {
-    const values = await form.validateFields().catch(() => null)
-    if (!values) return
-    const payload = formToPayload(values)
-    if (editing) {
-      await updateTemplate.mutateAsync({ id: editing.id, input: payload })
-    } else {
-      await createTemplate.mutateAsync(payload)
-    }
-    closeModal()
-  }
+  const openCreate = () => setEditor({ open: true, mode: 'create', source: null })
+  const openEdit = (template: InboundTemplate) => setEditor({ open: true, mode: 'edit', source: template })
 
   const toggleTemplate = async (template: InboundTemplate) => {
     await updateTemplate.mutateAsync({ id: template.id, input: { enabled: !template.enabled } })
@@ -253,18 +315,6 @@ export default function InboundTemplates() {
       okButtonProps: { danger: true },
       onOk: () => removeTemplate.mutateAsync(template.id),
     })
-  }
-
-  const jsonValidator = (label: string, requireClients = false) => async (_: unknown, value?: string) => {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse((value || '{}').trim())
-    } catch {
-      throw new Error(t('admin.inboundTemplates.invalidJson', { field: label }))
-    }
-    if (requireClients && !hasClientsArray(parsed)) {
-      throw new Error(t('admin.inboundTemplates.clientsRequired'))
-    }
   }
 
   const columns: ColumnsType<InboundTemplate> = [
@@ -303,14 +353,6 @@ export default function InboundTemplates() {
           </Typography.Text>
         </Space>
       ),
-    },
-    {
-      title: t('admin.inboundTemplates.column.clients'),
-      key: 'clients',
-      align: 'right',
-      className: 'table-cell-number',
-      width: 110,
-      render: (_value, template) => clientsCount(template),
     },
     {
       title: t('admin.inboundTemplates.column.status'),
@@ -408,7 +450,6 @@ export default function InboundTemplates() {
               </Space>
               <Typography.Text type="secondary">{template.description || template.remark || '-'}</Typography.Text>
               <Typography.Text>{t('admin.inboundTemplates.column.limits')}: {formatBytes(template.total)} / {formatExpiry(template.expiryTime, t('admin.inboundTemplates.never'))}</Typography.Text>
-              <Typography.Text>{t('admin.inboundTemplates.column.clients')}: {clientsCount(template)}</Typography.Text>
               <Space wrap>
                 <Switch
                   checked={template.enabled}
@@ -427,95 +468,12 @@ export default function InboundTemplates() {
         )}
       />
 
-      <Modal
-        title={editing ? t('admin.inboundTemplates.editTitle', { id: editing.id }) : t('admin.inboundTemplates.createTitle')}
-        open={modalOpen}
-        width={840}
-        onCancel={closeModal}
-        onOk={saveTemplate}
-        okText={saving ? t('common.saving') : t('common.save')}
-        confirmLoading={saving}
-        destroyOnHidden
-      >
-        <Form key={formKey} form={form} layout="vertical" initialValues={formInitialValues} preserve={false}>
-          <Space align="start" wrap>
-            <Form.Item name="enabled" label={t('admin.inboundTemplates.enabled')} valuePropName="checked">
-              <Switch aria-label={t('admin.inboundTemplates.enabled')} />
-            </Form.Item>
-            <Form.Item name="protocol" label={t('admin.inboundTemplates.protocol')} rules={[{ required: true }]}>
-              <Select
-                style={{ width: 180 }}
-                options={PROTOCOL_OPTIONS.map((protocol) => ({ label: PROTOCOL_LABELS[protocol], value: protocol }))}
-                onChange={(protocol: ProtocolName) => applyProtocolDefaults(protocol)}
-              />
-            </Form.Item>
-          </Space>
-          <Space align="start" wrap style={{ width: '100%' }}>
-            <Form.Item
-              name="name"
-              label={t('admin.inboundTemplates.name')}
-              rules={[{ required: true, whitespace: true, message: t('admin.inboundTemplates.nameRequired') }]}
-            >
-              <Input style={{ minWidth: 240 }} placeholder={t('admin.inboundTemplates.namePlaceholder')} />
-            </Form.Item>
-            <Form.Item name="remark" label={t('admin.inboundTemplates.remark')}>
-              <Input style={{ minWidth: 240 }} placeholder={t('admin.inboundTemplates.remarkPlaceholder')} />
-            </Form.Item>
-            <Form.Item name="listen" label={t('admin.inboundTemplates.listen')}>
-              <Input style={{ minWidth: 180 }} placeholder="0.0.0.0" />
-            </Form.Item>
-          </Space>
-          <Form.Item name="description" label={t('admin.inboundTemplates.description')}>
-            <Input.TextArea rows={2} placeholder={t('admin.inboundTemplates.descriptionPlaceholder')} />
-          </Form.Item>
-          <Space align="start" wrap>
-            <Form.Item
-              name="total"
-              label={t('admin.inboundTemplates.total')}
-              rules={[{ required: true, type: 'number', min: 0, message: t('admin.inboundTemplates.nonNegative') }]}
-            >
-              <InputNumber min={0} precision={0} />
-            </Form.Item>
-            <Form.Item
-              name="expiryTime"
-              label={t('admin.inboundTemplates.expiryTime')}
-              rules={[{ required: true, type: 'number', min: 0, message: t('admin.inboundTemplates.nonNegative') }]}
-            >
-              <InputNumber min={0} precision={0} />
-            </Form.Item>
-            <Form.Item name="trafficReset" label={t('admin.inboundTemplates.trafficReset')} rules={[{ required: true }]}>
-              <Select
-                style={{ width: 160 }}
-                options={TRAFFIC_RESET_OPTIONS.map((value) => ({
-                  label: t(`admin.inboundTemplates.trafficResetOptions.${value}`),
-                  value,
-                }))}
-              />
-            </Form.Item>
-          </Space>
-          <Form.Item
-            name="settings"
-            label={t('admin.inboundTemplates.settings')}
-            rules={[{ required: true }, { validator: jsonValidator(t('admin.inboundTemplates.settings'), true) }]}
-          >
-            <Input.TextArea rows={6} spellCheck={false} />
-          </Form.Item>
-          <Form.Item
-            name="streamSettings"
-            label={t('admin.inboundTemplates.streamSettings')}
-            rules={[{ required: true }, { validator: jsonValidator(t('admin.inboundTemplates.streamSettings')) }]}
-          >
-            <Input.TextArea rows={5} spellCheck={false} />
-          </Form.Item>
-          <Form.Item
-            name="sniffing"
-            label={t('admin.inboundTemplates.sniffing')}
-            rules={[{ required: true }, { validator: jsonValidator(t('admin.inboundTemplates.sniffing')) }]}
-          >
-            <Input.TextArea rows={4} spellCheck={false} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <TemplateEditor
+        open={editor.open}
+        mode={editor.mode}
+        source={editor.source}
+        onClose={() => setEditor((state) => ({ ...state, open: false }))}
+      />
     </div>
   )
 }

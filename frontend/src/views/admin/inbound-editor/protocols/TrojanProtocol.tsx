@@ -2,10 +2,11 @@ import { Alert } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
-export function TrojanProtocol() {
+export function TrojanProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
   return (
     <ProtocolClients
+      hideClients={hideClients}
       title={t('admin.inboundEditor.clients.trojanTitle')}
       fields={[
         { name: 'password', label: 'Password', placeholder: t('admin.inboundEditor.clients.passwordPlaceholder') },

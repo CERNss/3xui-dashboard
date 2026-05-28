@@ -2,10 +2,11 @@ import { Alert, Form, Input, InputNumber, Space, Switch } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
-export function WireguardProtocol() {
+export function WireguardProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
   return (
     <ProtocolClients
+      hideClients={hideClients}
       title={t('admin.inboundEditor.clients.wireguardTitle')}
       addLabel={t('admin.inboundEditor.clients.addPeer')}
       fields={[

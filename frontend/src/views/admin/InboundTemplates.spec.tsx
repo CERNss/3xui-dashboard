@@ -69,9 +69,9 @@ beforeEach(() => {
     },
   ]
   loading = false
-  createTemplateMutateAsync.mockResolvedValue({})
-  updateTemplateMutateAsync.mockResolvedValue({})
-  removeTemplateMutateAsync.mockResolvedValue({})
+  createTemplateMutateAsync.mockReset().mockResolvedValue({})
+  updateTemplateMutateAsync.mockReset().mockResolvedValue({})
+  removeTemplateMutateAsync.mockReset().mockResolvedValue({})
   templatesRefetch.mockReset()
   vi.restoreAllMocks()
   vi.spyOn(window, 'matchMedia').mockImplementation(
@@ -103,31 +103,29 @@ describe('InboundTemplates', () => {
     expect(screen.getByText('1 of 2 enabled')).toBeInTheDocument()
   })
 
-  it('creates templates with protocol select defaults and clients array JSON', async () => {
+  it('opens the tabbed Drawer editor and creates a template', async () => {
     const user = userEvent.setup()
     renderTemplates()
 
     await user.click(screen.getByRole('button', { name: 'New Template' }))
-    const modal = screen.getByRole('dialog', { name: 'New inbound template' })
-    expect(within(modal).queryByRole('textbox', { name: 'Protocol' })).not.toBeInTheDocument()
+    const drawer = await screen.findByRole('dialog', { name: 'New inbound template' })
 
-    const settingsBox = within(modal).getByLabelText('settings') as HTMLTextAreaElement
-    expect(JSON.parse(settingsBox.value).clients).toEqual([])
+    expect(within(drawer).getByRole('tab', { name: 'Basic' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('tab', { name: 'Protocol' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('tab', { name: 'Stream' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('tab', { name: 'Sniffing' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('tab', { name: 'Advanced' })).toBeInTheDocument()
 
-    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: 'Protocol' }))
+    await user.type(within(drawer).getByPlaceholderText('e.g. basic-vless-template'), 'Edge Trojan')
+
+    fireEvent.mouseDown(within(drawer).getByRole('combobox', { name: 'Protocol' }))
     const trojanOption = (await screen.findAllByTitle('Trojan')).find((item) =>
       item.classList.contains('ant-select-item-option'),
     )
     expect(trojanOption).toBeTruthy()
     await user.click(trojanOption as HTMLElement)
-    expect(JSON.parse(settingsBox.value).clients).toEqual([])
-    expect(JSON.parse(settingsBox.value).fallbacks).toEqual([])
 
-    await user.type(within(modal).getByLabelText('Name'), 'Edge Trojan')
-    await user.type(within(modal).getByLabelText('Remark'), 'edge-trojan')
-    await user.clear(within(modal).getByLabelText('Total bytes (0 = unlimited)'))
-    await user.type(within(modal).getByLabelText('Total bytes (0 = unlimited)'), '2048')
-    await user.click(within(modal).getByRole('button', { name: 'Save' }))
+    await user.click(within(drawer).getByRole('button', { name: 'Create' }))
 
     await waitFor(() =>
       expect(createTemplateMutateAsync).toHaveBeenCalledWith(
@@ -135,30 +133,22 @@ describe('InboundTemplates', () => {
           name: 'Edge Trojan',
           enabled: true,
           protocol: 'trojan',
-          remark: 'edge-trojan',
-          total: 2048,
-          expiryTime: 0,
-          trafficReset: 'never',
-          settings: JSON.stringify({ clients: [], fallbacks: [] }),
-          streamSettings: JSON.stringify({ network: 'tcp', security: 'none' }),
         }),
       ),
     )
   })
 
-  it('rejects settings JSON without clients array before creating', async () => {
+  it('blocks save when template name is empty', async () => {
+    const errorSpy = vi.spyOn(Modal, 'error').mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }))
     const user = userEvent.setup()
     renderTemplates()
 
     await user.click(screen.getByRole('button', { name: 'New Template' }))
-    const modal = screen.getByRole('dialog', { name: 'New inbound template' })
+    const drawer = await screen.findByRole('dialog', { name: 'New inbound template' })
 
-    await user.type(within(modal).getByLabelText('Name'), 'Broken Template')
-    await user.clear(within(modal).getByLabelText('settings'))
-    fireEvent.change(within(modal).getByLabelText('settings'), { target: { value: '{"fallbacks":[]}' } })
-    await user.click(within(modal).getByRole('button', { name: 'Save' }))
+    await user.click(within(drawer).getByRole('button', { name: 'Create' }))
 
-    expect(await screen.findByText('settings must include a clients array')).toBeInTheDocument()
+    expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ title: 'Template name is required' }))
     expect(createTemplateMutateAsync).not.toHaveBeenCalled()
   })
 
@@ -183,18 +173,15 @@ describe('InboundTemplates', () => {
     expect(updateTemplateMutateAsync).toHaveBeenCalledWith({ id: 4, input: { enabled: true } })
 
     await user.click(screen.getByRole('button', { name: 'Edit Trojan TLS' }))
-    const modal = screen.getByRole('dialog', { name: 'Edit template #4' })
-    expect(within(modal).getByDisplayValue('Trojan TLS')).toBeInTheDocument()
-    expect(within(modal).getByDisplayValue('tls-template')).toBeInTheDocument()
-    expect(within(modal).getByText('Trojan')).toBeInTheDocument()
+    const drawer = await screen.findByRole('dialog', { name: 'Edit template #4' })
+    expect(within(drawer).getByDisplayValue('Trojan TLS')).toBeInTheDocument()
+    expect(within(drawer).getByDisplayValue('tls-template')).toBeInTheDocument()
 
-    await user.clear(within(modal).getByLabelText('Description'))
-    await user.type(within(modal).getByLabelText('Description'), 'TLS edited')
-    await user.click(within(modal).getByRole('button', { name: 'Save' }))
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(updateTemplateMutateAsync).toHaveBeenCalledWith({
         id: 4,
-        input: expect.objectContaining({ description: 'TLS edited', protocol: 'trojan' }),
+        input: expect.objectContaining({ protocol: 'trojan', name: 'Trojan TLS' }),
       }),
     )
 

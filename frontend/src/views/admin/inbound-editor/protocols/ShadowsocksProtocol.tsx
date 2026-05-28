@@ -2,10 +2,11 @@ import { Form, Input, Select, Space } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
-export function ShadowsocksProtocol() {
+export function ShadowsocksProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
   return (
     <ProtocolClients
+      hideClients={hideClients}
       title={t('admin.inboundEditor.clients.shadowsocksTitle')}
       fields={[
         { name: 'password', label: 'Password', placeholder: t('admin.inboundEditor.clients.passwordPlaceholder') },

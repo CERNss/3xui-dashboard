@@ -18,14 +18,26 @@ interface ProtocolClientsProps {
   fields: FieldConfig[]
   addLabel?: string
   children?: ReactNode
+  /**
+   * When true, the client/peer list section is suppressed and only
+   * the surrounding protocol-level fields (decryption, method,
+   * etc., passed via `children`) render. Used by the inbound
+   * template editor: templates carry the wire shape, not real
+   * clients.
+   */
+  hideClients?: boolean
 }
 
-export function ProtocolClients({ title, name = 'clients', fields, addLabel, children }: ProtocolClientsProps) {
+export function ProtocolClients({ title, name = 'clients', fields, addLabel, children, hideClients }: ProtocolClientsProps) {
   const { t } = useTranslation()
   const initialValue = fields.reduce<Record<string, unknown>>((acc, field) => {
     acc[field.name] = field.defaultValue ?? (field.switch ? true : field.numeric ? 0 : '')
     return acc
   }, {})
+
+  if (hideClients) {
+    return <Space direction="vertical" size={12} style={{ width: '100%' }}>{children}</Space>
+  }
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>

@@ -2,10 +2,11 @@ import { Form, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
-export function VlessProtocol() {
+export function VlessProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
   return (
     <ProtocolClients
+      hideClients={hideClients}
       title={t('admin.inboundEditor.clients.vlessTitle')}
       fields={[
         { name: 'id', label: 'UUID', placeholder: t('admin.inboundEditor.clients.uuidPlaceholder') },

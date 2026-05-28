@@ -2,10 +2,11 @@ import { Form, Input, InputNumber, Select, Space, Switch } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ProtocolClients } from '../ProtocolClients'
 
-export function HysteriaProtocol() {
+export function HysteriaProtocol({ hideClients }: { hideClients?: boolean } = {}) {
   const { t } = useTranslation()
   return (
     <ProtocolClients
+      hideClients={hideClients}
       title={t('admin.inboundEditor.clients.hysteriaTitle')}
       fields={[
         { name: 'auth', label: 'Auth', placeholder: t('admin.inboundEditor.clients.authPlaceholder') },
