@@ -1,12 +1,24 @@
-import { Form, Input, InputNumber, Select, Space, Switch } from 'antd'
+import { ThunderboltOutlined } from '@ant-design/icons'
+import { Button, Form, Input, InputNumber, Select, Space, Switch } from 'antd'
 import { useTranslation } from 'react-i18next'
+import { useGenerateX25519 } from '@/hooks/queries/admin/utils'
 
 export function StreamSettingsForm() {
   const { t } = useTranslation()
+  const form = Form.useFormInstance()
   const network = Form.useWatch('network')
   const security = Form.useWatch('security')
   const httpHeader = Form.useWatch('httpHeader')
   const quicSecurity = Form.useWatch('quicSecurity')
+  const generateX25519 = useGenerateX25519()
+
+  const fillRealityKeypair = async () => {
+    const keypair = await generateX25519.mutateAsync()
+    form.setFieldsValue({
+      realityPrivateKey: keypair.privateKey,
+      realityPublicKey: keypair.publicKey,
+    })
+  }
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -211,6 +223,15 @@ export function StreamSettingsForm() {
           </Form.Item>
           <Form.Item name="realityServerNames" label={t('admin.inboundEditor.stream.serverNames')}>
             <Input placeholder={t('admin.inboundEditor.stream.serverNamesPlaceholder')} />
+          </Form.Item>
+          <Form.Item label={t('admin.inboundEditor.stream.realityKeypair')}>
+            <Button
+              icon={<ThunderboltOutlined />}
+              loading={generateX25519.isPending}
+              onClick={fillRealityKeypair}
+            >
+              {t('admin.inboundEditor.stream.generateKeypair')}
+            </Button>
           </Form.Item>
           <Form.Item name="realityPrivateKey" label={t('admin.inboundEditor.stream.privateKey')}>
             <Input />

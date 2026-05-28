@@ -15,15 +15,30 @@ import { AdvancedJsonForm } from './inbound-editor/AdvancedJsonForm'
 import { blankInboundValues, templateToValues, valuesToTemplateBody } from './inbound-editor/model'
 import { SniffingForm } from './inbound-editor/SniffingForm'
 import { StreamSettingsForm } from './inbound-editor/StreamSettingsForm'
+import { HttpProtocol } from './inbound-editor/protocols/HttpProtocol'
 import { HysteriaProtocol } from './inbound-editor/protocols/HysteriaProtocol'
+import { MixedProtocol } from './inbound-editor/protocols/MixedProtocol'
 import { ShadowsocksProtocol } from './inbound-editor/protocols/ShadowsocksProtocol'
 import { TrojanProtocol } from './inbound-editor/protocols/TrojanProtocol'
+import { TunnelProtocol } from './inbound-editor/protocols/TunnelProtocol'
+import { TunProtocol } from './inbound-editor/protocols/TunProtocol'
 import { VlessProtocol } from './inbound-editor/protocols/VlessProtocol'
 import { VmessProtocol } from './inbound-editor/protocols/VmessProtocol'
 import { WireguardProtocol } from './inbound-editor/protocols/WireguardProtocol'
 import type { InboundEditorValues, ProtocolName } from './inbound-editor/types'
 
-const PROTOCOL_OPTIONS = ['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria'] as const
+const PROTOCOL_OPTIONS = [
+  'vless',
+  'vmess',
+  'trojan',
+  'shadowsocks',
+  'wireguard',
+  'hysteria',
+  'http',
+  'mixed',
+  'tunnel',
+  'tun',
+] as const
 
 const PROTOCOL_LABELS: Record<ProtocolName, string> = {
   vless: 'VLESS',
@@ -32,6 +47,10 @@ const PROTOCOL_LABELS: Record<ProtocolName, string> = {
   shadowsocks: 'Shadowsocks',
   wireguard: 'WireGuard',
   hysteria: 'Hysteria',
+  http: 'HTTP',
+  mixed: 'Mixed',
+  tunnel: 'Tunnel',
+  tun: 'TUN',
 }
 
 function formatBytes(value: number) {
@@ -146,6 +165,10 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
     if (protocol === 'shadowsocks') return <ShadowsocksProtocol hideClients />
     if (protocol === 'wireguard') return <WireguardProtocol hideClients />
     if (protocol === 'hysteria') return <HysteriaProtocol hideClients />
+    if (protocol === 'http') return <HttpProtocol hideClients />
+    if (protocol === 'mixed') return <MixedProtocol hideClients />
+    if (protocol === 'tunnel') return <TunnelProtocol />
+    if (protocol === 'tun') return <TunProtocol />
     return <VlessProtocol hideClients />
   }
 
@@ -224,7 +247,7 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
       ),
     },
     { key: 'protocol', label: t('admin.inboundEditor.tab.protocol'), children: protocolFields() },
-    ...(protocol === 'wireguard' || protocol === 'hysteria'
+    ...(['wireguard', 'hysteria', 'tunnel', 'tun'].includes(protocol)
       ? []
       : [
           { key: 'stream', label: t('admin.inboundEditor.tab.stream'), children: <StreamSettingsForm /> },

@@ -57,6 +57,25 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     hysteriaUpMbps: 100,
     hysteriaDownMbps: 100,
 
+    httpAllowTransparent: false,
+    mixedAuth: 'noauth',
+    mixedUdp: false,
+    mixedUdpIP: '',
+
+    tunnelRewriteAddress: '',
+    tunnelRewritePort: 0,
+    tunnelAllowedNetwork: 'tcp,udp',
+    tunnelPortMap: [],
+    tunnelFollowRedirect: false,
+
+    tunName: 'xray0',
+    tunMtu: 1500,
+    tunGateway: [],
+    tunDns: [],
+    tunUserLevel: 0,
+    tunAutoSystemRoutingTable: [],
+    tunAutoOutboundsInterface: '',
+
     network: 'tcp',
     security: 'none',
     proxyProtocol: false,
@@ -127,7 +146,11 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   values.expiryTime = msToInput(inbound.expiryTime)
 
   const settings = parseJSON(inbound.settings)
-  values.clients = Array.isArray(settings.clients) ? settings.clients : []
+  const clientsFromAccounts =
+    (values.protocol === 'http' || values.protocol === 'mixed') && Array.isArray(settings.accounts)
+      ? settings.accounts
+      : null
+  values.clients = clientsFromAccounts ?? (Array.isArray(settings.clients) ? settings.clients : Array.isArray(settings.peers) ? settings.peers : [])
   values.decryption = settings.decryption ?? 'none'
   values.disableInsecureEncryption = Boolean(settings.disableInsecureEncryption)
   values.ssMethod = settings.method ?? values.ssMethod
@@ -140,6 +163,29 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   values.hysteriaObfs = settings.obfs ?? ''
   values.hysteriaUpMbps = settings.up_mbps ?? settings.upMbps ?? 100
   values.hysteriaDownMbps = settings.down_mbps ?? settings.downMbps ?? 100
+  values.httpAllowTransparent = Boolean(settings.allowTransparent)
+  values.mixedAuth = settings.auth === 'password' ? 'password' : 'noauth'
+  values.mixedUdp = Boolean(settings.udp)
+  values.mixedUdpIP = typeof settings.ip === 'string' ? settings.ip : ''
+  values.tunnelRewriteAddress = settings.rewriteAddress ?? ''
+  values.tunnelRewritePort = Number(settings.rewritePort) || 0
+  values.tunnelAllowedNetwork = (settings.allowedNetwork as InboundEditorValues['tunnelAllowedNetwork']) || 'tcp,udp'
+  values.tunnelPortMap = Array.isArray(settings.portMap)
+    ? settings.portMap.map((entry: { name?: unknown; value?: unknown }) => ({
+        name: typeof entry?.name === 'string' ? entry.name : '',
+        value: typeof entry?.value === 'string' ? entry.value : '',
+      }))
+    : []
+  values.tunnelFollowRedirect = Boolean(settings.followRedirect)
+  values.tunName = typeof settings.name === 'string' ? settings.name : values.tunName
+  values.tunMtu = Number(settings.mtu) || values.tunMtu
+  values.tunGateway = Array.isArray(settings.gateway) ? settings.gateway.filter((item: unknown): item is string => typeof item === 'string') : []
+  values.tunDns = Array.isArray(settings.dns) ? settings.dns.filter((item: unknown): item is string => typeof item === 'string') : []
+  values.tunUserLevel = Number(settings.userLevel) || 0
+  values.tunAutoSystemRoutingTable = Array.isArray(settings.autoSystemRoutingTable)
+    ? settings.autoSystemRoutingTable.filter((item: unknown): item is string => typeof item === 'string')
+    : []
+  values.tunAutoOutboundsInterface = typeof settings.autoOutboundsInterface === 'string' ? settings.autoOutboundsInterface : ''
   values.advSettings = JSON.stringify(settings, null, 2)
 
   const stream = parseJSON(inbound.streamSettings)
@@ -226,6 +272,13 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   return values
 }
 
+function accountsFromClients(values: InboundEditorValues) {
+  return values.clients.map((client) => ({
+    user: typeof client.user === 'string' ? client.user : '',
+    pass: typeof client.pass === 'string' ? client.pass : '',
+  }))
+}
+
 function settingsFromValues(values: InboundEditorValues) {
   if (values.protocol === 'vless') return { clients: values.clients, decryption: values.decryption || 'none', fallbacks: [] }
   if (values.protocol === 'vmess') return { clients: values.clients, disableInsecureEncryption: values.disableInsecureEncryption }
@@ -239,6 +292,41 @@ function settingsFromValues(values: InboundEditorValues) {
       secretKey: values.wireguardSecretKey,
       peers: values.clients,
       noKernelTun: values.wireguardNoKernelTun,
+    }
+  }
+  if (values.protocol === 'http') {
+    return {
+      accounts: accountsFromClients(values),
+      allowTransparent: values.httpAllowTransparent,
+    }
+  }
+  if (values.protocol === 'mixed') {
+    const out: Record<string, unknown> = {
+      accounts: accountsFromClients(values),
+      auth: values.mixedAuth,
+      udp: values.mixedUdp,
+    }
+    if (values.mixedUdp && values.mixedUdpIP) out.ip = values.mixedUdpIP
+    return out
+  }
+  if (values.protocol === 'tunnel') {
+    return {
+      rewriteAddress: values.tunnelRewriteAddress,
+      rewritePort: values.tunnelRewritePort,
+      allowedNetwork: values.tunnelAllowedNetwork,
+      portMap: values.tunnelPortMap.filter((entry) => entry.name || entry.value),
+      followRedirect: values.tunnelFollowRedirect,
+    }
+  }
+  if (values.protocol === 'tun') {
+    return {
+      name: values.tunName,
+      mtu: values.tunMtu,
+      gateway: values.tunGateway.filter(Boolean),
+      dns: values.tunDns.filter(Boolean),
+      userLevel: values.tunUserLevel,
+      autoSystemRoutingTable: values.tunAutoSystemRoutingTable.filter(Boolean),
+      autoOutboundsInterface: values.tunAutoOutboundsInterface,
     }
   }
   return {

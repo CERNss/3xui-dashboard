@@ -8,9 +8,13 @@ import { blankInboundValues, inboundToValues, valuesToInboundBody } from './inbo
 import { SniffingForm } from './inbound-editor/SniffingForm'
 import { StreamSettingsForm } from './inbound-editor/StreamSettingsForm'
 import type { InboundEditorProps, InboundEditorValues, ProtocolName } from './inbound-editor/types'
+import { HttpProtocol } from './inbound-editor/protocols/HttpProtocol'
 import { HysteriaProtocol } from './inbound-editor/protocols/HysteriaProtocol'
+import { MixedProtocol } from './inbound-editor/protocols/MixedProtocol'
 import { ShadowsocksProtocol } from './inbound-editor/protocols/ShadowsocksProtocol'
 import { TrojanProtocol } from './inbound-editor/protocols/TrojanProtocol'
+import { TunnelProtocol } from './inbound-editor/protocols/TunnelProtocol'
+import { TunProtocol } from './inbound-editor/protocols/TunProtocol'
 import { VlessProtocol } from './inbound-editor/protocols/VlessProtocol'
 import { VmessProtocol } from './inbound-editor/protocols/VmessProtocol'
 import { WireguardProtocol } from './inbound-editor/protocols/WireguardProtocol'
@@ -57,6 +61,10 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     if (protocol === 'shadowsocks') return <ShadowsocksProtocol />
     if (protocol === 'wireguard') return <WireguardProtocol />
     if (protocol === 'hysteria') return <HysteriaProtocol />
+    if (protocol === 'http') return <HttpProtocol />
+    if (protocol === 'mixed') return <MixedProtocol />
+    if (protocol === 'tunnel') return <TunnelProtocol />
+    if (protocol === 'tun') return <TunProtocol />
     return <VlessProtocol />
   }
 
@@ -113,7 +121,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
                   form.setFieldValue('protocol', value)
                   setProtocol(value)
                 }}
-                options={['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria'].map((value) => ({
+                options={['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria', 'http', 'mixed', 'tunnel', 'tun'].map((value) => ({
                   label: value,
                   value,
                 }))}
@@ -156,7 +164,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
       ),
     },
     { key: 'protocol', label: t('admin.inboundEditor.tab.protocol'), children: protocolFields() },
-    ...(protocol === 'wireguard' || protocol === 'hysteria'
+    ...(['wireguard', 'hysteria', 'tunnel', 'tun'].includes(protocol)
       ? []
       : [
           { key: 'stream', label: t('admin.inboundEditor.tab.stream'), children: <StreamSettingsForm /> },

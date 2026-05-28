@@ -1,6 +1,16 @@
 import type { Inbound } from '@/api/admin/inbounds'
 
-export type ProtocolName = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'wireguard' | 'hysteria'
+export type ProtocolName =
+  | 'vless'
+  | 'vmess'
+  | 'trojan'
+  | 'shadowsocks'
+  | 'wireguard'
+  | 'hysteria'
+  | 'http'
+  | 'mixed'
+  | 'tunnel'
+  | 'tun'
 export type TransmissionName = 'tcp' | 'ws' | 'grpc' | 'httpupgrade' | 'h2' | 'xhttp' | 'kcp' | 'quic'
 export type SecurityName = 'none' | 'tls' | 'reality'
 
@@ -29,6 +39,25 @@ export interface InboundEditorValues {
   hysteriaObfs: string
   hysteriaUpMbps: number
   hysteriaDownMbps: number
+
+  httpAllowTransparent: boolean
+  mixedAuth: 'noauth' | 'password'
+  mixedUdp: boolean
+  mixedUdpIP: string
+
+  tunnelRewriteAddress: string
+  tunnelRewritePort: number
+  tunnelAllowedNetwork: 'tcp,udp' | 'tcp' | 'udp'
+  tunnelPortMap: Array<{ name: string; value: string }>
+  tunnelFollowRedirect: boolean
+
+  tunName: string
+  tunMtu: number
+  tunGateway: string[]
+  tunDns: string[]
+  tunUserLevel: number
+  tunAutoSystemRoutingTable: string[]
+  tunAutoOutboundsInterface: string
 
   network: TransmissionName
   security: SecurityName

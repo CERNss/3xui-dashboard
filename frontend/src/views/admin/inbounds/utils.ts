@@ -1,7 +1,18 @@
 import type { Client, FleetInbound, Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
 
-export const PROTOCOL_OPTIONS = ['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria'] as const
+export const PROTOCOL_OPTIONS = [
+  'vless',
+  'vmess',
+  'trojan',
+  'shadowsocks',
+  'wireguard',
+  'hysteria',
+  'http',
+  'mixed',
+  'tunnel',
+  'tun',
+] as const
 export type ProtocolFilter = (typeof PROTOCOL_OPTIONS)[number]
 // Inbound settings are backend-owned JSON blobs whose nested shape varies by protocol.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
