@@ -64,11 +64,7 @@ beforeEach(() => {
       name: 'Default Pool',
       description: '',
       enabled: true,
-      auto_create: false,
-      template_id: null,
       allowed_protocols: ['vless'],
-      node_ids: [],
-      max_clients: 0,
       targets: [],
     },
   ]

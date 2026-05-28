@@ -1,7 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Form, Input, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
   ProvisioningPool,
@@ -9,7 +9,6 @@ import type {
   ProvisioningPoolTarget,
 } from '@/api/admin/provisioningPools'
 import { ConfigListPage, EmptyState, RefreshButton, ResponsiveListTable } from '@/components/common'
-import { useInboundTemplatesList } from '@/hooks/queries/admin/inboundTemplates'
 import { useNodesList } from '@/hooks/queries/admin/nodes'
 import {
   useCreateProvisioningPool,
@@ -25,13 +24,7 @@ interface PoolFormValues {
   name: string
   description?: string
   enabled: boolean
-  auto_create: boolean
-  template_id?: number | null
-  port_min?: number | null
-  port_max?: number | null
-  max_clients: number
   allowed_protocols?: string[]
-  node_ids?: number[]
 }
 
 function blankPool(): PoolFormValues {
@@ -39,13 +32,7 @@ function blankPool(): PoolFormValues {
     name: '',
     description: '',
     enabled: true,
-    auto_create: true,
-    template_id: null,
-    port_min: null,
-    port_max: null,
-    max_clients: 0,
     allowed_protocols: [],
-    node_ids: [],
   }
 }
 
@@ -54,13 +41,7 @@ function poolToForm(pool: ProvisioningPool): PoolFormValues {
     name: pool.name,
     description: pool.description ?? '',
     enabled: pool.enabled,
-    auto_create: pool.auto_create,
-    template_id: pool.template_id ?? null,
-    port_min: pool.port_min ?? null,
-    port_max: pool.port_max ?? null,
-    max_clients: pool.max_clients ?? 0,
     allowed_protocols: pool.allowed_protocols ?? [],
-    node_ids: pool.node_ids ?? [],
   }
 }
 
@@ -69,13 +50,7 @@ function formToPoolPayload(values: PoolFormValues): ProvisioningPoolInput {
     name: values.name.trim(),
     description: values.description?.trim() ?? '',
     enabled: values.enabled,
-    auto_create: values.auto_create,
-    template_id: values.template_id ? Number(values.template_id) : null,
-    port_min: values.port_min ? Math.round(values.port_min) : null,
-    port_max: values.port_max ? Math.round(values.port_max) : null,
-    max_clients: Math.max(0, Math.round(values.max_clients ?? 0)),
     allowed_protocols: Array.from(new Set(values.allowed_protocols ?? [])),
-    node_ids: Array.from(new Set((values.node_ids ?? []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))),
   }
 }
 
@@ -95,12 +70,6 @@ const PROTOCOL_SELECT_OPTIONS = PROTOCOL_OPTIONS.map((protocol) => ({
               : 'Trojan',
 }))
 
-function templateLabel(pool: ProvisioningPool, fallback: string) {
-  if (pool.template?.name) return `${pool.template.name} · ${pool.template.protocol}`
-  if (pool.template_id) return `#${pool.template_id}`
-  return fallback
-}
-
 function capacityText(target: ProvisioningPoolTarget, unlimited: string) {
   const used = target.used_clients ?? 0
   return target.max_clients ? `${used} / ${target.max_clients}` : `${used} / ${unlimited}`
@@ -110,21 +79,6 @@ function protocolsText(pool: ProvisioningPool, unlimited: string) {
   return pool.allowed_protocols?.length ? pool.allowed_protocols.join(', ') : unlimited
 }
 
-function nodeScopeText(pool: ProvisioningPool, allNodes: string, countLabel: string) {
-  const count = pool.node_ids?.length ?? 0
-  if (!count) return allNodes
-  return countLabel.replace('{n}', String(count))
-}
-
-function targetSourceText(target: ProvisioningPoolTarget, generated: string, manual: string) {
-  if (target.generated) return target.template_name ? `${generated} · ${target.template_name}` : generated
-  return manual
-}
-
-function portRangeText(pool: ProvisioningPool, anyLabel: string) {
-  return pool.port_min && pool.port_max ? `${pool.port_min}-${pool.port_max}` : anyLabel
-}
-
 export default function ProvisioningPools() {
   const { t } = useTranslation()
   const [poolForm] = Form.useForm<PoolFormValues>()
@@ -132,7 +86,6 @@ export default function ProvisioningPools() {
   const [editingPool, setEditingPool] = useState<ProvisioningPool | null>(null)
 
   const poolsQuery = useProvisioningPoolsList()
-  const templatesQuery = useInboundTemplatesList()
   const nodesQuery = useNodesList()
   const createPool = useCreateProvisioningPool()
   const updatePool = useUpdateProvisioningPool()
@@ -141,13 +94,10 @@ export default function ProvisioningPools() {
   const removeTarget = useRemoveProvisioningPoolTarget()
 
   const pools = poolsQuery.data ?? []
-  const templates = useMemo(() => (templatesQuery.data ?? []).filter((template) => template.enabled), [templatesQuery.data])
-  const nodes = useMemo(() => (nodesQuery.data ?? []).filter((node) => node.enabled), [nodesQuery.data])
-  const loading = poolsQuery.isLoading || templatesQuery.isLoading || nodesQuery.isLoading
+  const loading = poolsQuery.isLoading || nodesQuery.isLoading
   const saving = createPool.isPending || updatePool.isPending
   const error =
     poolsQuery.error ??
-    templatesQuery.error ??
     nodesQuery.error ??
     createPool.error ??
     updatePool.error ??
@@ -157,7 +107,6 @@ export default function ProvisioningPools() {
 
   const refresh = () => {
     poolsQuery.refetch()
-    templatesQuery.refetch()
     nodesQuery.refetch()
   }
 
@@ -220,9 +169,6 @@ export default function ProvisioningPools() {
           <Typography.Text type="secondary">
             {target.inbound_tag} · {target.protocol || '-'}
           </Typography.Text>
-          <Typography.Text type="secondary">
-            {targetSourceText(target, t('admin.provisioningPools.generatedTarget'), t('admin.provisioningPools.manualTarget'))}
-          </Typography.Text>
         </Space>
       ),
     },
@@ -275,14 +221,6 @@ export default function ProvisioningPools() {
     },
   ]
 
-  const portRangeValidator = async () => {
-    const min = poolForm.getFieldValue('port_min') as number | null | undefined
-    const max = poolForm.getFieldValue('port_max') as number | null | undefined
-    if (min && max && min > max) {
-      throw new Error(t('admin.provisioningPools.portRangeInvalid'))
-    }
-  }
-
   return (
     <div>
       <ConfigListPage<ProvisioningPool>
@@ -293,7 +231,7 @@ export default function ProvisioningPools() {
             <Button type="primary" aria-label={t('admin.provisioningPools.add')} icon={<PlusOutlined />} onClick={openCreatePool}>
               {t('admin.provisioningPools.add')}
             </Button>
-            <RefreshButton loading={poolsQuery.isFetching || templatesQuery.isFetching || nodesQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
+            <RefreshButton loading={poolsQuery.isFetching || nodesQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
           </>
         }
         alerts={error ? <Alert type="error" showIcon message={t('admin.provisioningPools.saveFailed')} /> : null}
@@ -314,7 +252,6 @@ export default function ProvisioningPools() {
                         <Tag color={pool.enabled ? 'green' : 'default'}>
                           {pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}
                         </Tag>
-                        {pool.auto_create ? <Tag color="blue">{t('admin.provisioningPools.autoCreate')}</Tag> : null}
                       </Space>
                     </div>
                   }
@@ -333,25 +270,13 @@ export default function ProvisioningPools() {
                 >
                   <Space direction="vertical" size={14} style={{ width: '100%' }}>
                     <div className="provisioning-pool-summary">
-                      <Typography.Text type="secondary">
-                        {pool.description || templateLabel(pool, t('admin.provisioningPools.noTemplate'))}
-                      </Typography.Text>
+                      {pool.description ? (
+                        <Typography.Text type="secondary">{pool.description}</Typography.Text>
+                      ) : null}
                       <Space size={[8, 6]} wrap>
-                        <Tag color={pool.template_id ? 'cyan' : 'default'}>
-                          {t('admin.provisioningPools.template')}: {templateLabel(pool, t('admin.provisioningPools.noTemplate'))}
-                        </Tag>
-                        <Tag>
-                          {t('admin.provisioningPools.nodes')}: {nodeScopeText(pool, t('admin.provisioningPools.allEnabledNodes'), t('admin.provisioningPools.selectedNodeCount'))}
-                        </Tag>
                         <Tag>{protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Tag>
                         <Tag>
-                          {t('admin.provisioningPools.portRange')}: {portRangeText(pool, t('admin.commonAny', { defaultValue: t('common.all') }))}
-                        </Tag>
-                        <Tag>
-                          {t('admin.provisioningPools.maxClients')}: {pool.max_clients || t('admin.provisioningPools.unlimited')}
-                        </Tag>
-                        <Tag>
-                          {t('admin.provisioningPools.generatedTargets')}: {(pool.targets ?? []).filter((target) => target.generated).length}
+                          {t('admin.provisioningPools.targetsCount')}: {(pool.targets ?? []).length}
                         </Tag>
                       </Space>
                     </div>
@@ -368,7 +293,6 @@ export default function ProvisioningPools() {
                               <Typography.Text type="secondary">
                                 {target.inbound_tag} · {target.protocol || '-'}
                               </Typography.Text>
-                              <Typography.Text>{t('admin.provisioningPools.source')}: {targetSourceText(target, t('admin.provisioningPools.generatedTarget'), t('admin.provisioningPools.manualTarget'))}</Typography.Text>
                               <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
                               <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
                               <Space>
@@ -419,63 +343,6 @@ export default function ProvisioningPools() {
           <Form.Item name="description" label={t('admin.provisioningPools.description')}>
             <Input placeholder={t('admin.provisioningPools.descriptionPlaceholder')} />
           </Form.Item>
-          <Form.Item
-            name="template_id"
-            label={t('admin.provisioningPools.template')}
-            rules={[{ required: true, message: t('admin.provisioningPools.chooseTemplate') }]}
-          >
-            <Select
-              allowClear
-              placeholder={t('admin.provisioningPools.chooseTemplate')}
-              options={templates.map((template) => ({
-                value: template.id,
-                label: `${template.name} · ${template.protocol}`,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="node_ids" label={t('admin.provisioningPools.nodes')} tooltip={t('admin.provisioningPools.nodesHelp')}>
-            <Select
-              mode="multiple"
-              allowClear
-              placeholder={t('admin.provisioningPools.nodesPlaceholder')}
-              options={nodes.map((node) => ({
-                value: node.id,
-                label: `${node.name} · ${node.host}:${node.port}`,
-              }))}
-            />
-          </Form.Item>
-          <Space align="start" wrap>
-            <Form.Item
-              name="port_min"
-              label={t('admin.provisioningPools.portMin')}
-              dependencies={['port_max']}
-              rules={[
-                { type: 'number', min: 1, max: 65535, message: t('admin.inboundEditor.errPort') },
-                { validator: portRangeValidator },
-              ]}
-            >
-              <InputNumber min={1} max={65535} precision={0} placeholder="10000" />
-            </Form.Item>
-            <Form.Item
-              name="port_max"
-              label={t('admin.provisioningPools.portMax')}
-              dependencies={['port_min']}
-              rules={[
-                { type: 'number', min: 1, max: 65535, message: t('admin.inboundEditor.errPort') },
-                { validator: portRangeValidator },
-              ]}
-            >
-              <InputNumber min={1} max={65535} precision={0} placeholder="20000" />
-            </Form.Item>
-            <Form.Item
-              name="max_clients"
-              label={t('admin.provisioningPools.maxClients')}
-              tooltip={t('admin.provisioningPools.unlimited')}
-              rules={[{ required: true, type: 'number', min: 0, message: t('admin.provisioningPools.maxClients') }]}
-            >
-              <InputNumber min={0} precision={0} />
-            </Form.Item>
-          </Space>
           <Form.Item name="allowed_protocols" label={t('admin.provisioningPools.allowedProtocols')}>
             <Select
               mode="multiple"
@@ -484,26 +351,15 @@ export default function ProvisioningPools() {
               options={PROTOCOL_SELECT_OPTIONS}
             />
           </Form.Item>
-          <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <div className="provisioning-pool-switch-row">
-              <Space direction="vertical" size={2}>
-                <Typography.Text strong>{t('admin.provisioningPools.enabled')}</Typography.Text>
-                <Typography.Text type="secondary">{t('admin.provisioningPools.enabledHelp')}</Typography.Text>
-              </Space>
-              <Form.Item name="enabled" valuePropName="checked" noStyle>
-                <Switch aria-label={t('admin.provisioningPools.enabled')} />
-              </Form.Item>
-            </div>
-            <div className="provisioning-pool-switch-row">
-              <Space direction="vertical" size={2}>
-                <Typography.Text strong>{t('admin.provisioningPools.autoCreate')}</Typography.Text>
-                <Typography.Text type="secondary">{t('admin.provisioningPools.autoCreateHelp')}</Typography.Text>
-              </Space>
-              <Form.Item name="auto_create" valuePropName="checked" noStyle>
-                <Switch aria-label={t('admin.provisioningPools.autoCreate')} />
-              </Form.Item>
-            </div>
-          </Space>
+          <div className="provisioning-pool-switch-row">
+            <Space direction="vertical" size={2}>
+              <Typography.Text strong>{t('admin.provisioningPools.enabled')}</Typography.Text>
+              <Typography.Text type="secondary">{t('admin.provisioningPools.enabledHelp')}</Typography.Text>
+            </Space>
+            <Form.Item name="enabled" valuePropName="checked" noStyle>
+              <Switch aria-label={t('admin.provisioningPools.enabled')} />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
     </div>

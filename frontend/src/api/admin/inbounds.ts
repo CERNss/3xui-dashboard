@@ -45,6 +45,17 @@ export interface FleetResult {
   node_errors?: Record<number, string>
 }
 
+/**
+ * Body for POST /api/admin/inbounds/nodes/:nodeID.
+ *
+ * Same shape as `Partial<Inbound>` plus an optional `template_id`.
+ * When `template_id` is set the backend ignores body's protocol /
+ * settings / streamSettings / sniffing / total / expiryTime /
+ * trafficReset and pulls them from the named template. Port and tag
+ * still come from the body (the operator chooses them per inbound).
+ */
+export type CreateInboundBody = Partial<Inbound> & { template_id?: number | null }
+
 export const inboundsApi = {
   fleet: () =>
     adminClient.get<FleetResult>('/inbounds').then((r) => r.data),
@@ -54,7 +65,7 @@ export const inboundsApi = {
       .get<Inbound>(`/inbounds/nodes/${nodeID}/${encodeURIComponent(tag)}`)
       .then((r) => r.data),
 
-  create: (nodeID: number, body: Partial<Inbound>) =>
+  create: (nodeID: number, body: CreateInboundBody) =>
     adminClient.post<Inbound>(`/inbounds/nodes/${nodeID}`, body).then((r) => r.data),
 
   update: (nodeID: number, tag: string, body: Partial<Inbound>) =>

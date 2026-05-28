@@ -100,11 +100,7 @@ beforeEach(() => {
       name: 'Retail Pool',
       description: '',
       enabled: true,
-      auto_create: true,
-      template_id: null,
-      max_clients: 0,
       allowed_protocols: ['vless'],
-      node_ids: [7],
       targets: [
         {
           id: 11,
@@ -117,8 +113,6 @@ beforeEach(() => {
           used_clients: 1,
           priority: 100,
           enabled: true,
-          generated: true,
-          template_name: 'VLESS WS TLS',
         },
       ],
     },
@@ -153,8 +147,6 @@ describe('Inbounds', () => {
     expect(screen.getByRole('heading', { name: 'Inbounds' })).toBeInTheDocument()
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(screen.getByText('Main inbound')).toBeInTheDocument()
-    expect(screen.getByText('Generated')).toBeInTheDocument()
-    expect(screen.getByText('Retail Pool / VLESS WS TLS')).toBeInTheDocument()
     expect(screen.getByText(/vless \/ ws \/ tls/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Edit inbound-443' }))
@@ -178,7 +170,6 @@ describe('Inbounds', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     expect(fleetRefetch).toHaveBeenCalledTimes(1)
     expect(nodesRefetch).toHaveBeenCalledTimes(1)
-    expect(poolsRefetch).toHaveBeenCalledTimes(1)
 
     await user.click(screen.getByRole('button', { name: 'Reset traffic inbound-443' }))
     expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ title: 'Reset inbound traffic' }))
@@ -224,30 +215,6 @@ describe('Inbounds', () => {
 
     await user.type(screen.getByLabelText('Search inbounds'), 'shadow')
     expect(screen.getByText('Shadow inbound')).toBeInTheDocument()
-    expect(screen.getByText('Manual')).toBeInTheDocument()
     expect(screen.queryByText('Main inbound')).not.toBeInTheDocument()
-  })
-
-  it('shows generated source in mobile cards', () => {
-    vi.mocked(window.matchMedia).mockImplementation(
-      (query: string) =>
-        ({
-          matches: true,
-          media: query,
-          onchange: null,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
-          dispatchEvent: vi.fn(),
-        }) as unknown as MediaQueryList,
-    )
-
-    renderInbounds()
-
-    const card = screen.getByText('Main inbound').closest('.ant-card')
-    expect(card).toBeTruthy()
-    expect(within(card as HTMLElement).getByText('Generated')).toBeInTheDocument()
-    expect(within(card as HTMLElement).getByText('Retail Pool / VLESS WS TLS')).toBeInTheDocument()
   })
 })

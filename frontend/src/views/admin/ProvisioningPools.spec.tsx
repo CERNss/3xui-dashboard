@@ -68,33 +68,11 @@ beforeEach(() => {
       name: 'Default Pool',
       description: 'Primary pool',
       enabled: true,
-      auto_create: true,
-      template_id: 1,
-      template: {
-        id: 1,
-        name: 'Basic VLESS',
-        description: 'Default template',
-        enabled: true,
-        protocol: 'vless',
-        remark: 'basic-vless',
-        listen: '',
-        total: 0,
-        expiryTime: 0,
-        trafficReset: 'never',
-        settings: JSON.stringify({ clients: [], decryption: 'none' }),
-        streamSettings: JSON.stringify({ network: 'tcp', security: 'none' }),
-        sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls'] }),
-      },
-      port_min: 10000,
-      port_max: 20000,
-      max_clients: 20,
       allowed_protocols: ['vless', 'vmess'],
-      node_ids: [4],
       targets: [
         {
           id: 9,
           pool_id: 2,
-          template_id: 1,
           node_id: 4,
           node_name: 'Node A',
           inbound_tag: 'vless-100',
@@ -103,8 +81,6 @@ beforeEach(() => {
           used_clients: 7,
           priority: 50,
           enabled: true,
-          generated: true,
-          template_name: 'Basic VLESS',
         },
       ],
     },
@@ -165,13 +141,8 @@ describe('ProvisioningPools', () => {
     expect(screen.getByRole('heading', { name: 'Provisioning Pools' })).toBeInTheDocument()
     expect(screen.getByText('Default Pool')).toBeInTheDocument()
     expect(screen.getByText('Primary pool')).toBeInTheDocument()
-    expect(screen.getByText('Ports: 10000-20000')).toBeInTheDocument()
-    expect(screen.getByText('Template: Basic VLESS · vless')).toBeInTheDocument()
-    expect(screen.getByText('Nodes: 1 selected')).toBeInTheDocument()
-    expect(screen.getByText('Generated targets: 1')).toBeInTheDocument()
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(screen.getByText('Node A')).toBeInTheDocument()
-    expect(screen.getByText('Generated · Basic VLESS')).toBeInTheDocument()
     expect(screen.getByText('7 / 20')).toBeInTheDocument()
   })
 
@@ -181,37 +152,18 @@ describe('ProvisioningPools', () => {
 
     await user.click(screen.getByRole('button', { name: 'New Pool' }))
     const modal = screen.getByRole('dialog', { name: 'New provisioning pool' })
-    await user.type(screen.getByLabelText('Name'), 'Fast Pool')
-    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: 'Template' }))
-    await user.click(await screen.findByText('Basic VLESS · vless'))
-    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: /Nodes/ }))
-    await user.click(await screen.findByText('Node A · node-a.example.com:2053'))
-    await user.type(screen.getByLabelText('Port min'), '30000')
-    await user.type(screen.getByLabelText('Port max'), '20000')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => expect(screen.getAllByText('Port minimum must not exceed maximum')).toHaveLength(2))
-    expect(createPoolMutateAsync).not.toHaveBeenCalled()
-
-    await user.clear(screen.getByLabelText('Port max'))
-    await user.type(screen.getByLabelText('Port max'), '40000')
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Allowed protocols' }))
+    await user.type(within(modal).getByLabelText('Name'), 'Fast Pool')
+    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: 'Allowed protocols' }))
     await user.click(await screen.findByTitle('VLESS'))
     await user.click(await screen.findByTitle('VMess'))
-    await user.click(await screen.findByTitle('Trojan'))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(within(modal).getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
       expect(createPoolMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'Fast Pool',
-          auto_create: true,
-          template_id: 1,
-          port_min: 30000,
-          port_max: 40000,
-          max_clients: 0,
-          allowed_protocols: ['vless', 'vmess', 'trojan'],
-          node_ids: [4],
+          enabled: true,
+          allowed_protocols: ['vless', 'vmess'],
         }),
       ),
     )
@@ -231,22 +183,17 @@ describe('ProvisioningPools', () => {
     const modal = screen.getByRole('dialog', { name: 'Edit pool #2' })
     expect(within(modal).getByDisplayValue('Default Pool')).toBeInTheDocument()
     expect(within(modal).getByDisplayValue('Primary pool')).toBeInTheDocument()
-    expect(within(modal).getByDisplayValue('10000')).toBeInTheDocument()
-    expect(within(modal).getByDisplayValue('20000')).toBeInTheDocument()
-    expect(within(modal).getByDisplayValue('20')).toBeInTheDocument()
-    expect(within(modal).getByText('Basic VLESS · vless')).toBeInTheDocument()
-    expect(within(modal).getByText('Node A · node-a.example.com:2053')).toBeInTheDocument()
     expect(within(modal).getByText('VLESS')).toBeInTheDocument()
     expect(within(modal).getByText('VMess')).toBeInTheDocument()
 
     await user.clear(within(modal).getByLabelText('Name'))
     await user.type(within(modal).getByLabelText('Name'), 'Edited Pool')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(within(modal).getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
       expect(updatePoolMutateAsync).toHaveBeenCalledWith({
         id: 2,
-        input: expect.objectContaining({ name: 'Edited Pool', template_id: 1, node_ids: [4], max_clients: 20 }),
+        input: expect.objectContaining({ name: 'Edited Pool', allowed_protocols: ['vless', 'vmess'] }),
       }),
     )
 
@@ -273,7 +220,6 @@ describe('ProvisioningPools', () => {
 
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     expect(poolsRefetch).toHaveBeenCalledTimes(1)
-    expect(templatesRefetch).toHaveBeenCalledTimes(1)
     expect(nodesRefetch).toHaveBeenCalledTimes(1)
   })
 })

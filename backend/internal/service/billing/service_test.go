@@ -113,9 +113,7 @@ func TestValidateIdempotentPaymentPurchaseRejectsDifferentProvider(t *testing.T)
 func TestNormalizeProvisioningPoolFieldsConvertsAllowedProtocols(t *testing.T) {
 	got := normalizeProvisioningPoolFields(map[string]any{
 		"allowed_protocols": []any{" VLESS ", "trojan", "vless", ""},
-		"node_ids":          []any{float64(3), "2", "3", 0, "bad"},
-		"template_id":       float64(9),
-		"max_clients":       float64(10),
+		"enabled":           true,
 	})
 	protocols, ok := got["allowed_protocols"].(model.StringSlice)
 	if !ok {
@@ -130,21 +128,8 @@ func TestNormalizeProvisioningPoolFieldsConvertsAllowedProtocols(t *testing.T) {
 			t.Fatalf("allowed_protocols = %#v, want %#v", protocols, want)
 		}
 	}
-	nodes, ok := got["node_ids"].(model.Int64Slice)
-	if !ok {
-		t.Fatalf("node_ids type = %T, want model.Int64Slice", got["node_ids"])
-	}
-	if len(nodes) != 2 || nodes[0] != 3 || nodes[1] != 2 {
-		t.Fatalf("node_ids = %#v, want [3 2]", nodes)
-	}
-	if got["template_id"] == nil || got["max_clients"] == nil {
-		t.Fatalf("template_id/max_clients were not preserved: %#v", got)
-	}
-}
-
-func TestGeneratedInboundTag(t *testing.T) {
-	if got := generatedInboundTag(12, 18081); got != "pool-12-18081" {
-		t.Fatalf("generatedInboundTag = %q", got)
+	if got["enabled"] != true {
+		t.Fatalf("enabled was not preserved: %#v", got)
 	}
 }
 

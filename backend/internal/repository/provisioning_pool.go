@@ -23,14 +23,12 @@ func (r *ProvisioningPoolRepo) List(ctx context.Context) ([]model.ProvisioningPo
 	var rows []model.ProvisioningPool
 	if err := r.db.WithContext(ctx).
 		Order("id ASC").
-		Preload("Template").
 		Preload("Targets", func(db *gorm.DB) *gorm.DB {
 			return db.Table("provisioning_pool_targets AS ppt").
-				Select("ppt.*, n.name AS node_name, it.name AS template_name, COUNT(co.id)::int AS used_clients").
+				Select("ppt.*, n.name AS node_name, COUNT(co.id)::int AS used_clients").
 				Joins("LEFT JOIN nodes n ON n.id = ppt.node_id").
-				Joins("LEFT JOIN inbound_templates it ON it.id = ppt.template_id").
 				Joins("LEFT JOIN client_ownerships co ON co.node_id = ppt.node_id AND co.inbound_tag = ppt.inbound_tag AND co.enabled = TRUE").
-				Group("ppt.id, n.name, it.name").
+				Group("ppt.id, n.name").
 				Order("ppt.priority ASC, ppt.id ASC")
 		}).
 		Find(&rows).Error; err != nil {
@@ -42,7 +40,6 @@ func (r *ProvisioningPoolRepo) List(ctx context.Context) ([]model.ProvisioningPo
 func (r *ProvisioningPoolRepo) Get(ctx context.Context, id int64) (*model.ProvisioningPool, error) {
 	var row model.ProvisioningPool
 	if err := r.db.WithContext(ctx).
-		Preload("Template").
 		Preload("Targets", func(db *gorm.DB) *gorm.DB {
 			return db.Order("priority ASC, id ASC")
 		}).
@@ -146,30 +143,6 @@ func (r *ProvisioningPoolRepo) DeleteTemplate(ctx context.Context, id int64) err
 	return nil
 }
 
-func (r *ProvisioningPoolRepo) ListEnabledNodes(ctx context.Context, ids model.Int64Slice) ([]model.Node, error) {
-	var rows []model.Node
-	q := r.db.WithContext(ctx).Where("enabled = TRUE")
-	if len(ids) > 0 {
-		q = q.Where("id IN ?", []int64(ids))
-	}
-	if err := q.Order("id ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("ProvisioningPool.ListEnabledNodes: %w", err)
-	}
-	return rows, nil
-}
-
-func (r *ProvisioningPoolRepo) InboundTagsOnNode(ctx context.Context, nodeID int64) ([]string, error) {
-	var tags []string
-	err := r.db.WithContext(ctx).
-		Model(&model.ProvisioningPoolTarget{}).
-		Where("node_id = ?", nodeID).
-		Pluck("inbound_tag", &tags).Error
-	if err != nil {
-		return nil, fmt.Errorf("ProvisioningPool.InboundTagsOnNode: %w", err)
-	}
-	return tags, nil
-}
-
 func (r *ProvisioningPoolRepo) CreateTarget(ctx context.Context, t *model.ProvisioningPoolTarget) error {
 	if err := r.db.WithContext(ctx).Select("*").Omit("ID", "CreatedAt", "UpdatedAt").Create(t).Error; err != nil {
 		return fmt.Errorf("ProvisioningPool.CreateTarget: %w", err)
@@ -221,7 +194,6 @@ func (r *ProvisioningPoolRepo) DeleteTarget(ctx context.Context, id int64) error
 type Candidate struct {
 	ID               int64
 	PoolID           int64
-	TemplateID        *int64
 	NodeID           int64
 	NodeName         string
 	InboundTag       string
@@ -291,7 +263,6 @@ func (r *ProvisioningPoolRepo) ListCandidatesForUserExcludingOrder(ctx context.C
 		Select(strings.Join([]string{
 			"ppt.id",
 			"ppt.pool_id",
-			"ppt.template_id",
 			"ppt.node_id",
 			"n.name AS node_name",
 			"ppt.inbound_tag",

@@ -149,9 +149,14 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	nodeService := nodesvc.New(db, rtManager, metricsStore, logger)
 	adminhandler.NewNodeHandler(nodeService).RegisterRoutes(apiAdminAuthed)
 
-	// Inbound.
+	// Inbound. Pool repo doubles as the inbound-template store, so we
+	// create it here (before billing wiring) and the handler can
+	// resolve optional `template_id` POST bodies through it.
 	inboundService := inbound.New(rtManager, &nodeListAdapter{svc: nodeService}, logger)
-	adminhandler.NewInboundHandler(inboundService).RegisterRoutes(apiAdminAuthed)
+	provisioningPoolRepo := repository.NewProvisioningPoolRepo(db)
+	inboundHandler := adminhandler.NewInboundHandler(inboundService)
+	inboundHandler.SetTemplateLookup(provisioningPoolRepo)
+	inboundHandler.RegisterRoutes(apiAdminAuthed)
 
 	// Client provisioning.
 	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
@@ -215,9 +220,9 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewBrandingHandler(settingRepo).RegisterRoutes(engine.Group("/api/public"))
 
-	// Billing + payment gateways.
+	// Billing + payment gateways. provisioningPoolRepo was created
+	// earlier alongside inbound handler wiring.
 	orderRepo := repository.NewOrderRepo(db)
-	provisioningPoolRepo := repository.NewProvisioningPoolRepo(db)
 	paymentRegistry := payment.NewRegistry()
 	paymentRegistry.Register(alipay.New(cfg.Alipay))
 	paymentRegistry.Register(stripe.New(cfg.Stripe))

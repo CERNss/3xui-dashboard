@@ -2,6 +2,7 @@ import { Alert, Button, Drawer, Form, Input, InputNumber, Select, Space, Switch,
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useCreateInbound, useUpdateInbound } from '@/hooks/queries/admin/inbounds'
+import { useInboundTemplatesList } from '@/hooks/queries/admin/inboundTemplates'
 import { AdvancedJsonForm } from './inbound-editor/AdvancedJsonForm'
 import { blankInboundValues, inboundToValues, valuesToInboundBody } from './inbound-editor/model'
 import { SniffingForm } from './inbound-editor/SniffingForm'
@@ -18,8 +19,10 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
   const { t } = useTranslation()
   const [form] = Form.useForm<InboundEditorValues>()
   const [protocol, setProtocol] = useState<ProtocolName>('vless')
+  const [templateID, setTemplateID] = useState<number | null>(null)
   const createInbound = useCreateInbound()
   const updateInbound = useUpdateInbound()
+  const templatesQuery = useInboundTemplatesList()
   const busy = createInbound.isPending || updateInbound.isPending
   const error = createInbound.error ?? updateInbound.error
 
@@ -28,6 +31,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     const values = source && mode === 'edit' ? inboundToValues(source, nodeID) : blankInboundValues(nodeID)
     form.setFieldsValue(values as unknown as Parameters<typeof form.setFieldsValue>[0])
     setProtocol(values.protocol)
+    setTemplateID(null)
   }, [form, mode, nodeID, open, source])
 
   const save = async () => {
@@ -38,7 +42,10 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     const body = valuesToInboundBody(values)
     const result =
       mode === 'create'
-        ? await createInbound.mutateAsync({ nodeID: validated.node_id, body })
+        ? await createInbound.mutateAsync({
+            nodeID: validated.node_id,
+            body: templateID ? { ...body, template_id: templateID } : body,
+          })
         : await updateInbound.mutateAsync({ nodeID: validated.node_id, tag, body })
     onSaved?.(result)
     onClose()
@@ -59,6 +66,30 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
       label: t('admin.inboundEditor.tab.basic'),
       children: (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          {mode === 'create' ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 4 }}
+              message={
+                <Space align="center" wrap>
+                  <span>{t('admin.inboundEditor.fromTemplateLabel')}</span>
+                  <Select
+                    allowClear
+                    placeholder={t('admin.inboundEditor.fromTemplatePlaceholder')}
+                    style={{ minWidth: 240 }}
+                    value={templateID ?? undefined}
+                    loading={templatesQuery.isLoading}
+                    onChange={(value) => setTemplateID(typeof value === 'number' ? value : null)}
+                    options={(templatesQuery.data ?? [])
+                      .filter((t) => t.enabled)
+                      .map((t) => ({ label: `${t.name} · ${t.protocol}`, value: t.id }))}
+                  />
+                </Space>
+              }
+              description={templateID ? t('admin.inboundEditor.fromTemplateHint') : null}
+            />
+          ) : null}
           <Space align="start" wrap>
             <Form.Item name="enable" label={t('admin.inboundEditor.basicEnable')} valuePropName="checked">
               <Switch />

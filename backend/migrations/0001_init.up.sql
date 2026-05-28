@@ -175,45 +175,32 @@ CREATE TABLE inbound_templates (
 );
 
 -- ---------------------------------------------------------------------------
--- provisioning_pools — template-driven automatic inbound allocation pools.
--- Targets are generated real upstream inbounds, not the primary admin workflow.
+-- provisioning_pools — curated lists of real inbounds that a plan can
+-- assign new clients into when the user purchases. Inbounds themselves
+-- are created manually by the operator (templates speed that up via
+-- the dashboard's create-inbound form); this pool just decides which
+-- existing inbound a purchase lands its client in.
 -- ---------------------------------------------------------------------------
 CREATE TABLE provisioning_pools (
   id                BIGSERIAL    PRIMARY KEY,
   name              TEXT         NOT NULL,
   description       TEXT         NOT NULL DEFAULT '',
   enabled           BOOLEAN      NOT NULL DEFAULT TRUE,
-  auto_create       BOOLEAN      NOT NULL DEFAULT FALSE,
-  template_id       BIGINT       REFERENCES inbound_templates(id) ON DELETE SET NULL,
-  port_min          INTEGER,
-  port_max          INTEGER,
-  max_clients       INTEGER      NOT NULL DEFAULT 0,
   allowed_protocols JSONB        NOT NULL DEFAULT '[]'::jsonb,
-  node_ids          JSONB        NOT NULL DEFAULT '[]'::jsonb,
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  CONSTRAINT provisioning_pools_name_unique UNIQUE (name),
-  CONSTRAINT provisioning_pools_max_clients_chk CHECK (max_clients >= 0),
-  CONSTRAINT provisioning_pools_port_range_chk CHECK (
-    (port_min IS NULL AND port_max IS NULL)
-    OR (port_min BETWEEN 1 AND 65535 AND port_max BETWEEN 1 AND 65535 AND port_min <= port_max)
-  )
+  CONSTRAINT provisioning_pools_name_unique UNIQUE (name)
 );
-CREATE INDEX provisioning_pools_template_id
-  ON provisioning_pools (template_id)
-  WHERE template_id IS NOT NULL;
 
 CREATE TABLE provisioning_pool_targets (
   id             BIGSERIAL    PRIMARY KEY,
   pool_id        BIGINT       NOT NULL REFERENCES provisioning_pools(id) ON DELETE CASCADE,
-  template_id    BIGINT       REFERENCES inbound_templates(id) ON DELETE SET NULL,
   node_id        BIGINT       NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   inbound_tag    TEXT         NOT NULL,
   protocol       TEXT         NOT NULL DEFAULT '',
   max_clients    INTEGER      NOT NULL DEFAULT 0,
   priority       INTEGER      NOT NULL DEFAULT 100,
   enabled        BOOLEAN      NOT NULL DEFAULT TRUE,
-  generated      BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
   CONSTRAINT provisioning_pool_targets_max_clients_chk CHECK (max_clients >= 0),

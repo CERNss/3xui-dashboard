@@ -1,21 +1,39 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 )
 
+// TemplateLookup is the minimum surface InboundHandler needs to
+// resolve an optional `template_id` on the create-inbound POST body.
+// Satisfied by repository.ProvisioningPoolRepo.
+type TemplateLookup interface {
+	GetTemplate(ctx context.Context, id int64) (*model.InboundTemplate, error)
+}
+
 // InboundHandler serves /api/admin/inbounds/*.
-type InboundHandler struct{ svc *inbound.Service }
+type InboundHandler struct {
+	svc       *inbound.Service
+	templates TemplateLookup
+}
 
 // NewInboundHandler wires the handler to the inbound service.
 func NewInboundHandler(svc *inbound.Service) *InboundHandler { return &InboundHandler{svc: svc} }
+
+// SetTemplateLookup attaches a template repository so the Create
+// handler can resolve POST bodies that pass `template_id` instead of
+// providing the full inbound wire shape. Left nil = template_id is
+// silently ignored.
+func (h *InboundHandler) SetTemplateLookup(t TemplateLookup) { h.templates = t }
 
 // RegisterRoutes mounts every inbound endpoint under the supplied
 // admin router group.
@@ -74,12 +92,54 @@ func (h *InboundHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var body runtime.Inbound
+	// The body is `runtime.Inbound` for backward compat, plus an
+	// optional `template_id` sidecar field. When template_id is set,
+	// we materialize a runtime.Inbound from the template + body's
+	// port/tag/listen/remark and ignore protocol/settings/stream
+	// settings/sniffing from the body (template wins).
+	var body struct {
+		runtime.Inbound
+		TemplateID *int64 `json:"template_id"`
+	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
 		return
 	}
-	created, err := h.svc.Add(c.Request.Context(), nodeID, &body)
+	in := body.Inbound
+	if body.TemplateID != nil && *body.TemplateID > 0 {
+		if h.templates == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "template lookup not wired on this deployment"})
+			return
+		}
+		tpl, err := h.templates.GetTemplate(c.Request.Context(), *body.TemplateID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "template lookup: " + err.Error()})
+			return
+		}
+		if tpl == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			return
+		}
+		if !tpl.Enabled {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "template disabled"})
+			return
+		}
+		if in.Port <= 0 || in.Port > 65535 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "port is required (1..65535) when creating from a template"})
+			return
+		}
+		built := inbound.BuildTemplateInbound(tpl, in.Port, in.Tag)
+		// Body overrides for fields the operator may want to tweak at
+		// create-time even when starting from a template.
+		if in.Listen != "" {
+			built.Listen = in.Listen
+		}
+		if in.Remark != "" {
+			built.Remark = in.Remark
+		}
+		in = *built
+	}
+	created, err := h.svc.Add(c.Request.Context(), nodeID, &in)
 	if err != nil {
 		h.upstreamError(c, err)
 		return

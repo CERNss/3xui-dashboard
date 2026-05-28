@@ -4,6 +4,7 @@ import {
   inboundsApi,
   trafficApi,
   type Client,
+  type CreateInboundBody,
   type Inbound,
 } from '@/api/admin/inbounds'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
@@ -52,7 +53,7 @@ export function useCreateInbound() {
   const queryClient = useQueryClient()
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: ({ nodeID, body }: { nodeID: number; body: Partial<Inbound> }) =>
+    mutationFn: ({ nodeID, body }: { nodeID: number; body: CreateInboundBody }) =>
       inboundsApi.create(nodeID, body),
     onSuccess: () => invalidateInbounds(queryClient),
     onError: (error) => handleError(error),
