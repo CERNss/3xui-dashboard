@@ -1,7 +1,5 @@
-import { ThunderboltOutlined } from '@ant-design/icons'
 import { Button, Form, Input, InputNumber, Select, Space, Switch } from 'antd'
 import { useTranslation } from 'react-i18next'
-import { useGenerateX25519 } from '@/hooks/queries/admin/utils'
 
 export function StreamSettingsForm() {
   const { t } = useTranslation()
@@ -10,13 +8,22 @@ export function StreamSettingsForm() {
   const security = Form.useWatch('security')
   const httpHeader = Form.useWatch('httpHeader')
   const quicSecurity = Form.useWatch('quicSecurity')
-  const generateX25519 = useGenerateX25519()
+  const generateKeypair = Form.useWatch('realityGenerateKeypair', form)
+  const generateMldsa65 = Form.useWatch('realityGenerateMldsa65', form)
 
-  const fillRealityKeypair = async () => {
-    const keypair = await generateX25519.mutateAsync()
+  const clearRealityKeypair = () => {
     form.setFieldsValue({
-      realityPrivateKey: keypair.privateKey,
-      realityPublicKey: keypair.publicKey,
+      realityPrivateKey: '',
+      realityPublicKey: '',
+      realityGenerateKeypair: false,
+    })
+  }
+
+  const clearMldsa65 = () => {
+    form.setFieldsValue({
+      realityMldsa65Seed: '',
+      realityMldsa65Verify: '',
+      realityGenerateMldsa65: false,
     })
   }
 
@@ -217,37 +224,105 @@ export function StreamSettingsForm() {
       ) : null}
 
       {security === 'reality' ? (
-        <Space align="start" wrap>
-          <Form.Item name="realityDest" label="Dest">
-            <Input placeholder="www.cloudflare.com:443" />
-          </Form.Item>
-          <Form.Item name="realityServerNames" label={t('admin.inboundEditor.stream.serverNames')}>
-            <Input placeholder={t('admin.inboundEditor.stream.serverNamesPlaceholder')} />
-          </Form.Item>
-          <Form.Item label={t('admin.inboundEditor.stream.realityKeypair')}>
-            <Button
-              icon={<ThunderboltOutlined />}
-              loading={generateX25519.isPending}
-              onClick={fillRealityKeypair}
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space align="start" wrap>
+            <Form.Item name="realityShow" label="Show" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item name="realityXver" label="Xver">
+              <InputNumber min={0} max={2} />
+            </Form.Item>
+            <Form.Item name="realityFingerprint" label="uTLS">
+              <Select
+                style={{ width: 160 }}
+                options={['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random', 'randomized'].map((value) => ({ label: value, value }))}
+              />
+            </Form.Item>
+          </Space>
+          <Space align="start" wrap>
+            <Form.Item
+              name="realityDest"
+              label={
+                <Space size={4}>
+                  <span>Target</span>
+                  <Form.Item name="realityRandomizeTarget" valuePropName="checked" noStyle>
+                    <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
+                  </Form.Item>
+                </Space>
+              }
+              tooltip={t('admin.inboundEditor.stream.realityRandomizeHint')}
             >
-              {t('admin.inboundEditor.stream.generateKeypair')}
-            </Button>
-          </Form.Item>
-          <Form.Item name="realityPrivateKey" label={t('admin.inboundEditor.stream.privateKey')}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="realityPublicKey" label={t('admin.inboundEditor.stream.publicKey')}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="realityShortIds" label={t('admin.inboundEditor.stream.shortIDs')}>
-            <Input placeholder={t('admin.inboundEditor.stream.shortIDsPlaceholder')} />
-          </Form.Item>
-          <Form.Item name="realityFingerprint" label={t('admin.inboundEditor.stream.fingerprint')}>
-            <Select
-              style={{ width: 160 }}
-              options={['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random', 'randomized'].map((value) => ({ label: value, value }))}
-            />
-          </Form.Item>
+              <Input style={{ width: 280 }} placeholder="www.amazon.com:443" />
+            </Form.Item>
+            <Form.Item
+              name="realityServerNames"
+              label={
+                <Space size={4}>
+                  <span>SNI</span>
+                  <Form.Item name="realityRandomizeSNI" valuePropName="checked" noStyle>
+                    <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
+                  </Form.Item>
+                </Space>
+              }
+            >
+              <Input style={{ width: 280 }} placeholder="www.amazon.com" />
+            </Form.Item>
+            <Form.Item name="realityMaxTimeDiff" label="Max Time Diff (ms)">
+              <InputNumber min={0} />
+            </Form.Item>
+          </Space>
+          <Space align="start" wrap>
+            <Form.Item name="realityMinClientVer" label="Min Client Ver">
+              <Input placeholder="25.9.11" style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="realityMaxClientVer" label="Max Client Ver">
+              <Input placeholder="25.9.11" style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item
+              name="realityShortIds"
+              label={
+                <Space size={4}>
+                  <span>Short IDs</span>
+                  <Form.Item name="realityRandomizeShortIds" valuePropName="checked" noStyle>
+                    <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
+                  </Form.Item>
+                </Space>
+              }
+            >
+              <Input.TextArea rows={2} style={{ width: 420 }} placeholder={t('admin.inboundEditor.stream.shortIDsPlaceholder')} />
+            </Form.Item>
+            <Form.Item name="realitySpiderX" label="SpiderX">
+              <Input style={{ width: 160 }} placeholder="/" />
+            </Form.Item>
+          </Space>
+          <Space align="start" wrap>
+            <Form.Item name="realityPublicKey" label={t('admin.inboundEditor.stream.publicKey')}>
+              <Input style={{ width: 360 }} disabled={generateKeypair} />
+            </Form.Item>
+            <Form.Item name="realityPrivateKey" label={t('admin.inboundEditor.stream.privateKey')}>
+              <Input style={{ width: 360 }} disabled={generateKeypair} />
+            </Form.Item>
+          </Space>
+          <Space align="center">
+            <Form.Item name="realityGenerateKeypair" valuePropName="checked" label={t('admin.inboundEditor.stream.getNewCert')}>
+              <Switch />
+            </Form.Item>
+            <Button onClick={clearRealityKeypair}>{t('admin.inboundEditor.stream.clear')}</Button>
+          </Space>
+          <Space align="start" wrap>
+            <Form.Item name="realityMldsa65Seed" label="mldsa65 Seed">
+              <Input.TextArea rows={2} style={{ width: 420 }} disabled={generateMldsa65} />
+            </Form.Item>
+            <Form.Item name="realityMldsa65Verify" label="mldsa65 Verify">
+              <Input.TextArea rows={2} style={{ width: 420 }} disabled={generateMldsa65} />
+            </Form.Item>
+          </Space>
+          <Space align="center">
+            <Form.Item name="realityGenerateMldsa65" valuePropName="checked" label={t('admin.inboundEditor.stream.getNewSeed')}>
+              <Switch />
+            </Form.Item>
+            <Button onClick={clearMldsa65}>{t('admin.inboundEditor.stream.clear')}</Button>
+          </Space>
         </Space>
       ) : null}
     </Space>

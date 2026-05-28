@@ -158,10 +158,6 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	inboundHandler.SetTemplateLookup(provisioningPoolRepo)
 	inboundHandler.RegisterRoutes(apiAdminAuthed)
 
-	// Admin-only crypto helpers — currently just X25519 keypair
-	// generation for Reality. No state, no dependencies.
-	adminhandler.NewUtilsHandler().RegisterRoutes(apiAdminAuthed)
-
 	// Client provisioning.
 	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
 	adminhandler.NewClientHandler(clientService).RegisterRoutes(apiAdminAuthed)

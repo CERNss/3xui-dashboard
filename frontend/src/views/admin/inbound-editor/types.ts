@@ -101,6 +101,19 @@ export interface InboundEditorValues {
   realityPrivateKey: string
   realityShortIds: string
   realityFingerprint: 'chrome' | 'firefox' | 'safari' | 'ios' | 'android' | 'edge' | 'random' | 'randomized'
+  realityShow: boolean
+  realityXver: number
+  realityMaxTimeDiff: number
+  realityMinClientVer: string
+  realityMaxClientVer: string
+  realitySpiderX: string
+  realityMldsa65Seed: string
+  realityMldsa65Verify: string
+  realityGenerateKeypair: boolean
+  realityGenerateMldsa65: boolean
+  realityRandomizeTarget: boolean
+  realityRandomizeSNI: boolean
+  realityRandomizeShortIds: boolean
 
   sniffEnabled: boolean
   sniffHttp: boolean

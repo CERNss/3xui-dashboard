@@ -5,4 +5,3 @@
 
 export { adminClient, ADMIN_TOKEN_KEY } from '../client/admin'
 export * from './inboundTemplates'
-export * from './utils'

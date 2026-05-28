@@ -118,6 +118,19 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     realityPrivateKey: '',
     realityShortIds: '',
     realityFingerprint: 'chrome',
+    realityShow: false,
+    realityXver: 0,
+    realityMaxTimeDiff: 0,
+    realityMinClientVer: '',
+    realityMaxClientVer: '',
+    realitySpiderX: '/',
+    realityMldsa65Seed: '',
+    realityMldsa65Verify: '',
+    realityGenerateKeypair: false,
+    realityGenerateMldsa65: false,
+    realityRandomizeTarget: false,
+    realityRandomizeSNI: false,
+    realityRandomizeShortIds: false,
 
     sniffEnabled: true,
     sniffHttp: true,
@@ -263,13 +276,32 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
     values.tlsKeyFile = cert?.keyFile ?? ''
   }
   if (stream.realitySettings) {
-    values.realityDest = stream.realitySettings.dest ?? ''
-    values.realityServerNames = (stream.realitySettings.serverNames ?? []).join(',')
-    values.realityPublicKey = stream.realitySettings.publicKey ?? ''
-    values.realityPrivateKey = stream.realitySettings.privateKey ?? ''
-    values.realityShortIds = (stream.realitySettings.shortIds ?? []).join(',')
-    values.realityFingerprint = stream.realitySettings.fingerprint ?? 'chrome'
+    const r = stream.realitySettings
+    values.realityDest = r.dest ?? r.target ?? ''
+    values.realityServerNames = (r.serverNames ?? []).join(',')
+    values.realityPublicKey = r.publicKey ?? ''
+    values.realityPrivateKey = r.privateKey ?? ''
+    values.realityShortIds = (r.shortIds ?? []).join(',')
+    values.realityFingerprint = r.fingerprint ?? 'chrome'
+    values.realityShow = Boolean(r.show)
+    values.realityXver = Number(r.xver) || 0
+    values.realityMaxTimeDiff = Number(r.maxTimeDiff) || 0
+    values.realityMinClientVer = r.minClientVer ?? ''
+    values.realityMaxClientVer = r.maxClientVer ?? ''
+    values.realitySpiderX = r.spiderX ?? '/'
+    values.realityMldsa65Seed = r.mldsa65Seed ?? ''
+    values.realityMldsa65Verify = r.mldsa65Verify ?? r.settings?.mldsa65Verify ?? ''
   }
+  // Reality intent flags live in streamSettings._intent so the resolver
+  // can decide what to (re)generate at create time without re-parsing
+  // realitySettings field shape.
+  const streamIntent =
+    stream._intent && typeof stream._intent === 'object' ? stream._intent : {}
+  values.realityGenerateKeypair = Boolean(streamIntent.realityKeypair)
+  values.realityGenerateMldsa65 = Boolean(streamIntent.realityMldsa65)
+  values.realityRandomizeTarget = Boolean(streamIntent.realityRandomTarget)
+  values.realityRandomizeSNI = Boolean(streamIntent.realityRandomSNI)
+  values.realityRandomizeShortIds = Boolean(streamIntent.realityRandomShortIds)
   values.advStream = JSON.stringify(stream, null, 2)
 
   const sniffing = parseJSON(inbound.sniffing)
@@ -436,13 +468,28 @@ function streamFromValues(values: InboundEditorValues) {
     }
   } else if (values.security === 'reality') {
     out.realitySettings = {
+      show: values.realityShow,
+      xver: values.realityXver,
       dest: values.realityDest,
       serverNames: values.realityServerNames.split(',').map((item) => item.trim()).filter(Boolean),
       publicKey: values.realityPublicKey,
       privateKey: values.realityPrivateKey,
       shortIds: values.realityShortIds.split(',').map((item) => item.trim()).filter(Boolean),
       fingerprint: values.realityFingerprint,
+      maxTimeDiff: values.realityMaxTimeDiff,
+      minClientVer: values.realityMinClientVer,
+      maxClientVer: values.realityMaxClientVer,
+      spiderX: values.realitySpiderX,
+      mldsa65Seed: values.realityMldsa65Seed,
+      mldsa65Verify: values.realityMldsa65Verify,
     }
+    const intent: Record<string, boolean> = {}
+    if (values.realityGenerateKeypair) intent.realityKeypair = true
+    if (values.realityGenerateMldsa65) intent.realityMldsa65 = true
+    if (values.realityRandomizeTarget) intent.realityRandomTarget = true
+    if (values.realityRandomizeSNI) intent.realityRandomSNI = true
+    if (values.realityRandomizeShortIds) intent.realityRandomShortIds = true
+    if (Object.keys(intent).length > 0) out._intent = intent
   }
   return out
 }
