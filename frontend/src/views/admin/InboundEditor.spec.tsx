@@ -88,7 +88,8 @@ describe('InboundEditor', () => {
     expect(screen.getByLabelText('Port')).toHaveValue('443')
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
     expect(screen.getByText('VLESS clients')).toBeInTheDocument()
-    expect(screen.getByTitle('none')).toBeInTheDocument()
+    expect(screen.getByLabelText('Decryption')).toHaveValue('none')
+    expect(screen.getByLabelText('Encryption')).toHaveValue('none')
     expect(screen.getByDisplayValue('alice@example.com')).toBeInTheDocument()
 
     await user.clear(screen.getByLabelText('Inbound name'))

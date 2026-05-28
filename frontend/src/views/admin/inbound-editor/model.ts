@@ -44,6 +44,8 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
 
     clients: [],
     decryption: 'none',
+    encryption: 'none',
+    vlessAuthMode: 'none',
     disableInsecureEncryption: false,
     ssMethod: 'chacha20-ietf-poly1305',
     ssNetwork: 'tcp,udp',
@@ -152,6 +154,18 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
       : null
   values.clients = clientsFromAccounts ?? (Array.isArray(settings.clients) ? settings.clients : Array.isArray(settings.peers) ? settings.peers : [])
   values.decryption = settings.decryption ?? 'none'
+  values.encryption = settings.encryption ?? 'none'
+  // VLESS auth mode: prefer explicit intent flag (template editor stores
+  // mode without yet having concrete keys); otherwise infer from the
+  // shape of decryption/encryption strings on a saved real inbound.
+  const intent = settings._intent && typeof settings._intent === 'object' ? settings._intent : {}
+  if (intent.vlessAuth === 'x25519' || intent.vlessAuth === 'mlkem768') {
+    values.vlessAuthMode = intent.vlessAuth
+  } else if (values.protocol === 'vless' && typeof settings.decryption === 'string' && settings.decryption !== 'none' && settings.decryption !== '') {
+    values.vlessAuthMode = settings.decryption.toLowerCase().includes('mlkem') ? 'mlkem768' : 'x25519'
+  } else {
+    values.vlessAuthMode = 'none'
+  }
   values.disableInsecureEncryption = Boolean(settings.disableInsecureEncryption)
   values.ssMethod = settings.method ?? values.ssMethod
   values.ssNetwork = settings.network ?? values.ssNetwork
@@ -280,7 +294,22 @@ function accountsFromClients(values: InboundEditorValues) {
 }
 
 function settingsFromValues(values: InboundEditorValues) {
-  if (values.protocol === 'vless') return { clients: values.clients, decryption: values.decryption || 'none', fallbacks: [] }
+  if (values.protocol === 'vless') {
+    const base: Record<string, unknown> = {
+      clients: values.clients,
+      decryption: values.decryption || 'none',
+      encryption: values.encryption || 'none',
+      fallbacks: [],
+    }
+    // Intent block: when the user picks an auth mode but hasn't yet
+    // resolved it to concrete decryption/encryption strings, stash
+    // the choice in _intent.vlessAuth so the backend can call the
+    // node's panel getNewVlessEnc at create time and substitute.
+    if (values.vlessAuthMode === 'x25519' || values.vlessAuthMode === 'mlkem768') {
+      base._intent = { vlessAuth: values.vlessAuthMode }
+    }
+    return base
+  }
   if (values.protocol === 'vmess') return { clients: values.clients, disableInsecureEncryption: values.disableInsecureEncryption }
   if (values.protocol === 'trojan') return { clients: values.clients, fallbacks: [] }
   if (values.protocol === 'shadowsocks') {

@@ -27,6 +27,8 @@ export interface InboundEditorValues {
 
   clients: Array<Record<string, unknown>>
   decryption: string
+  encryption: string
+  vlessAuthMode: 'none' | 'x25519' | 'mlkem768'
   disableInsecureEncryption: boolean
   ssMethod: string
   ssNetwork: 'tcp' | 'udp' | 'tcp,udp'
