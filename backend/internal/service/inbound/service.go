@@ -95,6 +95,13 @@ func (s *Service) Add(ctx context.Context, nodeID int64, in *runtime.Inbound) (*
 	if err != nil {
 		return nil, err
 	}
+	// Intent resolution: replace any `_intent` markers (added by the
+	// dashboard template editor) with concrete keys / certs / random
+	// short IDs sourced from the target node's panel. The wire payload
+	// xray-core ends up seeing has no dashboard-only fields.
+	if err := resolveIntent(ctx, r, in); err != nil {
+		return nil, err
+	}
 	return r.AddInbound(ctx, in)
 }
 

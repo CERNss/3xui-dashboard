@@ -199,6 +199,79 @@ func (r *Remote) RestartXray(ctx context.Context) error {
 	return err
 }
 
+// X25519Cert is the response of GET /panel/api/server/getNewX25519Cert.
+// Used to populate a Reality inbound's privateKey/publicKey at create
+// time when the operator picked "generate on apply" in the dashboard.
+type X25519Cert struct {
+	PrivateKey string `json:"privateKey"`
+	PublicKey  string `json:"publicKey"`
+}
+
+// GetNewX25519Cert asks the panel to spawn `xray x25519` and return a
+// fresh keypair.
+func (r *Remote) GetNewX25519Cert(ctx context.Context) (*X25519Cert, error) {
+	env, err := r.doGet(ctx, "/server/getNewX25519Cert")
+	if err != nil {
+		return nil, err
+	}
+	var cert X25519Cert
+	if err := env.DecodeObj(&cert); err != nil {
+		return nil, err
+	}
+	return &cert, nil
+}
+
+// Mldsa65Cert is the response of GET /panel/api/server/getNewmldsa65.
+type Mldsa65Cert struct {
+	Seed   string `json:"seed"`
+	Verify string `json:"verify"`
+}
+
+// GetNewMldsa65 asks the panel to spawn `xray mldsa65` and return a
+// fresh post-quantum signing keypair for Reality.
+func (r *Remote) GetNewMldsa65(ctx context.Context) (*Mldsa65Cert, error) {
+	env, err := r.doGet(ctx, "/server/getNewmldsa65")
+	if err != nil {
+		return nil, err
+	}
+	var cert Mldsa65Cert
+	if err := env.DecodeObj(&cert); err != nil {
+		return nil, err
+	}
+	return &cert, nil
+}
+
+// VlessEncAuth is one entry in the VlessEnc response. The panel runs
+// `xray vlessenc` which currently outputs two authentication blocks
+// (X25519 and ML-KEM-768); pick by `ID` ("x25519" / "mlkem768").
+type VlessEncAuth struct {
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	Decryption string `json:"decryption"`
+	Encryption string `json:"encryption"`
+}
+
+// VlessEncResponse is the response shape of /server/getNewVlessEnc.
+type VlessEncResponse struct {
+	Auths []VlessEncAuth `json:"auths"`
+}
+
+// GetNewVlessEnc asks the panel for a fresh VLESS authentication
+// matrix. The caller picks the auth whose ID matches the user-selected
+// mode and copies its decryption + encryption strings into the inbound
+// settings.
+func (r *Remote) GetNewVlessEnc(ctx context.Context) (*VlessEncResponse, error) {
+	env, err := r.doGet(ctx, "/server/getNewVlessEnc")
+	if err != nil {
+		return nil, err
+	}
+	var out VlessEncResponse
+	if err := env.DecodeObj(&out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ---------------------------------------------------------------------------
 // Inbounds
 // ---------------------------------------------------------------------------
