@@ -179,16 +179,7 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
       children: (
         <div>
           <Row gutter={[20, 0]}>
-            <Col span={4}>
-              <Form.Item label={t('admin.inboundTemplates.enabled')}>
-                <Switch
-                  checked={meta.enabled}
-                  aria-label={t('admin.inboundTemplates.enabled')}
-                  onChange={(checked) => setMeta((m) => ({ ...m, enabled: checked }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
+            <Col span={16}>
               <Form.Item label={t('admin.inboundTemplates.name')} required>
                 <Input
                   value={meta.name}
@@ -281,11 +272,25 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
       width={920}
       onCancel={onClose}
       destroyOnClose
-      okText={mode === 'create' ? t('common.create') : t('common.save')}
-      cancelText={t('admin.inboundEditor.close')}
-      confirmLoading={busy}
-      onOk={save}
       maskClosable={false}
+      footer={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <Space size={8} align="center">
+            <Switch
+              checked={meta.enabled}
+              aria-label={t('admin.inboundTemplates.enabled')}
+              onChange={(checked) => setMeta((m) => ({ ...m, enabled: checked }))}
+            />
+            <span style={{ color: '#888' }}>{t('admin.inboundTemplates.enabled')}</span>
+          </Space>
+          <Space>
+            <Button onClick={onClose}>{t('admin.inboundEditor.close')}</Button>
+            <Button type="primary" loading={busy} onClick={save}>
+              {mode === 'create' ? t('common.create') : t('common.save')}
+            </Button>
+          </Space>
+        </div>
+      }
     >
       {error ? <Alert type="error" showIcon message={t('admin.inboundTemplates.operationFailed')} style={{ marginBottom: 16 }} /> : null}
       <Form

@@ -1,4 +1,4 @@
-import { Alert, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs } from 'antd'
+import { Alert, Button, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Tabs } from 'antd'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useCreateInbound, useUpdateInbound } from '@/hooks/queries/admin/inbounds'
@@ -107,67 +107,79 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
               description={templateID ? t('admin.inboundEditor.fromTemplateHint') : null}
             />
           ) : null}
-          <Space align="start" wrap>
-            <Form.Item name="enable" label={t('admin.inboundEditor.basicEnable')} valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="node_id" label={t('admin.inboundEditor.basicNode')} rules={[{ required: true, message: t('admin.inboundEditor.errSelectNode') }]}>
-              <Select
-                disabled={mode === 'edit'}
-                style={{ minWidth: 220 }}
-                options={nodes.map((node) => ({
-                  label: `${node.name}${node.enabled ? '' : ` ${t('admin.inboundEditor.nodeDisabledSuffix')}`}`,
-                  value: node.id,
-                  disabled: !node.enabled,
-                }))}
-              />
-            </Form.Item>
-            <Form.Item name="protocol" label={t('admin.inboundEditor.basicProtocol')} rules={[{ required: true }]}>
-              <Select
-                style={{ width: 180 }}
-                onChange={(value) => {
-                  form.setFieldValue('protocol', value)
-                  setProtocol(value)
-                }}
-                options={['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria', 'http', 'mixed', 'tunnel', 'tun'].map((value) => ({
-                  label: value,
-                  value,
-                }))}
-              />
-            </Form.Item>
-          </Space>
-          {protocol === 'wireguard' ? <Alert type="info" showIcon message={t('admin.inboundEditor.wireguardStreamHidden')} /> : null}
-          {protocol === 'hysteria' ? <Alert type="info" showIcon message={t('admin.inboundEditor.hysteriaStreamFixed')} /> : null}
-          <Space align="start" wrap>
-            <Form.Item name="remark" label={t('admin.inboundEditor.basicRemark')} rules={[{ required: true, whitespace: true, message: t('admin.inboundEditor.errRemark') }]}>
-              <Input placeholder={t('admin.inboundEditor.basicRemarkPlaceholder')} />
-            </Form.Item>
-            <Form.Item name="listen" label={t('admin.inboundEditor.basicAddress')}>
-              <Input placeholder={t('admin.inboundEditor.basicAddressPlaceholder')} />
-            </Form.Item>
-            <Form.Item
-              name="port"
-              label={t('admin.inboundEditor.basicPort')}
-              rules={[
-                { required: true, type: 'number', message: t('admin.inboundEditor.errPortRequired') },
-                { type: 'number', min: 1, max: 65535, message: t('admin.inboundEditor.errPort') },
-              ]}
-            >
-              <InputNumber precision={0} />
-            </Form.Item>
-            <Form.Item name="total_gb" label={t('admin.inboundEditor.basicTotalGB')}>
-              <InputNumber min={0} step={0.01} />
-            </Form.Item>
-            <Form.Item name="trafficReset" label={t('admin.inboundEditor.basicTrafficReset')}>
-              <Select
-                style={{ width: 160 }}
-                options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({ label: t(`admin.inboundEditor.trafficReset.${value}`), value }))}
-              />
-            </Form.Item>
-            <Form.Item name="expiryTime" label={t('admin.inboundEditor.basicExpiry')}>
-              <Input type="datetime-local" />
-            </Form.Item>
-          </Space>
+          <Row gutter={[20, 0]}>
+            <Col span={12}>
+              <Form.Item name="node_id" label={t('admin.inboundEditor.basicNode')} rules={[{ required: true, message: t('admin.inboundEditor.errSelectNode') }]}>
+                <Select
+                  disabled={mode === 'edit'}
+                  options={nodes.map((node) => ({
+                    label: `${node.name}${node.enabled ? '' : ` ${t('admin.inboundEditor.nodeDisabledSuffix')}`}`,
+                    value: node.id,
+                    disabled: !node.enabled,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="protocol" label={t('admin.inboundEditor.basicProtocol')} rules={[{ required: true }]}>
+                <Select
+                  onChange={(value) => {
+                    form.setFieldValue('protocol', value)
+                    setProtocol(value)
+                  }}
+                  options={['vless', 'vmess', 'trojan', 'shadowsocks', 'wireguard', 'hysteria', 'http', 'mixed', 'tunnel', 'tun'].map((value) => ({
+                    label: value,
+                    value,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          {protocol === 'wireguard' ? <Alert type="info" showIcon message={t('admin.inboundEditor.wireguardStreamHidden')} style={{ marginBottom: 12 }} /> : null}
+          {protocol === 'hysteria' ? <Alert type="info" showIcon message={t('admin.inboundEditor.hysteriaStreamFixed')} style={{ marginBottom: 12 }} /> : null}
+          <Row gutter={[20, 0]}>
+            <Col span={12}>
+              <Form.Item name="remark" label={t('admin.inboundEditor.basicRemark')} rules={[{ required: true, whitespace: true, message: t('admin.inboundEditor.errRemark') }]}>
+                <Input placeholder={t('admin.inboundEditor.basicRemarkPlaceholder')} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="listen" label={t('admin.inboundEditor.basicAddress')}>
+                <Input placeholder={t('admin.inboundEditor.basicAddressPlaceholder')} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={[20, 0]}>
+            <Col span={6}>
+              <Form.Item
+                name="port"
+                label={t('admin.inboundEditor.basicPort')}
+                rules={[
+                  { required: true, type: 'number', message: t('admin.inboundEditor.errPortRequired') },
+                  { type: 'number', min: 1, max: 65535, message: t('admin.inboundEditor.errPort') },
+                ]}
+              >
+                <InputNumber precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="total_gb" label={t('admin.inboundEditor.basicTotalGB')}>
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="trafficReset" label={t('admin.inboundEditor.basicTrafficReset')}>
+                <Select
+                  options={['never', 'daily', 'weekly', 'monthly', 'yearly'].map((value) => ({ label: t(`admin.inboundEditor.trafficReset.${value}`), value }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="expiryTime" label={t('admin.inboundEditor.basicExpiry')}>
+                <Input type="datetime-local" />
+              </Form.Item>
+            </Col>
+          </Row>
         </Space>
       ),
     },
@@ -181,6 +193,8 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     { key: 'advanced', label: t('admin.inboundEditor.tab.advanced'), children: <AdvancedJsonForm /> },
   ]
 
+  const enable = Form.useWatch<boolean>('enable', form) ?? true
+
   return (
     <Modal
       title={mode === 'create' ? t('admin.inboundEditor.createTitle') : t('admin.inboundEditor.editTitle', { tag })}
@@ -188,11 +202,25 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
       width={920}
       onCancel={onClose}
       destroyOnClose
-      okText={mode === 'create' ? t('admin.inboundEditor.submitCreate') : t('admin.inboundEditor.submitSave')}
-      cancelText={t('admin.inboundEditor.close')}
-      confirmLoading={busy}
-      onOk={save}
       maskClosable={false}
+      footer={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <Space size={8} align="center">
+            <Switch
+              checked={enable}
+              aria-label={t('admin.inboundEditor.basicEnable')}
+              onChange={(checked) => form.setFieldValue('enable', checked)}
+            />
+            <span style={{ color: '#888' }}>{t('admin.inboundEditor.basicEnable')}</span>
+          </Space>
+          <Space>
+            <Button onClick={onClose}>{t('admin.inboundEditor.close')}</Button>
+            <Button type="primary" loading={busy} onClick={save}>
+              {mode === 'create' ? t('admin.inboundEditor.submitCreate') : t('admin.inboundEditor.submitSave')}
+            </Button>
+          </Space>
+        </div>
+      }
     >
       {error ? <Alert type="error" showIcon message={t('admin.inboundEditor.operationFailed')} style={{ marginBottom: 16 }} /> : null}
       <Form
