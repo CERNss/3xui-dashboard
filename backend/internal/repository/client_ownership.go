@@ -103,6 +103,69 @@ func (r *ClientOwnershipRepo) SetOrderID(ctx context.Context, id int64, orderID 
 	return nil
 }
 
+// MarkDisabledByQuota turns off an ownership AND flags it as
+// "disabled by dashboard quota enforcement" so the next collect tick
+// knows to auto-restore it if the group aggregate drops back below
+// the limit. No-op if the row is already in that state.
+func (r *ClientOwnershipRepo) MarkDisabledByQuota(ctx context.Context, id int64) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.ClientOwnership{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"enabled":           false,
+			"disabled_by_quota": true,
+			"updated_at":        time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("ClientOwnership.MarkDisabledByQuota: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// RestoreFromQuota turns an ownership back on after the shared-quota
+// group has dropped below the limit. Only clears the disabled_by_quota
+// flag; if the row was disabled for another reason (admin manual flip)
+// this method must not be used.
+func (r *ClientOwnershipRepo) RestoreFromQuota(ctx context.Context, id int64) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.ClientOwnership{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"enabled":           true,
+			"disabled_by_quota": false,
+			"updated_at":        time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("ClientOwnership.RestoreFromQuota: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// ListSharedQuotaCandidates returns every ownership row that
+// participates in shared-quota enforcement: plan_id IS NOT NULL AND
+// the plan has a provisioning_pool_id set. Both enabled rows AND
+// rows previously disabled_by_quota are returned (the latter are
+// restoration candidates). Manually-disabled rows (Enabled=false,
+// DisabledByQuota=false) are excluded.
+func (r *ClientOwnershipRepo) ListSharedQuotaCandidates(ctx context.Context) ([]model.ClientOwnership, error) {
+	var rows []model.ClientOwnership
+	if err := r.db.WithContext(ctx).
+		Table("client_ownerships AS co").
+		Joins("JOIN plans AS p ON p.id = co.plan_id").
+		Where("co.plan_id IS NOT NULL AND p.provisioning_pool_id IS NOT NULL").
+		Where("co.enabled = TRUE OR co.disabled_by_quota = TRUE").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("ClientOwnership.ListSharedQuotaCandidates: %w", err)
+	}
+	return rows, nil
+}
+
 // SetEnabled flips the enabled bit for one ownership row.
 func (r *ClientOwnershipRepo) SetEnabled(ctx context.Context, id int64, enabled bool) error {
 	res := r.db.WithContext(ctx).

@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -314,6 +315,45 @@ func (s *Service) UpdateClientDirect(ctx context.Context, nodeID int64, inboundT
 		_, _ = s.ownership.Upsert(ctx, existing)
 	}
 	return &c, nil
+}
+
+// SetClientEnabled flips the enable bit on a panel-side client while
+// preserving every other field. Used by the shared-quota enforcement
+// path to disable an over-quota client and re-enable it once the
+// group aggregate drops back below the limit. Idempotent: if the
+// client is already in the requested state, no panel call is made.
+//
+// The fetch-then-update dance is to avoid the panel zeroing out
+// unset Client fields (UpdateClient takes the *full* struct and the
+// 3x-ui side does not merge partial updates).
+func (s *Service) SetClientEnabled(ctx context.Context, nodeID int64, inboundTag, email string, enabled bool) error {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	in, err := r.GetInbound(ctx, inboundTag)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInboundLookup, err)
+	}
+	settings := struct {
+		Clients []runtime.Client `json:"clients"`
+	}{}
+	if in.Settings != "" {
+		if err := json.Unmarshal([]byte(in.Settings), &settings); err != nil {
+			return fmt.Errorf("SetClientEnabled: decode settings: %w", err)
+		}
+	}
+	for i := range settings.Clients {
+		if settings.Clients[i].Email != email {
+			continue
+		}
+		if settings.Clients[i].Enable == enabled {
+			return nil
+		}
+		settings.Clients[i].Enable = enabled
+		return r.UpdateClient(ctx, inboundTag, settings.Clients[i])
+	}
+	return fmt.Errorf("SetClientEnabled: client %q not found on inbound %q", email, inboundTag)
 }
 
 // FetchSnapshot returns the dashboard-side composite — inbounds +

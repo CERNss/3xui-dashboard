@@ -34,6 +34,8 @@ type Service struct {
 	rt        *runtime.Manager
 	samples   *repository.TrafficSampleRepo
 	ownership *repository.ClientOwnershipRepo
+	plans     PlanLookup
+	clients   ClientEnableSetter
 	nodes     NodeListSource
 	bus       *event.Bus
 	log       *slog.Logger
@@ -42,6 +44,19 @@ type Service struct {
 
 	// Concurrency cap for fleet walks. Zero = default (8).
 	FleetConcurrency int
+}
+
+// PlanLookup is the slice of plan repo behaviour the shared-quota
+// enforcement needs. Decoupled so tests can stub.
+type PlanLookup interface {
+	Get(ctx context.Context, id int64) (*model.Plan, error)
+}
+
+// ClientEnableSetter abstracts the panel-side "flip enable bit"
+// operation needed by shared-quota enforcement. Satisfied by
+// service/client.Service.SetClientEnabled.
+type ClientEnableSetter interface {
+	SetClientEnabled(ctx context.Context, nodeID int64, inboundTag, email string, enabled bool) error
 }
 
 type CollectOptions struct {
@@ -60,6 +75,15 @@ func New(rt *runtime.Manager, samples *repository.TrafficSampleRepo, ownership *
 		bus:       bus,
 		log:       lg.With(slog.String("component", "service.traffic")),
 	}
+}
+
+// SetSharedQuotaDeps wires the plans + client.SetEnabled deps the
+// shared-quota enforcement path needs. Called once from app wiring
+// after both repos exist. If left unwired EnforceSharedQuotas is a
+// no-op (used by single-target deployments / tests).
+func (s *Service) SetSharedQuotaDeps(plans PlanLookup, clients ClientEnableSetter) {
+	s.plans = plans
+	s.clients = clients
 }
 
 // CollectAll fans out across every enabled node, fetches a traffic
@@ -359,6 +383,136 @@ func (s *Service) ResetNode(ctx context.Context, nodeID int64) error {
 		return err
 	}
 	return r.ResetAllTraffics(ctx)
+}
+
+// ---- Shared-quota aggregation ---------------------------------------------
+
+// SharedQuotaStats summarises what one enforcement pass did. Used by
+// tests and by the job's structured log so operators can spot
+// "everyone got disabled today" anomalies.
+type SharedQuotaStats struct {
+	GroupsExamined int
+	GroupsOver     int
+	OwnersDisabled int
+	OwnersRestored int
+	Errors         []string
+}
+
+// EnforceSharedQuotas walks every (user_id, plan_id) group whose plan
+// has a provisioning_pool_id set (i.e. fan-out clients), sums each
+// group's used bytes across all member ownerships, and either:
+//
+//   - disables every still-enabled member (and stamps disabled_by_quota
+//     so the next pass knows it was a quota disable, not an admin one)
+//     when the group is over plan.traffic_limit_bytes, or
+//   - re-enables members previously disabled_by_quota when the group
+//     has dropped back under the limit (panel-side counters were
+//     reset by an inbound's own traffic_reset cycle, by a renewal,
+//     or by admin reset).
+//
+// No-op when shared-quota deps were never wired (SetSharedQuotaDeps
+// was not called). The traffic job calls this once after every
+// CollectAll cycle.
+func (s *Service) EnforceSharedQuotas(ctx context.Context, now time.Time) (SharedQuotaStats, error) {
+	var stats SharedQuotaStats
+	if s.plans == nil || s.clients == nil || s.ownership == nil {
+		return stats, nil
+	}
+	candidates, err := s.ownership.ListSharedQuotaCandidates(ctx)
+	if err != nil {
+		return stats, fmt.Errorf("EnforceSharedQuotas: list candidates: %w", err)
+	}
+	// Group by (user_id, plan_id). plan_id is guaranteed non-nil on
+	// the rows returned by ListSharedQuotaCandidates.
+	type groupKey struct {
+		UserID int64
+		PlanID int64
+	}
+	groups := make(map[groupKey][]model.ClientOwnership)
+	for _, o := range candidates {
+		if o.PlanID == nil {
+			continue
+		}
+		k := groupKey{UserID: o.UserID, PlanID: *o.PlanID}
+		groups[k] = append(groups[k], o)
+	}
+	for k, owners := range groups {
+		stats.GroupsExamined++
+		plan, err := s.plans.Get(ctx, k.PlanID)
+		if err != nil || plan == nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("plan %d lookup: %v", k.PlanID, err))
+			continue
+		}
+		if plan.TrafficLimitBytes <= 0 {
+			// Unlimited plan; nothing to enforce.
+			continue
+		}
+		used := s.aggregateGroupUsage(ctx, owners, now)
+		over := used >= plan.TrafficLimitBytes
+		if over {
+			stats.GroupsOver++
+			for _, o := range owners {
+				if !o.Enabled || o.DisabledByQuota {
+					continue
+				}
+				if err := s.clients.SetClientEnabled(ctx, o.NodeID, o.InboundTag, o.ClientEmail, false); err != nil {
+					stats.Errors = append(stats.Errors, fmt.Sprintf("panel disable owner=%d: %v", o.ID, err))
+					continue
+				}
+				if err := s.ownership.MarkDisabledByQuota(ctx, o.ID); err != nil {
+					stats.Errors = append(stats.Errors, fmt.Sprintf("db disable owner=%d: %v", o.ID, err))
+					continue
+				}
+				stats.OwnersDisabled++
+			}
+			s.log.Info("shared quota disabled",
+				slog.Int64("user_id", k.UserID),
+				slog.Int64("plan_id", k.PlanID),
+				slog.Int64("used", used),
+				slog.Int64("limit", plan.TrafficLimitBytes),
+			)
+			continue
+		}
+		// Under limit: restore any that were disabled by previous
+		// enforcement.
+		for _, o := range owners {
+			if !o.DisabledByQuota {
+				continue
+			}
+			if err := s.clients.SetClientEnabled(ctx, o.NodeID, o.InboundTag, o.ClientEmail, true); err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("panel restore owner=%d: %v", o.ID, err))
+				continue
+			}
+			if err := s.ownership.RestoreFromQuota(ctx, o.ID); err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("db restore owner=%d: %v", o.ID, err))
+				continue
+			}
+			stats.OwnersRestored++
+		}
+	}
+	return stats, nil
+}
+
+// aggregateGroupUsage sums up+down across every member of a shared
+// quota group. Uses UsageForOwnership which is counter-reset safe.
+// Window starts from the earliest ownership's UpdatedAt minus a small
+// buffer (lets the first post-renewal sample land) and ends at now.
+func (s *Service) aggregateGroupUsage(ctx context.Context, owners []model.ClientOwnership, now time.Time) int64 {
+	var total int64
+	for i := range owners {
+		o := owners[i]
+		from := o.UpdatedAt.Add(-1 * time.Hour)
+		usage, err := s.UsageForOwnership(ctx, &o, from, now)
+		if err != nil {
+			s.log.Warn("usage compute failed in shared quota agg",
+				slog.Int64("ownership_id", o.ID),
+				slog.String("err", err.Error()),
+			)
+			continue
+		}
+		total += usage.TotalBytes
+	}
+	return total
 }
 
 // ---- helpers --------------------------------------------------------------

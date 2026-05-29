@@ -21,6 +21,13 @@ type ClientOwnership struct {
 	ExpiresAt         *time.Time `gorm:"column:expires_at"                         json:"expires_at,omitempty"`
 	TrafficLimitBytes *int64     `gorm:"column:traffic_limit_bytes"                json:"traffic_limit_bytes,omitempty"`
 	Enabled           bool       `gorm:"column:enabled;not null"                   json:"enabled"`
+	// DisabledByQuota differentiates "operator turned this client off"
+	// (Enabled=false, DisabledByQuota=false) from "dashboard quota
+	// enforcement turned it off because the shared-quota group is over
+	// limit" (Enabled=false, DisabledByQuota=true). Only the latter
+	// gets auto-restored on the next CollectAll tick when the aggregate
+	// drops back below the limit.
+	DisabledByQuota   bool       `gorm:"column:disabled_by_quota;not null;default:false" json:"disabled_by_quota"`
 	CreatedAt         time.Time  `gorm:"column:created_at;not null;default:now()"  json:"created_at"`
 	UpdatedAt         time.Time  `gorm:"column:updated_at;not null;default:now()"  json:"updated_at"`
 }

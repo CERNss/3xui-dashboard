@@ -188,6 +188,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Traffic.
 	trafficRepo := repository.NewTrafficSampleRepo(db)
 	trafficService := traffic.New(rtManager, trafficRepo, ownershipRepo, &trafficNodeSource{svc: nodeService}, bus, logger)
+	trafficService.SetSharedQuotaDeps(planRepo, clientService)
 	adminhandler.NewTrafficHandler(trafficService, ownershipRepo).RegisterRoutes(apiAdminAuthed)
 	userhandler.NewTrafficHandler(trafficService).RegisterRoutes(apiUserAuthed)
 

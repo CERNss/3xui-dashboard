@@ -80,6 +80,24 @@ func (j *TrafficJob) RunOnce(ctx context.Context) {
 			j.log.Info("traffic sample cleanup", slog.Int64("deleted", deleted))
 		}
 	}
+
+	// Shared-quota enforcement: after the snapshot pass updated each
+	// client's cumulative counters, check every (user, plan) group
+	// against plan.traffic_limit_bytes and either disable over-limit
+	// groups or restore previously over-limit groups whose counters
+	// have dropped (panel-side reset, renewal, admin reset).
+	stats, err := j.svc.EnforceSharedQuotas(ctx, now)
+	if err != nil {
+		j.log.Warn("EnforceSharedQuotas", slog.String("error", err.Error()))
+	} else if stats.OwnersDisabled > 0 || stats.OwnersRestored > 0 || len(stats.Errors) > 0 {
+		j.log.Info("shared quota enforcement",
+			slog.Int("groups_examined", stats.GroupsExamined),
+			slog.Int("groups_over", stats.GroupsOver),
+			slog.Int("owners_disabled", stats.OwnersDisabled),
+			slog.Int("owners_restored", stats.OwnersRestored),
+			slog.Int("errors", len(stats.Errors)),
+		)
+	}
 }
 
 func (j *TrafficJob) startRun(now time.Time, interval time.Duration) bool {

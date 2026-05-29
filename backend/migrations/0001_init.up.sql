@@ -125,6 +125,7 @@ CREATE TABLE client_ownerships (
   expires_at           TIMESTAMPTZ,
   traffic_limit_bytes  BIGINT,
   enabled              BOOLEAN      NOT NULL DEFAULT TRUE,
+  disabled_by_quota    BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -132,6 +133,9 @@ CREATE UNIQUE INDEX client_ownerships_unique  ON client_ownerships (node_id, inb
 CREATE INDEX        client_ownerships_user_id ON client_ownerships (user_id);
 CREATE INDEX        client_ownerships_order_id_idx ON client_ownerships (order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX        client_ownerships_protocol_idx ON client_ownerships (protocol) WHERE protocol IS NOT NULL;
+CREATE INDEX        client_ownerships_quota_group_idx
+  ON client_ownerships (user_id, plan_id)
+  WHERE plan_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- traffic_samples — cumulative byte counters captured by the periodic
