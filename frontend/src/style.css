@@ -1856,14 +1856,26 @@ body {
 /* Visible separators between the Modal header / body / footer so the
  * title and the action buttons read as distinct regions rather than
  * blending into the form. AntD's default border between sections is
- * almost invisible on dark surfaces. */
+ * almost invisible on dark surfaces.
+ *
+ * Also bump the horizontal padding on .ant-modal-content from AntD's
+ * default 24px to 28px so the form contents have room to breathe
+ * against the modal frame. The negative-margin trick on header /
+ * footer keeps the separator lines flush with the modal edges. */
+.ant-modal-content {
+  padding-inline: 28px !important;
+}
 .ant-modal-content .ant-modal-header {
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  margin-inline: -28px;
   margin-bottom: 16px;
+  padding-inline: 28px;
   padding-bottom: 16px;
 }
 .ant-modal-content .ant-modal-footer {
   border-top: 1px solid rgba(148, 163, 184, 0.18);
+  margin-inline: -28px;
   margin-top: 16px;
+  padding-inline: 28px;
   padding-top: 16px;
 }
