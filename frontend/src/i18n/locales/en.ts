@@ -201,6 +201,10 @@ export const en = {
       sniff: {
         destOverride: 'destOverride',
         enabled: 'Enabled',
+        excludedDomains: 'Excluded domains',
+        excludedDomainsHint: 'Domain, geosite or ext: rules — matched traffic is not sniffed.',
+        excludedIPs: 'Excluded IPs',
+        excludedIPsHint: 'IP, CIDR, geoip or ext: rules — matched traffic is not sniffed.',
         metadataOnly: 'Metadata only',
         routeOnly: 'Route only',
       },

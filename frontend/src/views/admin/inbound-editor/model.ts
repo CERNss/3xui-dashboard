@@ -153,6 +153,8 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     sniffFakedns: false,
     sniffMetadataOnly: false,
     sniffRouteOnly: false,
+    sniffExcludedIPs: [],
+    sniffExcludedDomains: [],
 
     advSettingsOverride: false,
     advSettings: '',
@@ -357,6 +359,14 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   values.sniffFakedns = dest.includes('fakedns')
   values.sniffMetadataOnly = Boolean(sniffing.metadataOnly)
   values.sniffRouteOnly = Boolean(sniffing.routeOnly)
+  values.sniffExcludedIPs = Array.isArray(sniffing.excludedIPs)
+    ? sniffing.excludedIPs.filter((item: unknown): item is string => typeof item === 'string')
+    : []
+  values.sniffExcludedDomains = Array.isArray(sniffing.domainsExcluded)
+    ? sniffing.domainsExcluded.filter((item: unknown): item is string => typeof item === 'string')
+    : Array.isArray(sniffing.excludedDomains)
+      ? sniffing.excludedDomains.filter((item: unknown): item is string => typeof item === 'string')
+      : []
   values.advSniffing = JSON.stringify(sniffing, null, 2)
 
   return values
@@ -594,12 +604,17 @@ function sniffingFromValues(values: InboundEditorValues) {
   if (values.sniffTls) destOverride.push('tls')
   if (values.sniffQuic) destOverride.push('quic')
   if (values.sniffFakedns) destOverride.push('fakedns')
-  return {
+  const out: Record<string, unknown> = {
     enabled: values.sniffEnabled,
     destOverride,
     metadataOnly: values.sniffMetadataOnly,
     routeOnly: values.sniffRouteOnly,
   }
+  const excludedIPs = values.sniffExcludedIPs.filter(Boolean)
+  if (excludedIPs.length > 0) out.excludedIPs = excludedIPs
+  const excludedDomains = values.sniffExcludedDomains.filter(Boolean)
+  if (excludedDomains.length > 0) out.domainsExcluded = excludedDomains
+  return out
 }
 
 function jsonOrFallback(text: string, fallback: unknown) {

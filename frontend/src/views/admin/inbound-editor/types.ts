@@ -142,6 +142,8 @@ export interface InboundEditorValues {
   sniffFakedns: boolean
   sniffMetadataOnly: boolean
   sniffRouteOnly: boolean
+  sniffExcludedIPs: string[]
+  sniffExcludedDomains: string[]
 
   advSettingsOverride: boolean
   advSettings: string

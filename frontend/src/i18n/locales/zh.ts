@@ -201,6 +201,10 @@ export const zh = {
       sniff: {
         destOverride: 'destOverride',
         enabled: '启用 Sniffing',
+        excludedDomains: '排除的域名',
+        excludedDomainsHint: 'domain / geosite / ext: 规则 — 命中的流量不嗅探',
+        excludedIPs: '排除的 IP',
+        excludedIPsHint: 'IP / CIDR / geoip / ext: 规则 — 命中的流量不嗅探',
         metadataOnly: '仅元数据',
         routeOnly: '仅路由',
       },
