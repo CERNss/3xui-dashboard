@@ -1706,6 +1706,17 @@ body {
   margin-bottom: 20px;
 }
 
+/* Give the field labels (邮箱 / 密码 / verification code) breathing
+ * room above the input. AntD's default zero padding-bottom on
+ * .ant-form-item-label in vertical layout makes the label sit right
+ * on top of the input border. */
+.auth-login-card .ant-form-item .ant-form-item-label {
+  padding-bottom: 8px;
+}
+.auth-login-card .ant-form-item .ant-form-item-label > label {
+  height: auto;
+}
+
 .auth-login-card .ant-input-affix-wrapper {
   min-height: 40px;
 }
