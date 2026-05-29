@@ -210,6 +210,9 @@ describe('InboundEditor', () => {
 
     await user.type(screen.getByLabelText('Inbound name'), 'Advanced inbound')
     await user.click(screen.getByRole('tab', { name: 'Advanced' }))
+    // Advanced tab defaults to a read-only assembled JSON preview; the
+    // raw-override checkboxes only appear after flipping Edit mode.
+    await user.click(within(screen.getByRole('tabpanel', { name: 'Advanced' })).getByRole('switch'))
     await user.click(screen.getByLabelText('Override settings JSON'))
     await user.click(screen.getByLabelText('Override streamSettings JSON'))
     await user.click(screen.getByLabelText('Override sniffing JSON'))
