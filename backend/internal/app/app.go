@@ -199,6 +199,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	// Subscription.
 	subAsm := sub.New(userRepo, ownershipRepo, &subNodeLookup{svc: nodeService}, rtManager, logger, 0)
+	subAsm.SetPlanLookup(planRepo)
 	if wgProvisioner != nil {
 		subAsm.SetWGPeerSource(&subWGAdapter{prov: wgProvisioner})
 	}

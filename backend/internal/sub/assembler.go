@@ -37,12 +37,21 @@ type WGPeerSource interface {
 	PeerForOwnership(ctx context.Context, ownershipID int64) (*WGPeerView, error)
 }
 
+// PlanLookup is the subset of plan repo behaviour the Subscription-
+// Userinfo header needs: the per-plan traffic limit lets us report
+// the user's *shared* quota correctly under fan-out, instead of
+// per-client panel-side caps that would over-count by a factor of N.
+type PlanLookup interface {
+	Get(ctx context.Context, id int64) (*model.Plan, error)
+}
+
 // Assembler composes a user's subscription. It caches inbound
 // payloads per (nodeID, tag) for inboundTTL to avoid hammering each
 // node when many users share the same inbound.
 type Assembler struct {
 	users     *repository.UserRepo
 	ownership *repository.ClientOwnershipRepo
+	plans     PlanLookup // optional; nil → fall back to per-client panel total
 	nodes     NodeLookup
 	rt        *runtime.Manager
 	wgPeers   WGPeerSource // optional; nil → WG links are skipped silently
@@ -57,6 +66,12 @@ type Assembler struct {
 // SetWGPeerSource attaches the mirror lookup. Called once at
 // startup when WG is enabled (cfg.WireGuard.Enabled()). Idempotent.
 func (a *Assembler) SetWGPeerSource(s WGPeerSource) { a.wgPeers = s }
+
+// SetPlanLookup attaches the plan repo so the Subscription-Userinfo
+// header can report the user's *shared* per-plan limit (and not the
+// sum of per-client panel caps, which over-counts by N for fan-out
+// purchases). Optional — when nil, falls back to per-client totals.
+func (a *Assembler) SetPlanLookup(p PlanLookup) { a.plans = p }
 
 type inboundCacheEntry struct {
 	exp     time.Time
@@ -116,7 +131,13 @@ func (a *Assembler) Build(ctx context.Context, subID string, remarkFmt string) (
 
 	for i := range ownerships {
 		o := &ownerships[i]
-		if !o.Enabled {
+		// Skip rows the operator manually paused, but KEEP rows the
+		// dashboard's shared-quota enforcement disabled — the client
+		// app should still see the inbound entry in the subscription
+		// (with the Subscription-Userinfo header advertising 0 bytes
+		// remaining) so the user understands they're over quota
+		// rather than thinking the subscription broke.
+		if !o.Enabled && !o.DisabledByQuota {
 			continue
 		}
 		node, err := a.nodes.GetNode(ctx, o.NodeID)
@@ -156,15 +177,14 @@ func (a *Assembler) Build(ctx context.Context, subID string, remarkFmt string) (
 			Inbound: in, Client: client, NodeID: node.ID,
 		})
 
-		// UserInfo aggregates each client's lifetime counters; for v1
-		// we surface the panel-reported up/down sum.
-		data.UserInfo.UploadBytes += client.TotalGB // bytes (3x-ui quirk)
-		// We rely on the most recent ClientTraffic if we have it:
+		// UserInfo: sum actual used up/down across every client in the
+		// subscription. The previous implementation replaced the
+		// running sum with the LAST client's counters, which silently
+		// under-reported on fan-out subscriptions.
 		for _, ct := range in.ClientStats {
 			if ct.Email == client.Email {
-				data.UserInfo.UploadBytes = ct.Up
-				data.UserInfo.DownloadBytes = ct.Down
-				data.UserInfo.TotalBytes = ct.Total
+				data.UserInfo.UploadBytes += ct.Up
+				data.UserInfo.DownloadBytes += ct.Down
 				break
 			}
 		}
@@ -172,7 +192,48 @@ func (a *Assembler) Build(ctx context.Context, subID string, remarkFmt string) (
 			data.UserInfo.ExpiresAt = *o.ExpiresAt
 		}
 	}
+	// TotalBytes is the *shared* limit per distinct plan, not the sum
+	// of per-client panel caps (which would over-count by N for
+	// fan-out). When any ownership is currently disabled_by_quota
+	// (shared-quota enforcement triggered) the Upload/Download fields
+	// get clamped to TotalBytes so the client app shows "0 remaining"
+	// instead of the raw under-count.
+	a.populateSharedQuotaTotals(ctx, ownerships, data)
 	return data, nil
+}
+
+// populateSharedQuotaTotals fills UserInfo.TotalBytes from the
+// distinct plans the user owns and clamps Upload+Download to that
+// total when shared-quota enforcement has flagged any ownership.
+func (a *Assembler) populateSharedQuotaTotals(ctx context.Context, ownerships []model.ClientOwnership, data *SubscriptionData) {
+	if a.plans != nil {
+		seen := make(map[int64]bool)
+		var total int64
+		for i := range ownerships {
+			o := &ownerships[i]
+			if o.PlanID == nil || seen[*o.PlanID] {
+				continue
+			}
+			plan, err := a.plans.Get(ctx, *o.PlanID)
+			if err != nil || plan == nil {
+				continue
+			}
+			seen[*o.PlanID] = true
+			total += plan.TrafficLimitBytes
+		}
+		if total > 0 {
+			data.UserInfo.TotalBytes = total
+		}
+	}
+	for i := range ownerships {
+		if ownerships[i].DisabledByQuota {
+			if data.UserInfo.TotalBytes > 0 && data.UserInfo.UploadBytes+data.UserInfo.DownloadBytes < data.UserInfo.TotalBytes {
+				data.UserInfo.UploadBytes = data.UserInfo.TotalBytes
+				data.UserInfo.DownloadBytes = 0
+			}
+			break
+		}
+	}
 }
 
 // FormatBase64 returns newline-joined links, base64-encoded — the
