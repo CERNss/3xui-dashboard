@@ -93,18 +93,13 @@ function OIDCSettingsPanel({
           <Typography.Title level={4}>{t('admin.settings.oidc.title')}</Typography.Title>
           <Typography.Text type="secondary">{t('admin.settings.oidc.desc')}</Typography.Text>
         </div>
-        <Space size={10} align="center">
-          <Typography.Text type="secondary">
-            {oidcEnabled ? t('admin.settings.oidc.enabled') : t('admin.settings.oidc.disabled')}
-          </Typography.Text>
-          <Switch
-            checked={oidcEnabled}
-            aria-label={t('admin.settings.oidc.enabledToggle')}
-            onChange={(checked) => {
-              if (enabledItem) onDraftChange(enabledItem.key, checked ? 'true' : 'false')
-            }}
-          />
-        </Space>
+        <Switch
+          checked={oidcEnabled}
+          aria-label={t('admin.settings.oidc.enabledToggle')}
+          onChange={(checked) => {
+            if (enabledItem) onDraftChange(enabledItem.key, checked ? 'true' : 'false')
+          }}
+        />
       </div>
 
       <div className="settings-oidc-divider" />
@@ -178,9 +173,6 @@ function OIDCSettingsPanel({
       </div>
 
       <div className="settings-oidc-footer">
-        <Typography.Text type="secondary">
-          {oidcEnabled && configured ? t('admin.settings.oidc.enabled') : t('admin.settings.oidc.disabled')}
-        </Typography.Text>
         <Space size={10}>
           {items.some((item) => item.has_override) ? (
             <Button loading={saving} onClick={() => items.filter((item) => item.has_override).forEach((item) => onReset(item))}>
