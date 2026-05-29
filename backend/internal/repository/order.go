@@ -104,6 +104,20 @@ func (r *OrderRepo) MarkFailed(ctx context.Context, id int64, msg string) error 
 	return nil
 }
 
+// SetErrorMessage overwrites the order's error_message column without
+// changing status. Used by the fan-out billing flow to record partial
+// provisioning failures on an otherwise-completed order.
+func (r *OrderRepo) SetErrorMessage(ctx context.Context, id int64, msg string) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.Order{}).
+		Where("id = ?", id).
+		Update("error_message", msg)
+	if res.Error != nil {
+		return fmt.Errorf("OrderRepo.SetErrorMessage: %w", res.Error)
+	}
+	return nil
+}
+
 // MarkRefunded stamps the order refunded (used by Purchase when a
 // provisioning failure rolls back the balance charge).
 func (r *OrderRepo) MarkRefunded(ctx context.Context, id int64, msg string) error {

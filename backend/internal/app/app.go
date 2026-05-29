@@ -227,6 +227,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	paymentRegistry.Register(alipay.New(cfg.Alipay))
 	paymentRegistry.Register(stripe.New(cfg.Stripe))
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
+	billingService.SetOwnershipRepo(ownershipRepo)
 	billingService.SetSettings(settingRepo)
 	billingService.SetProvisioningPools(provisioningPoolRepo)
 	billingService.SetInboundService(inboundService)

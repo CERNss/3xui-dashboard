@@ -15,6 +15,9 @@ type ClientOwnership struct {
 	ClientEmail       string     `gorm:"column:client_email;not null"              json:"client_email"`
 	Protocol          string     `gorm:"column:protocol"                           json:"protocol,omitempty"`
 	PlanID            *int64     `gorm:"column:plan_id"                            json:"plan_id,omitempty"`
+	// OrderID is the originating order this ownership came from. Lets
+	// "one order → N ownerships" be queryable (fan-out billing flow).
+	OrderID           *int64     `gorm:"column:order_id"                           json:"order_id,omitempty"`
 	ExpiresAt         *time.Time `gorm:"column:expires_at"                         json:"expires_at,omitempty"`
 	TrafficLimitBytes *int64     `gorm:"column:traffic_limit_bytes"                json:"traffic_limit_bytes,omitempty"`
 	Enabled           bool       `gorm:"column:enabled;not null"                   json:"enabled"`

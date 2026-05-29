@@ -121,6 +121,7 @@ CREATE TABLE client_ownerships (
   client_email         TEXT         NOT NULL,
   protocol             TEXT,
   plan_id              BIGINT,
+  order_id             BIGINT,
   expires_at           TIMESTAMPTZ,
   traffic_limit_bytes  BIGINT,
   enabled              BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -129,6 +130,7 @@ CREATE TABLE client_ownerships (
 );
 CREATE UNIQUE INDEX client_ownerships_unique  ON client_ownerships (node_id, inbound_tag, client_email);
 CREATE INDEX        client_ownerships_user_id ON client_ownerships (user_id);
+CREATE INDEX        client_ownerships_order_id_idx ON client_ownerships (order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX        client_ownerships_protocol_idx ON client_ownerships (protocol) WHERE protocol IS NOT NULL;
 
 -- ---------------------------------------------------------------------------

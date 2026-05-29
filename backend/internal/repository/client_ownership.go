@@ -85,6 +85,24 @@ func (r *ClientOwnershipRepo) ListByUser(ctx context.Context, userID int64) ([]m
 	return rows, nil
 }
 
+// SetOrderID stamps the originating order on an ownership row. Used
+// when the billing fan-out flow provisions N ownerships from one
+// purchase: each ownership gets the same OrderID so the reverse
+// lookup ("ownerships of order X") works.
+func (r *ClientOwnershipRepo) SetOrderID(ctx context.Context, id int64, orderID int64) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.ClientOwnership{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"order_id": orderID, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return fmt.Errorf("ClientOwnership.SetOrderID: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // SetEnabled flips the enabled bit for one ownership row.
 func (r *ClientOwnershipRepo) SetEnabled(ctx context.Context, id int64, enabled bool) error {
 	res := r.db.WithContext(ctx).

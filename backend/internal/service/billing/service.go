@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,16 +43,17 @@ var (
 
 // Service composes the repos + the client provisioning service.
 type Service struct {
-	plans    *repository.PlanRepo
-	orders   *repository.OrderRepo
-	users    *repository.UserRepo
-	settings *repository.SettingRepo
-	pools    *repository.ProvisioningPoolRepo
-	client   *client.Service
-	inbounds *inbound.Service
-	bus      *event.Bus
-	gateways *payment.Registry
-	log      *slog.Logger
+	plans     *repository.PlanRepo
+	orders    *repository.OrderRepo
+	users     *repository.UserRepo
+	settings  *repository.SettingRepo
+	pools     *repository.ProvisioningPoolRepo
+	ownership *repository.ClientOwnershipRepo
+	client    *client.Service
+	inbounds  *inbound.Service
+	bus       *event.Bus
+	gateways  *payment.Registry
+	log       *slog.Logger
 }
 
 // New constructs the service. `gateways` MAY be nil — in that case
@@ -79,6 +81,13 @@ func (s *Service) SetSettings(settings *repository.SettingRepo) {
 // billing construction stays compact.
 func (s *Service) SetProvisioningPools(pools *repository.ProvisioningPoolRepo) {
 	s.pools = pools
+}
+
+// SetOwnershipRepo attaches the client_ownerships repository. Needed
+// by the fan-out purchase flow so each ownership the purchase creates
+// can be back-stamped with the originating order_id.
+func (s *Service) SetOwnershipRepo(repo *repository.ClientOwnershipRepo) {
+	s.ownership = repo
 }
 
 // SetInboundService attaches the real upstream inbound service used
@@ -355,14 +364,30 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 	if err := s.ensureNewUserPlanAllowed(ctx, user.ID, plan.ID, in.AllowExplicitTarget); err != nil {
 		return nil, err
 	}
-	target, err := s.resolveProvisioningTarget(ctx, plan, user.ID, in.NodeID, in.InboundTag, in.AllowExplicitTarget)
-	if err != nil {
-		return nil, err
+
+	// Fan-out resolve: admin-pinned target stays single-target; pool
+	// purchases get every provisionable inbound in the pool. Either way
+	// we end up with at least one target or fail before charging.
+	var targets []provisioningTarget
+	if in.AllowExplicitTarget && in.NodeID > 0 && strings.TrimSpace(in.InboundTag) != "" {
+		targets = []provisioningTarget{{NodeID: in.NodeID, InboundTag: strings.TrimSpace(in.InboundTag)}}
+	} else {
+		targets, err = s.resolveProvisioningTargets(ctx, plan, user.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("%w: no provisionable inbound in plan pool", ErrNoProvisioningTarget)
+	}
+	primary := targets[0]
 
 	// Record the order in pending state up front so the idempotency
 	// key is reserved (concurrent dupes will collide on the unique
-	// index and the retry path will find the existing row).
+	// index and the retry path will find the existing row). The order
+	// stores the *primary* target (first target in priority order) for
+	// observability; the full fan-out target list is recoverable from
+	// ClientOwnership.OrderID after provisioning.
 	order := &model.Order{
 		UserID:                 user.ID,
 		PlanID:                 plan.ID,
@@ -370,15 +395,25 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 		PriceCents:             plan.PriceCents,
 		Status:                 model.OrderStatusPending,
 		PaymentMethod:          model.PaymentMethodBalance,
-		ProvisioningNodeID:     &target.NodeID,
-		ProvisioningInboundTag: target.InboundTag,
+		ProvisioningNodeID:     &primary.NodeID,
+		ProvisioningInboundTag: primary.InboundTag,
 	}
 	if err := s.orders.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", int32(target.NodeID), advisoryLockKey(target.InboundTag)).Error; err != nil {
-			return fmt.Errorf("billing.Purchase: capacity lock: %w", err)
+		// Sort lock acquisition by (nodeID, tag) so concurrent fan-outs
+		// touching overlapping target sets serialize in the same order
+		// and don't deadlock.
+		for _, t := range sortTargetsForLock(targets) {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", int32(t.NodeID), advisoryLockKey(t.InboundTag)).Error; err != nil {
+				return fmt.Errorf("billing.Purchase: capacity lock: %w", err)
+			}
 		}
-		if err := s.validateProvisioningTargetNow(ctx, plan, user.ID, target, 0); err != nil {
-			return err
+		// For explicit admin path we still run the strict preflight on
+		// the chosen target. The pool path already ran the equivalent
+		// check inside resolveProvisioningTargets.
+		if in.AllowExplicitTarget && len(targets) == 1 {
+			if err := s.validateProvisioningTargetNow(ctx, plan, user.ID, primary, 0); err != nil {
+				return err
+			}
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return fmt.Errorf("OrderRepo.Create: %w", err)
@@ -400,24 +435,6 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 		OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
 	})
 
-	// Pre-flight: verify the resolved (NodeID, InboundTag) target is
-	// actually provisionable before charging the user. Catches:
-	//  - node is disabled / missing
-	//  - inbound tag has been deleted on the panel
-	//  - inbound is disabled (operator paused it)
-	//  - WG inbound but WG_MASTER_KEY not set on this dashboard
-	// All of these would otherwise cause a charge → provision-fail →
-	// refund pair, leaving paired ledger entries for what's
-	// effectively a no-op. Reject up front instead.
-	if err := s.validateProvisioningTargetNow(ctx, plan, user.ID, target, order.ID); err != nil {
-		_ = s.orders.MarkFailed(ctx, order.ID, "inbound preflight: "+err.Error())
-		s.bus.PublishType(event.OrderFailed, payload.Order{
-			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
-			Reason: "inbound_unavailable",
-		})
-		return order, fmt.Errorf("billing.Purchase: preflight: %w", err)
-	}
-
 	// Charge.
 	if _, have, err := s.users.ChargeBalanceIfEnough(ctx, user.ID, plan.PriceCents, model.BalanceReasonOrderCharge, "", &order.ID); err != nil {
 		if errors.Is(err, repository.ErrInsufficientBalance) {
@@ -435,32 +452,45 @@ func (s *Service) Purchase(ctx context.Context, in PurchaseInput) (*model.Order,
 		return order, fmt.Errorf("billing.Purchase: charge: %w", err)
 	}
 
-	// Provision.
-	planID := plan.ID
-	ownership, err := s.client.ProvisionClient(ctx, user.ID, target.NodeID, target.InboundTag, client.PlanParams{
-		PlanID:            &planID,
-		DurationDays:      plan.DurationDays,
-		TrafficLimitBytes: plan.TrafficLimitBytes,
-		IPLimit:           plan.IPLimit,
-	})
-	if err != nil {
-		// Refund.
-		if _, refundErr := s.users.AdjustBalance(ctx, user.ID, plan.PriceCents, model.BalanceReasonOrderRefund, err.Error(), &order.ID); refundErr != nil {
+	// Fan-out provision: try every target, collect successes + errors.
+	outcome := s.provisionTargets(ctx, user.ID, plan, targets)
+	if len(outcome.Ownerships) == 0 {
+		errMsg := strings.Join(outcome.Errors, "; ")
+		if _, refundErr := s.users.AdjustBalance(ctx, user.ID, plan.PriceCents, model.BalanceReasonOrderRefund, errMsg, &order.ID); refundErr != nil {
 			s.log.Error("refund failed after provisioning failure",
 				slog.Int64("order_id", order.ID),
 				slog.String("refund_err", refundErr.Error()),
-				slog.String("provision_err", err.Error()),
+				slog.String("provision_err", errMsg),
 			)
 		}
-		_ = s.orders.MarkRefunded(ctx, order.ID, err.Error())
+		_ = s.orders.MarkRefunded(ctx, order.ID, errMsg)
 		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents, Reason: "provisioning_failed",
 		})
-		return order, fmt.Errorf("billing.Purchase: provision: %w", err)
+		return order, fmt.Errorf("billing.Purchase: provision: %s", errMsg)
 	}
 
-	if err := s.orders.MarkCompleted(ctx, order.ID, ownership.ID); err != nil {
+	// At least one target succeeded. Stamp the order on every fresh
+	// ownership so the reverse lookup (ownerships for order X) works.
+	primaryOwnership := outcome.Ownerships[0]
+	for _, o := range outcome.Ownerships {
+		if err := s.ownership.SetOrderID(ctx, o.ID, order.ID); err != nil {
+			s.log.Warn("set ownership order_id failed",
+				slog.Int64("ownership_id", o.ID),
+				slog.Int64("order_id", order.ID),
+				slog.String("err", err.Error()),
+			)
+		}
+	}
+
+	if err := s.orders.MarkCompleted(ctx, order.ID, primaryOwnership.ID); err != nil {
 		s.log.Error("mark completed failed", slog.Int64("order_id", order.ID), slog.String("error", err.Error()))
+	}
+	if len(outcome.Errors) > 0 {
+		// Partial success: keep the order completed but stash the
+		// per-target failure list in error_message so the operator can
+		// see why some inbounds in the pool didn't land.
+		_ = s.orders.SetErrorMessage(ctx, order.ID, "partial fan-out: "+strings.Join(outcome.Errors, "; "))
 	}
 	s.bus.PublishType(event.OrderCompleted, payload.Order{
 		OrderID: order.ID, UserID: user.ID, PlanID: plan.ID, PriceCents: plan.PriceCents,
@@ -654,34 +684,66 @@ func (s *Service) ConfirmPayment(ctx context.Context, providerOrderID string) (*
 		_ = s.orders.MarkRefunded(ctx, order.ID, "missing provisioning target")
 		return order, fmt.Errorf("billing.ConfirmPayment: order has no provisioning_node_id")
 	}
-	target := provisioningTarget{NodeID: *order.ProvisioningNodeID, InboundTag: order.ProvisioningInboundTag}
-	if err := s.validateProvisioningTargetNow(ctx, plan, order.UserID, target, order.ID); err != nil {
-		_ = s.orders.MarkRefunded(ctx, order.ID, "provisioning target unavailable: "+err.Error())
+
+	// Re-resolve fan-out targets at confirmation time rather than
+	// trusting the single primary target captured at PurchaseViaPayment
+	// time. Inbounds may have come and gone in the pool while the
+	// payment was pending; whatever is provisionable now is what the
+	// user gets links for. For explicit (admin) targets we fall back to
+	// the single stored target.
+	var targets []provisioningTarget
+	if plan.ProvisioningPoolID != nil {
+		tgs, err := s.resolveProvisioningTargets(ctx, plan, order.UserID)
+		if err != nil {
+			_ = s.orders.MarkRefunded(ctx, order.ID, "resolve targets failed: "+err.Error())
+			return order, fmt.Errorf("billing.ConfirmPayment: resolve targets: %w", err)
+		}
+		targets = tgs
+	} else {
+		single := provisioningTarget{NodeID: *order.ProvisioningNodeID, InboundTag: order.ProvisioningInboundTag}
+		if err := s.validateProvisioningTargetNow(ctx, plan, order.UserID, single, order.ID); err != nil {
+			_ = s.orders.MarkRefunded(ctx, order.ID, "provisioning target unavailable: "+err.Error())
+			s.bus.PublishType(event.OrderFailed, payload.Order{
+				OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
+				Reason: "provisioning_target_unavailable_after_payment",
+			})
+			return order, fmt.Errorf("billing.ConfirmPayment: target unavailable: %w", err)
+		}
+		targets = []provisioningTarget{single}
+	}
+	if len(targets) == 0 {
+		_ = s.orders.MarkRefunded(ctx, order.ID, "no provisionable inbound in plan pool at confirmation time")
 		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
 			Reason: "provisioning_target_unavailable_after_payment",
 		})
-		return order, fmt.Errorf("billing.ConfirmPayment: target unavailable: %w", err)
+		return order, fmt.Errorf("%w: pool empty at confirmation", ErrNoProvisioningTarget)
 	}
-	planID := plan.ID
-	ownership, err := s.client.ProvisionClient(ctx, order.UserID, target.NodeID, target.InboundTag, client.PlanParams{
-		PlanID:            &planID,
-		DurationDays:      plan.DurationDays,
-		TrafficLimitBytes: plan.TrafficLimitBytes,
-		IPLimit:           plan.IPLimit,
-	})
-	if err != nil {
-		_ = s.orders.MarkRefunded(ctx, order.ID, "provisioning failed: "+err.Error())
+
+	outcome := s.provisionTargets(ctx, order.UserID, plan, targets)
+	if len(outcome.Ownerships) == 0 {
+		errMsg := strings.Join(outcome.Errors, "; ")
+		_ = s.orders.MarkRefunded(ctx, order.ID, "provisioning failed: "+errMsg)
 		s.bus.PublishType(event.OrderFailed, payload.Order{
 			OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
 			Reason: "provisioning_failed_after_payment",
 		})
-		return order, fmt.Errorf("billing.ConfirmPayment: provision: %w", err)
+		return order, fmt.Errorf("billing.ConfirmPayment: provision: %s", errMsg)
+	}
+	primaryOwnership := outcome.Ownerships[0]
+	for _, o := range outcome.Ownerships {
+		if err := s.ownership.SetOrderID(ctx, o.ID, order.ID); err != nil {
+			s.log.Warn("set ownership order_id failed after payment",
+				slog.Int64("ownership_id", o.ID), slog.Int64("order_id", order.ID), slog.String("err", err.Error()))
+		}
 	}
 
-	if err := s.orders.MarkCompleted(ctx, order.ID, ownership.ID); err != nil {
+	if err := s.orders.MarkCompleted(ctx, order.ID, primaryOwnership.ID); err != nil {
 		s.log.Error("mark completed failed after payment",
 			slog.Int64("order_id", order.ID), slog.String("error", err.Error()))
+	}
+	if len(outcome.Errors) > 0 {
+		_ = s.orders.SetErrorMessage(ctx, order.ID, "partial fan-out: "+strings.Join(outcome.Errors, "; "))
 	}
 	s.bus.PublishType(event.OrderCompleted, payload.Order{
 		OrderID: order.ID, UserID: order.UserID, PlanID: order.PlanID, PriceCents: order.PriceCents,
@@ -1064,42 +1126,117 @@ func numericInt64(v any) (int64, bool) {
 	}
 }
 
+// resolveProvisioningTarget returns the single target an admin or
+// explicit-caller path uses. Pool-driven purchases call
+// resolveProvisioningTargets (plural) instead and fan out.
 func (s *Service) resolveProvisioningTarget(ctx context.Context, plan *model.Plan, userID, nodeID int64, inboundTag string, allowExplicit bool) (provisioningTarget, error) {
 	inboundTag = strings.TrimSpace(inboundTag)
 	if allowExplicit && nodeID > 0 && inboundTag != "" {
 		return provisioningTarget{NodeID: nodeID, InboundTag: inboundTag}, nil
 	}
-	if plan.ProvisioningPoolID == nil {
-		return provisioningTarget{}, fmt.Errorf("%w: plan has no provisioning_pool_id", ErrNoProvisioningTarget)
-	}
-	if s.pools == nil {
-		return provisioningTarget{}, fmt.Errorf("%w: provisioning pools are not configured", ErrNoProvisioningTarget)
-	}
-	candidates, err := s.pools.ListCandidatesForUser(ctx, *plan.ProvisioningPoolID, userID)
+	targets, err := s.resolveProvisioningTargets(ctx, plan, userID)
 	if err != nil {
 		return provisioningTarget{}, err
 	}
-	if target, ok := s.firstProvisionableCandidate(ctx, *plan.ProvisioningPoolID, candidates); ok {
-		return target, nil
+	if len(targets) == 0 {
+		return provisioningTarget{}, fmt.Errorf("%w: pool_id=%d", ErrNoProvisioningTarget, derefInt64(plan.ProvisioningPoolID))
 	}
-	return provisioningTarget{}, fmt.Errorf("%w: pool_id=%d", ErrNoProvisioningTarget, *plan.ProvisioningPoolID)
+	return targets[0], nil
 }
 
-func (s *Service) firstProvisionableCandidate(ctx context.Context, poolID int64, candidates []repository.Candidate) (provisioningTarget, bool) {
+// resolveProvisioningTargets returns every provisionable inbound in
+// the plan's pool, in priority order. Used by the fan-out billing
+// path: one purchase creates one client on every returned target so
+// the user ends up with N subscription links (one per inbound in the
+// pool). Candidates that fail capacity / preflight / allowed-protocol
+// checks are skipped and logged but do not prevent the others.
+func (s *Service) resolveProvisioningTargets(ctx context.Context, plan *model.Plan, userID int64) ([]provisioningTarget, error) {
+	if plan.ProvisioningPoolID == nil {
+		return nil, fmt.Errorf("%w: plan has no provisioning_pool_id", ErrNoProvisioningTarget)
+	}
+	if s.pools == nil {
+		return nil, fmt.Errorf("%w: provisioning pools are not configured", ErrNoProvisioningTarget)
+	}
+	candidates, err := s.pools.ListCandidatesForUser(ctx, *plan.ProvisioningPoolID, userID)
+	if err != nil {
+		return nil, err
+	}
+	targets := make([]provisioningTarget, 0, len(candidates))
 	for _, c := range candidates {
 		pv := s.checkCandidateProvisionability(ctx, c)
 		if pv.Reason != "" {
 			s.log.Warn("skip provisioning candidate after preflight",
-				slog.Int64("pool_id", poolID),
+				slog.Int64("pool_id", *plan.ProvisioningPoolID),
 				slog.Int64("node_id", pv.Target.NodeID),
 				slog.String("inbound", pv.Target.InboundTag),
 				slog.String("err", pv.Reason),
 			)
 			continue
 		}
-		return pv.Target, true
+		targets = append(targets, pv.Target)
 	}
-	return provisioningTarget{}, false
+	return targets, nil
+}
+
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// sortTargetsForLock returns targets ordered by (nodeID, tag) so
+// concurrent fan-out purchases acquire the per-(nodeID, tag)
+// pg_advisory_xact_lock set in a deterministic order — no deadlock.
+func sortTargetsForLock(targets []provisioningTarget) []provisioningTarget {
+	out := make([]provisioningTarget, len(targets))
+	copy(out, targets)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].NodeID != out[j].NodeID {
+			return out[i].NodeID < out[j].NodeID
+		}
+		return out[i].InboundTag < out[j].InboundTag
+	})
+	return out
+}
+
+// provisionTargets calls ProvisionClient on every target and returns
+// the resulting ownerships plus per-target errors. Best-effort: a
+// failure on one target does not stop the others. Caller decides what
+// to do when len(ownerships) == 0 (refund) vs partial (mark completed
+// + record errors).
+type provisionOutcome struct {
+	Ownerships []*model.ClientOwnership
+	Errors     []string
+}
+
+func (s *Service) provisionTargets(ctx context.Context, userID int64, plan *model.Plan, targets []provisioningTarget) provisionOutcome {
+	planID := plan.ID
+	params := client.PlanParams{
+		PlanID:            &planID,
+		DurationDays:      plan.DurationDays,
+		TrafficLimitBytes: plan.TrafficLimitBytes,
+		IPLimit:           plan.IPLimit,
+	}
+	out := provisionOutcome{
+		Ownerships: make([]*model.ClientOwnership, 0, len(targets)),
+		Errors:     make([]string, 0),
+	}
+	for _, t := range targets {
+		o, err := s.client.ProvisionClient(ctx, userID, t.NodeID, t.InboundTag, params)
+		if err != nil {
+			s.log.Warn("provision target failed in fan-out",
+				slog.Int64("user_id", userID),
+				slog.Int64("node_id", t.NodeID),
+				slog.String("inbound", t.InboundTag),
+				slog.String("err", err.Error()),
+			)
+			out.Errors = append(out.Errors, fmt.Sprintf("node=%d tag=%q: %v", t.NodeID, t.InboundTag, err))
+			continue
+		}
+		out.Ownerships = append(out.Ownerships, o)
+	}
+	return out
 }
 
 func (s *Service) validateProvisioningTargetNow(ctx context.Context, plan *model.Plan, userID int64, target provisioningTarget, excludeOrderID int64) error {
