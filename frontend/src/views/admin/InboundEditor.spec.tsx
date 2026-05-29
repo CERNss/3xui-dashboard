@@ -87,10 +87,12 @@ describe('InboundEditor', () => {
     expect(screen.getByLabelText('Inbound name')).toHaveValue('Main inbound')
     expect(screen.getByLabelText('Port')).toHaveValue('443')
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
-    expect(screen.getByText('VLESS clients')).toBeInTheDocument()
     expect(screen.getByLabelText('Decryption')).toHaveValue('none')
     expect(screen.getByLabelText('Encryption')).toHaveValue('none')
-    expect(screen.getByDisplayValue('alice@example.com')).toBeInTheDocument()
+    // Clients are not editable inside the inbound editor — they're
+    // auto-created at customer purchase time and browsable from the
+    // Inbounds page row expansion. The existing settings.clients[]
+    // values are preserved through the form round-trip though.
 
     await user.clear(screen.getByLabelText('Inbound name'))
     await user.type(screen.getByLabelText('Inbound name'), 'Updated inbound')
@@ -117,19 +119,19 @@ describe('InboundEditor', () => {
     renderEditor()
 
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
-    expect(screen.getByText('VLESS clients')).toBeInTheDocument()
     expect(screen.getByLabelText('Decryption')).toBeInTheDocument()
 
     cleanup()
     renderEditor(makeInbound({ protocol: 'vmess', settings: JSON.stringify({ clients: [], disableInsecureEncryption: true }) }))
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
-    expect(screen.getByText('VMess clients')).toBeInTheDocument()
     expect(screen.getByLabelText('Disable insecure encryption')).toBeInTheDocument()
 
     cleanup()
     renderEditor(makeInbound({ protocol: 'trojan', settings: JSON.stringify({ clients: [{ password: 'secret', email: 'trojan@example.com' }] }) }))
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
-    expect(screen.getByText('Trojan passwords')).toBeInTheDocument()
+    // Trojan client list hidden; the "Configure fallbacks" button is
+    // a stable anchor that the protocol tab actually renders.
+    expect(screen.getByRole('button', { name: /Configure fallbacks/i })).toBeInTheDocument()
 
     cleanup()
     renderEditor(makeInbound({ protocol: 'shadowsocks', settings: JSON.stringify({ clients: [], method: '2022-blake3-aes-256-gcm', password: 'global-password' }) }))
@@ -147,7 +149,7 @@ describe('InboundEditor', () => {
     cleanup()
     renderEditor(makeInbound({ protocol: 'wireguard', settings: JSON.stringify({ peers: [], secretKey: 'wg-secret' }) }))
     await user.click(screen.getByRole('tab', { name: 'Protocol' }))
-    expect(screen.getByText('WireGuard peers')).toBeInTheDocument()
+    // WG peer list hidden; the Secret key Input remains as a stable anchor.
     expect(screen.getByLabelText('Secret key')).toBeInTheDocument()
   })
 

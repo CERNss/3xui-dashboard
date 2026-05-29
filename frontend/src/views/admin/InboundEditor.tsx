@@ -55,17 +55,25 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     onClose()
   }
 
+  // Clients / peers / accounts are managed elsewhere:
+  // - VLESS / VMess / Trojan / Shadowsocks / Hysteria clients are
+  //   auto-created when a customer purchases a plan that targets
+  //   this inbound.
+  // - WireGuard peers ditto (subscription provisioning).
+  // - HTTP / Mixed accounts and read-only client browsing live in
+  //   the Inbounds page row expansion.
+  // The inbound editor is for the "wire shape" only.
   const protocolFields = () => {
-    if (protocol === 'vmess') return <VmessProtocol />
-    if (protocol === 'trojan') return <TrojanProtocol />
-    if (protocol === 'shadowsocks') return <ShadowsocksProtocol />
-    if (protocol === 'wireguard') return <WireguardProtocol />
-    if (protocol === 'hysteria') return <HysteriaProtocol />
-    if (protocol === 'http') return <HttpProtocol />
-    if (protocol === 'mixed') return <MixedProtocol />
+    if (protocol === 'vmess') return <VmessProtocol hideClients />
+    if (protocol === 'trojan') return <TrojanProtocol hideClients />
+    if (protocol === 'shadowsocks') return <ShadowsocksProtocol hideClients />
+    if (protocol === 'wireguard') return <WireguardProtocol hideClients />
+    if (protocol === 'hysteria') return <HysteriaProtocol hideClients />
+    if (protocol === 'http') return <HttpProtocol hideClients />
+    if (protocol === 'mixed') return <MixedProtocol hideClients />
     if (protocol === 'tunnel') return <TunnelProtocol />
     if (protocol === 'tun') return <TunProtocol />
-    return <VlessProtocol />
+    return <VlessProtocol hideClients />
   }
 
   const tabs = [
