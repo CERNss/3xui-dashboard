@@ -730,6 +730,7 @@ export const en = {
       saving: 'Saving…',
       submit: 'Save',
       subtitle: 'Curate which existing inbounds a plan can land new clients on at purchase time',
+      noGeneratedTargets: 'No inbounds linked to this pool yet — add one from the Inbounds page.',
       targetsCount: 'Registered inbounds',
       targetCreateTitle: 'Add Target',
       targetNoun: 'target',

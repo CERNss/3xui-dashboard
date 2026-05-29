@@ -896,8 +896,10 @@ body {
 }
 
 .config-list-page-card-stack {
+  align-content: start;
   display: grid;
   gap: 16px;
+  grid-auto-rows: max-content;
   padding: 16px;
 }
 

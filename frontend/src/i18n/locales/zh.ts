@@ -730,6 +730,7 @@ export const zh = {
       saving: '保存中…',
       submit: '保存',
       subtitle: '把已存在的入站登记到池里，让套餐购买时从这个池挑一个分配 client',
+      noGeneratedTargets: '池里还没绑定入站 — 去入站列表里把入站加进来',
       targetsCount: '已登记入站',
       targetCreateTitle: '添加池目标',
       targetNoun: '目标',
