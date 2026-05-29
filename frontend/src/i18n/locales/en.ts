@@ -694,8 +694,21 @@ export const en = {
     },
     provisioningPools: {
       add: 'New Pool',
-      addTarget: 'Add Target',
+      addTarget: 'Add inbound',
+      addTargetTitle: 'Add inbound to pool "{name}"',
+      alreadyBound: 'already in pool',
       allowedProtocols: 'Allowed protocols',
+      field: {
+        enabled: 'Enabled',
+        inbound: 'Inbound',
+        inboundPlaceholder: 'Search by node / tag / protocol',
+        inboundRequired: 'Pick an inbound',
+        loading: 'Loading…',
+        maxClients: 'Max clients',
+        maxClientsHint: '0 = no dashboard-side cap',
+        noInboundCandidate: 'No matching inbound on any node',
+        priorityHint: 'Lower number = picked first when purchasing',
+      },
       capacity: 'Capacity',
       column: {
         pool: 'Pool',

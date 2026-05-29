@@ -694,8 +694,21 @@ export const zh = {
     },
     provisioningPools: {
       add: '新建分配池',
-      addTarget: '添加入站',
+      addTarget: '加入站',
+      addTargetTitle: '把入站加入分配池「{name}」',
+      alreadyBound: '已在池中',
       allowedProtocols: '允许协议',
+      field: {
+        enabled: '启用',
+        inbound: '入站',
+        inboundPlaceholder: '按节点/tag/协议搜索',
+        inboundRequired: '请选择一个入站',
+        loading: '加载中…',
+        maxClients: '客户端上限',
+        maxClientsHint: '0 = dashboard 侧不限',
+        noInboundCandidate: '没有可加入的入站',
+        priorityHint: '数字越小，购买时越优先挑',
+      },
       capacity: '容量',
       column: {
         pool: '分配池',

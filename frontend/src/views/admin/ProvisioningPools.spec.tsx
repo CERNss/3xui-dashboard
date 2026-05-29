@@ -11,6 +11,7 @@ import { renderWithProviders } from '@/test-utils/renderWithProviders'
 const createPoolMutateAsync = vi.fn()
 const updatePoolMutateAsync = vi.fn()
 const removePoolMutateAsync = vi.fn()
+const addTargetMutateAsync = vi.fn()
 const updateTargetMutateAsync = vi.fn()
 const removeTargetMutateAsync = vi.fn()
 const poolsRefetch = vi.fn()
@@ -33,8 +34,13 @@ vi.mock('@/hooks/queries/admin/provisioningPools', () => ({
   useCreateProvisioningPool: () => ({ error: null, isPending: false, mutateAsync: createPoolMutateAsync }),
   useUpdateProvisioningPool: () => ({ error: null, isPending: false, mutateAsync: updatePoolMutateAsync }),
   useRemoveProvisioningPool: () => ({ error: null, isPending: false, mutateAsync: removePoolMutateAsync }),
+  useAddProvisioningPoolTarget: () => ({ error: null, isPending: false, mutateAsync: addTargetMutateAsync }),
   useUpdateProvisioningPoolTarget: () => ({ error: null, isPending: false, mutateAsync: updateTargetMutateAsync }),
   useRemoveProvisioningPoolTarget: () => ({ error: null, isPending: false, mutateAsync: removeTargetMutateAsync }),
+}))
+
+vi.mock('@/hooks/queries/admin/inbounds', () => ({
+  useInboundsFleet: () => ({ data: { inbounds: [] }, error: null, isLoading: false, isFetching: false }),
 }))
 
 vi.mock('@/hooks/queries/admin/inboundTemplates', () => ({
