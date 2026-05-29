@@ -1836,3 +1836,19 @@ body {
     align-self: stretch;
   }
 }
+
+/* Center every Modal vertically by default. AntD's default
+ * positioning sticks Modals to the top with a 100px offset which
+ * looks off-balance on big screens. Match the behaviour of the
+ * upstream 3x-ui add-inbound dialog without having to pass
+ * `centered` on every <Modal>. The reset on .ant-modal undoes the
+ * top:100px the wrap container would otherwise hand to it. */
+.ant-modal-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ant-modal-wrap .ant-modal {
+  top: 0 !important;
+  padding-bottom: 0;
+}
