@@ -10,12 +10,17 @@ export interface GenericSettingsSectionProps extends SettingsSectionProps {
   title: string
   description: string
   extra?: ReactNode
+  /** Whether `extra` renders above the grouped item Cards (default) or
+   * below them. SecurityAuth puts the OIDC panel at the bottom so the
+   * primary "Registration" Cards land directly under the title. */
+  extraPosition?: 'top' | 'bottom'
 }
 
 export function SettingsSection({
   title,
   description,
   extra,
+  extraPosition = 'top',
   items,
   drafts,
   savingKey,
@@ -31,6 +36,31 @@ export function SettingsSection({
     return buckets
   }, {})
 
+  const itemsBlock = Object.keys(grouped).length === 0 && !extra ? (
+    <Empty description={t('admin.settings.emptySection')} />
+  ) : Object.keys(grouped).length > 0 ? (
+    Object.entries(grouped).map(([group, rows]) => {
+      const titleKey = groupTitleKey(group)
+      return (
+        <Card key={group} title={titleKey ? t(titleKey) : group}>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {rows.map((item) => (
+              <SettingRow
+                key={item.key}
+                item={item}
+                drafts={drafts}
+                saving={savingKey === item.key}
+                onDraftChange={onDraftChange}
+                onSave={onSave}
+                onReset={onReset}
+              />
+            ))}
+          </Space>
+        </Card>
+      )
+    })
+  ) : null
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card>
@@ -39,31 +69,9 @@ export function SettingsSection({
         </Typography.Title>
         <Typography.Text type="secondary">{description}</Typography.Text>
       </Card>
-      {extra}
-      {Object.keys(grouped).length === 0 && !extra ? (
-        <Empty description={t('admin.settings.emptySection')} />
-      ) : Object.keys(grouped).length > 0 ? (
-        Object.entries(grouped).map(([group, rows]) => {
-          const titleKey = groupTitleKey(group)
-          return (
-            <Card key={group} title={titleKey ? t(titleKey) : group}>
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                {rows.map((item) => (
-                  <SettingRow
-                    key={item.key}
-                    item={item}
-                    drafts={drafts}
-                    saving={savingKey === item.key}
-                    onDraftChange={onDraftChange}
-                    onSave={onSave}
-                    onReset={onReset}
-                  />
-                ))}
-              </Space>
-            </Card>
-          )
-        })
-      ) : null}
+      {extraPosition === 'top' ? extra : null}
+      {itemsBlock}
+      {extraPosition === 'bottom' ? extra : null}
     </Space>
   )
 }

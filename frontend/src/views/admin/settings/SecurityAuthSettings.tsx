@@ -43,6 +43,7 @@ export function SecurityAuthSettings(props: SettingsSectionProps) {
       title={t('admin.settings.securityAuthTitle')}
       description={t('admin.settings.securityAuthDesc')}
       extra={<OIDCSettingsPanel {...props} items={oidcItems} />}
+      extraPosition="bottom"
     />
   )
 }
@@ -92,15 +93,18 @@ function OIDCSettingsPanel({
           <Typography.Title level={4}>{t('admin.settings.oidc.title')}</Typography.Title>
           <Typography.Text type="secondary">{t('admin.settings.oidc.desc')}</Typography.Text>
         </div>
-        <Switch
-          checked={oidcEnabled}
-          checkedChildren={t('common.yes')}
-          unCheckedChildren={t('common.no')}
-          aria-label={t('admin.settings.oidc.enabledToggle')}
-          onChange={(checked) => {
-            if (enabledItem) onDraftChange(enabledItem.key, checked ? 'true' : 'false')
-          }}
-        />
+        <Space size={10} align="center">
+          <Typography.Text type="secondary">
+            {oidcEnabled ? t('admin.settings.oidc.enabled') : t('admin.settings.oidc.disabled')}
+          </Typography.Text>
+          <Switch
+            checked={oidcEnabled}
+            aria-label={t('admin.settings.oidc.enabledToggle')}
+            onChange={(checked) => {
+              if (enabledItem) onDraftChange(enabledItem.key, checked ? 'true' : 'false')
+            }}
+          />
+        </Space>
       </div>
 
       <div className="settings-oidc-divider" />
@@ -132,21 +136,25 @@ function OIDCSettingsPanel({
           hint={t('admin.settings.oidc.scopesHint')}
           onDraftChange={onDraftChange}
         />
-        <div className="settings-oidc-field">
-          <OIDCField item={byKey.get('oidc_redirect_url')} drafts={drafts} label={t('admin.settings.oidc.redirectUrl')} onDraftChange={onDraftChange} />
-          <div className="settings-oidc-copy-row">
-            <Button icon={<CopyOutlined />} disabled={!redirectURL} onClick={copyRedirect}>
-              {t('admin.settings.oidc.copyRedirect')}
-            </Button>
-            <Typography.Text code>{redirectURL || t('admin.settings.oidc.redirectPlaceholder')}</Typography.Text>
-          </div>
-          <Typography.Text type="secondary" className="settings-oidc-hint">
-            {t('admin.settings.oidc.redirectHint')}
-          </Typography.Text>
-        </div>
+        <OIDCField item={byKey.get('oidc_icon_url')} drafts={drafts} label={t('admin.settings.oidc.iconUrl')} onDraftChange={onDraftChange} />
       </div>
 
-      <OIDCField item={byKey.get('oidc_icon_url')} drafts={drafts} label={t('admin.settings.oidc.iconUrl')} onDraftChange={onDraftChange} />
+      {/* Redirect URI stands on its own full-width row — it carries a
+       * Copy button + hint that make it taller than every other field,
+       * pairing it with anything else inside a 2-column grid produced
+       * uneven row heights. */}
+      <div className="settings-oidc-field settings-oidc-field--full">
+        <OIDCField item={byKey.get('oidc_redirect_url')} drafts={drafts} label={t('admin.settings.oidc.redirectUrl')} onDraftChange={onDraftChange} />
+        <div className="settings-oidc-copy-row">
+          <Button icon={<CopyOutlined />} disabled={!redirectURL} onClick={copyRedirect}>
+            {t('admin.settings.oidc.copyRedirect')}
+          </Button>
+          <Typography.Text code>{redirectURL || t('admin.settings.oidc.redirectPlaceholder')}</Typography.Text>
+        </div>
+        <Typography.Text type="secondary" className="settings-oidc-hint">
+          {t('admin.settings.oidc.redirectHint')}
+        </Typography.Text>
+      </div>
 
       <div className="settings-oidc-grid settings-oidc-grid--three">
         <ReadOnlySelect label={t('admin.settings.oidc.tokenAuth')} value="client_secret_post" options={tokenAuthOptions} />
@@ -154,7 +162,9 @@ function OIDCSettingsPanel({
         <ReadOnlySelect label={t('admin.settings.oidc.signingAlgorithms')} value="RS256" options={signingAlgorithmOptions} />
       </div>
 
-      <div className="settings-oidc-toggle-grid">
+      {/* 4 switches → 4-column grid so they all sit on one row instead
+       * of the 4th wrapping below alone in a 3-column grid. */}
+      <div className="settings-oidc-toggle-grid settings-oidc-toggle-grid--four">
         <ReadOnlySwitch label={t('admin.settings.oidc.pkce')} checked />
         <ReadOnlySwitch label={t('admin.settings.oidc.verifyIdToken')} checked />
         <ReadOnlySwitch label={t('admin.settings.oidc.requireVerifiedEmail')} checked />
@@ -168,19 +178,19 @@ function OIDCSettingsPanel({
       </div>
 
       <div className="settings-oidc-footer">
-        <Space size={10} wrap>
-          <Button type="primary" loading={saving} disabled={!items.some((item) => draftValue(item, drafts) !== itemValue(item))} onClick={saveAll}>
-            {t('admin.settings.oidc.save')}
-          </Button>
+        <Typography.Text type="secondary">
+          {oidcEnabled && configured ? t('admin.settings.oidc.enabled') : t('admin.settings.oidc.disabled')}
+        </Typography.Text>
+        <Space size={10}>
           {items.some((item) => item.has_override) ? (
             <Button loading={saving} onClick={() => items.filter((item) => item.has_override).forEach((item) => onReset(item))}>
               {t('admin.settings.reset')}
             </Button>
           ) : null}
+          <Button type="primary" loading={saving} disabled={!items.some((item) => draftValue(item, drafts) !== itemValue(item))} onClick={saveAll}>
+            {t('admin.settings.oidc.save')}
+          </Button>
         </Space>
-        <Typography.Text type="secondary">
-          {oidcEnabled && configured ? t('admin.settings.oidc.enabled') : t('admin.settings.oidc.disabled')}
-        </Typography.Text>
       </div>
     </Card>
   )

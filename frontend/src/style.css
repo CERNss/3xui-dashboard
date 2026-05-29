@@ -1256,11 +1256,21 @@ body {
   margin: 0;
 }
 
+/* Bump the enable-toggle Switch in the OIDC panel header so it reads
+ * as a primary control rather than a tiny default-size Switch lost in
+ * the white space. */
+.settings-oidc-header .ant-switch {
+  min-width: 48px;
+  transform: scale(1.15);
+  transform-origin: right center;
+}
+
 .settings-oidc-divider {
   border-top: 1px solid #d8e1ec;
 }
 
 .settings-oidc-grid {
+  align-items: start;
   display: grid;
   gap: 20px 24px;
 }
@@ -1274,6 +1284,10 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.settings-oidc-toggle-grid--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .settings-oidc-toggle-grid {
   display: grid;
   gap: 12px 24px;
@@ -1283,6 +1297,10 @@ body {
   display: grid;
   gap: 8px;
   min-width: 0;
+}
+
+.settings-oidc-field--full {
+  width: 100%;
 }
 
 .settings-oidc-field > span:first-child {
