@@ -3,6 +3,7 @@ import {
   ApiOutlined,
   BarChartOutlined,
   ClusterOutlined,
+  ContactsOutlined,
   CreditCardOutlined,
   DashboardOutlined,
   NodeIndexOutlined,
@@ -46,6 +47,13 @@ export function adminSections(t: TFunction): NavSection[] {
         { key: '/admin/nodes', to: '/admin/nodes', label: t('nav.nodes'), icon: <NodeIndexOutlined /> },
         { key: '/admin/inbounds', to: '/admin/inbounds', label: t('nav.inbounds'), icon: <ClusterOutlined /> },
         { key: '/admin/inbound-templates', to: '/admin/inbound-templates', label: t('nav.inboundTemplates'), icon: <ClusterOutlined /> },
+      ],
+    },
+    {
+      key: 'clients',
+      label: t('section.clients'),
+      items: [
+        { key: '/admin/clients', to: '/admin/clients', label: t('nav.clients'), icon: <ContactsOutlined /> },
       ],
     },
     {

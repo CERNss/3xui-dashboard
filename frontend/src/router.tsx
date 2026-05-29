@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout, AuthLayout, PortalLayout } from './components/layout'
 import AdminAuditLog from './views/admin/AuditLog'
+import AdminClients from './views/admin/Clients'
 import AdminInbounds from './views/admin/Inbounds'
 import AdminInboundTemplates from './views/admin/InboundTemplates'
 import AdminNodes from './views/admin/Nodes'
@@ -51,6 +52,7 @@ export function AppRouter() {
           <Route path="nodes" element={<AdminNodes />} />
           <Route path="inbounds" element={<AdminInbounds />} />
           <Route path="inbound-templates" element={<AdminInboundTemplates />} />
+          <Route path="clients" element={<AdminClients />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="plans" element={<AdminPlans />} />
           <Route path="provisioning-pools" element={<AdminProvisioningPools />} />
