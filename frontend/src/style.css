@@ -253,20 +253,25 @@ body {
 }
 
 .admin-topbar.ant-layout-header {
-  align-items: center;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
   color: #334155;
-  display: flex;
   flex: 0 0 var(--admin-shell-header-height);
-  gap: 24px;
   height: var(--admin-shell-header-height);
-  justify-content: space-between;
   line-height: 1;
   padding: 0 28px;
   position: relative;
   z-index: 10;
+}
+
+.admin-topbar-inner {
+  align-items: center;
+  display: flex;
+  gap: 24px;
+  height: 100%;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .admin-shell-content.ant-layout-content {
@@ -1707,14 +1712,16 @@ body {
 }
 
 /* Give the field labels (邮箱 / 密码 / verification code) breathing
- * room above the input. AntD's default zero padding-bottom on
- * .ant-form-item-label in vertical layout makes the label sit right
- * on top of the input border. */
+ * room above the input. AntD applies its label padding via inline
+ * style + design token, so plain selectors get overridden. Use
+ * !important + extra specificity to actually land 10px of gap. */
+.auth-login-card .ant-form-vertical .ant-form-item-label,
 .auth-login-card .ant-form-item .ant-form-item-label {
-  padding-bottom: 8px;
+  padding: 0 0 10px !important;
 }
-.auth-login-card .ant-form-item .ant-form-item-label > label {
-  height: auto;
+.auth-login-card .ant-form-item-label > label {
+  height: auto !important;
+  line-height: 1.2 !important;
 }
 
 .auth-login-card .ant-input-affix-wrapper {

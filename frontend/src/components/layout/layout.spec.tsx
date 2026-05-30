@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -117,7 +117,7 @@ describe('layout components', () => {
     expect(screen.queryByRole('button', { name: 'Stats' })).not.toBeInTheDocument()
   })
 
-  it('renders PortalLayout with exactly five bottom nav items on narrow screens', () => {
+  it('renders PortalLayout with the shared shell + hamburger on narrow screens', () => {
     mockMinWidth(false)
 
     render(
@@ -130,10 +130,10 @@ describe('layout components', () => {
       </MemoryRouter>,
     )
 
-    const bottomNav = screen.getByTestId('portal-bottom-nav')
+    // Mobile portal now reuses the same shell as admin: hamburger button
+    // in the topbar opens a left Drawer with the full AppSidebar.
     expect(screen.getByTestId('portal-layout')).toBeInTheDocument()
-    expect(within(bottomNav).getAllByRole('link')).toHaveLength(5)
-    expect(within(bottomNav).getByRole('link', { name: /Orders/i })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByLabelText('Open navigation')).toBeInTheDocument()
     expect(screen.getByText('Orders view')).toBeInTheDocument()
   })
 

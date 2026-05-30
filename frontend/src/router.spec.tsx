@@ -118,7 +118,11 @@ describe('AppRouter', () => {
 
     renderRouter(path)
 
-    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+    // The shared topbar now also renders the active nav item's label as an
+    // H1, so for routes where the nav label matches the page heading
+    // (Usage / Profile) we get two matches. The test just needs at least one.
+    const headings = await screen.findAllByRole('heading', { name: title })
+    expect(headings.length).toBeGreaterThan(0)
   })
 
   it.each([
