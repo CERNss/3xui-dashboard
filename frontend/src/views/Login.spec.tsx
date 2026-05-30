@@ -11,22 +11,18 @@ import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Login from './Login'
 
 const adminState = vi.hoisted(() => ({
-  token: null as string | null,
   username: null as string | null,
   isAuthenticated: false,
-  setSession(token: string, username: string) {
-    adminState.token = token
+  setSession(username: string) {
     adminState.username = username
     adminState.isAuthenticated = true
   },
 }))
 
 const portalState = vi.hoisted(() => ({
-  token: null as string | null,
   user: null as { id: number; email: string } | null,
   isAuthenticated: false,
-  setSession(token: string, user: { id: number; email: string }) {
-    portalState.token = token
+  setSession(user: { id: number; email: string }) {
     portalState.user = user
     portalState.isAuthenticated = true
   },
@@ -117,10 +113,8 @@ function currentPanel() {
 }
 
 beforeEach(() => {
-  adminState.token = null
   adminState.username = null
   adminState.isAuthenticated = false
-  portalState.token = null
   portalState.user = null
   portalState.isAuthenticated = false
   useAppStore.getState().setLocale('en-US')
@@ -142,7 +136,7 @@ beforeEach(() => {
 
 describe('Login', () => {
   it('submits admin credentials and stores the admin session', async () => {
-    adminLoginMock.mockResolvedValue({ token: 'admin-jwt', username: 'root', expires_at: 1 })
+    adminLoginMock.mockResolvedValue({ username: 'root', expires_at: 1 })
     renderLogin()
 
     const panel = currentPanel()
@@ -152,14 +146,14 @@ describe('Login', () => {
 
     await waitFor(() => expect(adminLoginMock).toHaveBeenCalledWith('root@example.com', 'secret'))
     expect(portalLoginMock).not.toHaveBeenCalled()
-    expect(adminState.token).toBe('admin-jwt')
+    expect(adminState.username).toBe('root')
+    expect(adminState.isAuthenticated).toBe(true)
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/status')
   })
 
   it('falls back to portal login when admin rejects the credentials', async () => {
     adminLoginMock.mockRejectedValue(authFailure())
     portalLoginMock.mockResolvedValue({
-      token: 'portal-jwt',
       user_id: 7,
       email: 'user@example.com',
       expires_at: 1,
@@ -177,7 +171,7 @@ describe('Login', () => {
         password: 'secret',
       }),
     )
-    expect(portalState.token).toBe('portal-jwt')
+    expect(portalState.isAuthenticated).toBe(true)
     expect(portalState.user).toEqual({ id: 7, email: 'user@example.com' })
     expect(screen.getByTestId('location')).toHaveTextContent('/portal/orders')
   })
@@ -185,7 +179,6 @@ describe('Login', () => {
   it('keeps portal users away from admin next targets', async () => {
     adminLoginMock.mockRejectedValue(authFailure())
     portalLoginMock.mockResolvedValue({
-      token: 'portal-jwt',
       user_id: 7,
       email: 'user@example.com',
       expires_at: 1,
@@ -264,7 +257,7 @@ describe('Login', () => {
   })
 
   it('honors admin next after successful login', async () => {
-    adminLoginMock.mockResolvedValue({ token: 'admin-jwt', username: 'root', expires_at: 1 })
+    adminLoginMock.mockResolvedValue({ username: 'root', expires_at: 1 })
     renderLogin('/login?next=%2Fadmin%2Fusers')
 
     const panel = currentPanel()
@@ -290,7 +283,6 @@ describe('Login', () => {
 
   it('opens the register tab from the query string and registers without verification', async () => {
     registerMock.mockResolvedValue({
-      token: 'portal-jwt',
       user_id: 9,
       email: 'new@example.com',
       expires_at: 1,
@@ -313,7 +305,7 @@ describe('Login', () => {
         code: undefined,
       }),
     )
-    expect(portalState.token).toBe('portal-jwt')
+    expect(portalState.isAuthenticated).toBe(true)
     expect(screen.getByTestId('location')).toHaveTextContent('/portal/plans')
   })
 
@@ -321,7 +313,6 @@ describe('Login', () => {
     registrationPolicyMock.mockResolvedValue({ email_verification_required: true })
     startEmailVerificationMock.mockResolvedValue({ status: 'ok', cooldown_seconds: 45 })
     registerMock.mockResolvedValue({
-      token: 'portal-jwt',
       user_id: 9,
       email: 'new@example.com',
       expires_at: 1,

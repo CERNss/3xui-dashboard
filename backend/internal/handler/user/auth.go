@@ -11,6 +11,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/auth"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
+	"github.com/cern/3xui-dashboard/internal/session"
 )
 
 // AuthHandler serves /api/user/auth/*.
@@ -18,19 +19,29 @@ type AuthHandler struct {
 	users  *usersvc.Service
 	auth   *auth.Service
 	verify *verification.Service
+	sess   *session.Manager
 	smtpOn bool // true when verification mail can actually be sent
 }
 
 // NewAuthHandler wires the handler. `smtpOn` controls whether the
 // register endpoint enforces a verification code: in dev (SMTP off)
 // the code field is optional so testing doesn't require a mail server.
-func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, smtpOn bool) *AuthHandler {
-	return &AuthHandler{users: users, auth: a, verify: v, smtpOn: smtpOn}
+func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, smtpOn bool, sess *session.Manager) *AuthHandler {
+	return &AuthHandler{users: users, auth: a, verify: v, sess: sess, smtpOn: smtpOn}
+}
+
+// startSession sets the httpOnly user session cookie + the readable
+// CSRF cookie. Called from every path that hands a freshly issued user
+// JWT back to the browser (login, register, OIDC completion).
+func (h *AuthHandler) startSession(c *gin.Context, token string) {
+	h.sess.WriteSession(c, auth.AudUser, token)
+	h.sess.IssueCSRF(c)
 }
 
 // RegisterRoutes mounts /auth under rg (rg is the public user group).
 func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/login", h.Login)
+	rg.POST("/auth/logout", h.Logout)
 	rg.POST("/auth/register", h.Register)
 	rg.POST("/auth/email-verification/start", h.EmailVerificationStart)
 	rg.POST("/auth/email-verification/confirm", h.EmailVerificationConfirm)
@@ -132,12 +143,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if u.Email != nil {
 		email = *u.Email
 	}
+	h.startSession(c, token)
 	c.JSON(http.StatusOK, tokenResponse{
 		Token:     token,
 		ExpiresAt: exp.Unix(),
 		UserID:    u.ID,
 		Email:     email,
 	})
+}
+
+// Logout clears the user session + CSRF cookies. See the admin
+// Logout for the unauthenticated-by-design rationale.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	h.sess.ClearSession(c, auth.AudUser)
+	h.sess.ClearCSRF(c)
+	c.Status(http.StatusNoContent)
 }
 
 type registerRequest struct {
@@ -282,6 +302,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if u.Email != nil {
 		email = *u.Email
 	}
+	h.startSession(c, token)
 	c.JSON(http.StatusCreated, tokenResponse{
 		Token:     token,
 		ExpiresAt: exp.Unix(),
@@ -452,6 +473,7 @@ func (h *AuthHandler) writeToken(c *gin.Context, status int, u *model.User, redi
 	if u.Email != nil {
 		email = *u.Email
 	}
+	h.startSession(c, token)
 	c.JSON(status, tokenResponse{
 		Token:         token,
 		ExpiresAt:     exp.Unix(),

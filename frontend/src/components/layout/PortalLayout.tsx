@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useMinWidth } from '@/hooks/useBreakpoint'
+import { portalAuthApi } from '@/api/portal/auth'
 import { useBranding } from '@/hooks/queries/branding'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import { useThemeStore } from '@/stores/theme'
@@ -40,7 +41,12 @@ export function PortalLayout() {
     setDrawerOpen(false)
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await portalAuthApi.logout()
+    } catch {
+      /* ignore — we clear locally below either way */
+    }
     clearAuth()
     navigate('/login', { replace: true })
   }

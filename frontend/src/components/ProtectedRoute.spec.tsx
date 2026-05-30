@@ -45,11 +45,11 @@ describe('ProtectedRoute', () => {
   })
 
   it('does not let a portal session satisfy the admin guard', () => {
-    usePortalAuthStore.getState().setSession('portal-token', { id: 1, email: 'user@example.com' })
+    usePortalAuthStore.getState().setSession({ id: 1, email: 'user@example.com' })
 
     renderGuard('/admin/status')
 
     expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fadmin%2Fstatus')
-    expect(usePortalAuthStore.getState().token).toBe('portal-token')
+    expect(usePortalAuthStore.getState().isAuthenticated).toBe(true)
   })
 })

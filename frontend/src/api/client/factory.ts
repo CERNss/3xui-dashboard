@@ -1,9 +1,22 @@
 // Axios instance factory used by the admin and portal API clients.
 // The admin console and the user portal each get their own instance so
-// that tokens, base URLs, and 401-redirect targets stay strictly
-// separated — there is no shared auth state between the two apps.
+// base URLs and 401-redirect targets stay strictly separated — there is
+// no shared auth state between the two apps.
+//
+// Auth transport is the httpOnly session cookie the backend sets on
+// login; the SPA never sees or stores the JWT (that's what closed the
+// localStorage-XSS hole). `withCredentials` tells the browser to send
+// that cookie — it only actually matters for a future cross-origin
+// deployment, since same-origin requests send cookies regardless, but
+// it's correct to set it. For state-changing requests we echo the
+// readable double-submit CSRF cookie back in the X-CSRF-Token header.
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
+
+// The readable CSRF cookie the backend sets + the header it must be
+// echoed in. Keep in sync with backend/internal/session/cookie.go.
+const CSRF_COOKIE = '3xui_csrf'
+const CSRF_HEADER = 'X-CSRF-Token'
 
 // API response envelope used by every JSON endpoint on the backend.
 interface ApiEnvelope<T> {
@@ -22,22 +35,27 @@ interface ApiError {
 
 export interface ClientOptions {
   baseURL: string
-  tokenStorageKey: string
-  persistedStorageKey?: string
   loginPath: string
+  // Invoked on a 401 so the owning client can drop its persisted
+  // identity (the cookie is already gone/expired server-side).
+  onUnauthorized?: () => void
 }
 
 export function createApiClient(opts: ClientOptions): AxiosInstance {
   const instance = axios.create({
     baseURL: opts.baseURL,
     timeout: 30_000,
+    withCredentials: true,
     headers: { 'Content-Type': 'application/json' },
   })
 
   instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-    const token = readToken(opts)
-    if (token) {
-      config.headers.set('Authorization', `Bearer ${token}`)
+    // Double-submit CSRF: echo the readable cookie on unsafe methods.
+    // Safe methods (GET/HEAD/OPTIONS) don't need it.
+    const method = (config.method ?? 'get').toLowerCase()
+    if (method !== 'get' && method !== 'head' && method !== 'options') {
+      const csrf = readCookie(CSRF_COOKIE)
+      if (csrf) config.headers.set(CSRF_HEADER, csrf)
     }
     return config
   })
@@ -63,8 +81,7 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
     (error: AxiosError<ApiEnvelope<unknown>>) => {
       const status = error.response?.status ?? 0
       if (status === 401) {
-        localStorage.removeItem(opts.tokenStorageKey)
-        if (opts.persistedStorageKey) localStorage.removeItem(opts.persistedStorageKey)
+        opts.onUnauthorized?.()
         // Avoid a redirect loop if we're already on the login page.
         if (!window.location.pathname.startsWith(opts.loginPath)) {
           const next = encodeURIComponent(window.location.pathname + window.location.search)
@@ -83,22 +100,15 @@ export function createApiClient(opts: ClientOptions): AxiosInstance {
   return instance
 }
 
-function readToken(opts: ClientOptions): string | null {
-  const legacyToken = localStorage.getItem(opts.tokenStorageKey)
-  if (legacyToken) return legacyToken
-
-  if (!opts.persistedStorageKey) return null
-
-  const stored = localStorage.getItem(opts.persistedStorageKey)
-  if (!stored) return null
-
-  try {
-    const parsed = JSON.parse(stored) as { state?: { token?: unknown }; token?: unknown }
-    const token = parsed.state?.token ?? parsed.token
-    return typeof token === 'string' && token.length > 0 ? token : null
-  } catch {
-    return stored
+// readCookie pulls a single cookie value out of document.cookie.
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null
+  const prefix = `${name}=`
+  for (const part of document.cookie.split(';')) {
+    const trimmed = part.trim()
+    if (trimmed.startsWith(prefix)) return decodeURIComponent(trimmed.slice(prefix.length))
   }
+  return null
 }
 
 function notifySuccess(method?: string, url?: string) {
@@ -121,6 +131,9 @@ function successMessage(url?: string): string {
   const locale = currentLocale()
   if (url?.includes('/auth/login')) {
     return locale === 'zh' ? '登录成功！欢迎回来。' : 'Login successful! Welcome back.'
+  }
+  if (url?.includes('/auth/logout')) {
+    return ''
   }
   return locale === 'zh' ? '操作成功' : 'Operation successful'
 }

@@ -33,10 +33,10 @@ import Usage from './views/portal/Usage'
  * though their portal session was still valid.
  */
 function RootRedirect() {
-  const adminToken = useAdminAuthStore((s) => s.token)
-  const portalToken = usePortalAuthStore((s) => s.token)
-  if (adminToken) return <Navigate replace to="/admin" />
-  if (portalToken) return <Navigate replace to="/portal" />
+  const adminAuthed = useAdminAuthStore((s) => s.isAuthenticated)
+  const portalAuthed = usePortalAuthStore((s) => s.isAuthenticated)
+  if (adminAuthed) return <Navigate replace to="/admin" />
+  if (portalAuthed) return <Navigate replace to="/portal" />
   return <Navigate replace to="/login" />
 }
 

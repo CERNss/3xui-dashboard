@@ -8,11 +8,9 @@ import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import OIDCCallback, { classifyOidcError } from './OIDCCallback'
 
 const portalState = vi.hoisted(() => ({
-  token: null as string | null,
   user: null as { id: number; email: string } | null,
   isAuthenticated: false,
-  setSession(token: string, user: { id: number; email: string }) {
-    portalState.token = token
+  setSession(user: { id: number; email: string }) {
     portalState.user = user
     portalState.isAuthenticated = true
   },
@@ -56,7 +54,6 @@ function renderCallback(initialEntry = '/oidc/callback?code=abc&state=xyz') {
 }
 
 beforeEach(() => {
-  portalState.token = null
   portalState.user = null
   portalState.isAuthenticated = false
   callbackMock.mockReset()
@@ -72,17 +69,17 @@ beforeEach(() => {
 })
 
 describe('OIDCCallback', () => {
-  it('exchanges code and state, stores the portal token, and navigates to subscription', async () => {
-    callbackMock.mockResolvedValue({ token: 'portal-jwt', user_id: 7, email: 'a@example.com', expires_at: 1 })
+  it('exchanges code and state, starts the portal session, and navigates to subscription', async () => {
+    callbackMock.mockResolvedValue({ user_id: 7, email: 'a@example.com', expires_at: 1 })
     renderCallback()
 
     await waitFor(() => expect(callbackMock).toHaveBeenCalledWith('abc', 'xyz'))
-    expect(portalState.token).toBe('portal-jwt')
+    expect(portalState.isAuthenticated).toBe(true)
     expect(await screen.findByTestId('location')).toHaveTextContent('/portal/subscription')
   })
 
   it('honors next from the callback URL', async () => {
-    callbackMock.mockResolvedValue({ token: 'portal-jwt', user_id: 7, email: 'a@example.com', expires_at: 1 })
+    callbackMock.mockResolvedValue({ user_id: 7, email: 'a@example.com', expires_at: 1 })
     renderCallback('/oidc/callback?code=abc&state=xyz&next=%2Fportal%2Ftraffic')
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/portal/traffic')
@@ -106,14 +103,15 @@ describe('OIDCCallback', () => {
     expect(window.location.assign).toHaveBeenCalledWith('https://idp.example/retry')
   })
 
-  it('renders email conflict actions without storing a token', async () => {
+  it('renders email conflict actions without starting a session', async () => {
     callbackMock.mockRejectedValue({ status: 409, data: { error: 'oidc: email already linked to a different account' } })
     renderCallback()
 
     expect(await screen.findByText('This OIDC email is already linked to a different account.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign in first, then link from Profile' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Use a different OIDC account' })).toBeInTheDocument()
-    expect(portalState.token).toBeNull()
+    expect(portalState.isAuthenticated).toBe(false)
+    expect(portalState.user).toBeNull()
   })
 
   it('binds a pending OIDC identity to an existing account after password check', async () => {
@@ -126,7 +124,7 @@ describe('OIDCCallback', () => {
       existing_user: true,
       expires_at: 1,
     })
-    bindExistingMock.mockResolvedValue({ token: 'portal-jwt', user_id: 7, email: 'alice@example.com', expires_at: 2 })
+    bindExistingMock.mockResolvedValue({ user_id: 7, email: 'alice@example.com', expires_at: 2 })
     renderCallback()
 
     expect(await screen.findByText(/Google returned alice@example.com/)).toBeInTheDocument()
@@ -139,7 +137,7 @@ describe('OIDCCallback', () => {
         password: 'existing-password',
       }),
     )
-    expect(portalState.token).toBe('portal-jwt')
+    expect(portalState.isAuthenticated).toBe(true)
     expect(await screen.findByTestId('location')).toHaveTextContent('/portal/subscription')
   })
 
@@ -155,7 +153,7 @@ describe('OIDCCallback', () => {
     })
     startEmailVerificationMock.mockResolvedValue({ status: 'ok' })
     confirmEmailVerificationMock.mockResolvedValue({ status: 'ok', verification_token: 'verify-token' })
-    createAccountMock.mockResolvedValue({ token: 'portal-jwt', user_id: 8, email: 'local@example.com', expires_at: 2 })
+    createAccountMock.mockResolvedValue({ user_id: 8, email: 'local@example.com', expires_at: 2 })
     renderCallback()
 
     expect(await screen.findByText(/GitHub returned provider@example.com/)).toBeInTheDocument()
@@ -193,7 +191,7 @@ describe('OIDCCallback', () => {
         verificationToken: 'verify-token',
       }),
     )
-    expect(portalState.token).toBe('portal-jwt')
+    expect(portalState.isAuthenticated).toBe(true)
   })
 
   it('renders profile recovery for email mismatch', async () => {

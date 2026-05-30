@@ -5,8 +5,9 @@ import type {
   PublicEmailVerificationPurpose,
 } from './emailVerification'
 
+// The backend also returns a `token` for Bearer clients; the browser
+// authenticates via the httpOnly session cookie and ignores it.
 export interface UserTokenResponse {
-  token: string
   expires_at: number
   user_id: number
   email: string
@@ -75,6 +76,9 @@ export interface RegistrationPolicy {
 export const portalAuthApi = {
   login: ({ email, password }: PortalLoginInput) =>
     portalClient.post<UserTokenResponse>('/auth/login', { email, password }).then((r) => r.data),
+
+  // Clears the session cookie server-side; caller clears local identity.
+  logout: () => portalClient.post('/auth/logout').then(() => undefined),
 
   /** Register a portal account. `code` is the 6-digit verification code
    *  delivered by the public email-verification start flow; required when

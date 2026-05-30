@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { PageHeaderChromeProvider } from '@/components/common'
 import { useMinWidth } from '@/hooks/useBreakpoint'
+import { adminAuthApi } from '@/api/admin/auth'
 import { useBranding } from '@/hooks/queries/branding'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { useThemeStore } from '@/stores/theme'
@@ -38,7 +39,14 @@ export function AdminLayout() {
     setDrawerOpen(false)
   }
 
-  function logout() {
+  async function logout() {
+    // Clear the httpOnly cookie server-side; clear local identity
+    // regardless of whether that call succeeds.
+    try {
+      await adminAuthApi.logout()
+    } catch {
+      /* ignore — we clear locally below either way */
+    }
     clearAuth()
     navigate('/login', { replace: true })
   }

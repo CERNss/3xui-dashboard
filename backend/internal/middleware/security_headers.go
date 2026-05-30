@@ -8,11 +8,11 @@ import "github.com/gin-gonic/gin"
 // CSP rationale (the most consequential one):
 //   - script-src 'self'  → no inline scripts, no remote scripts. The
 //     React bundle is served by go:embed from the same origin, so
-//     'self' is enough. This is what shrinks the blast radius of
-//     localStorage-stored JWTs: even if user-supplied content (a
-//     pool name, a client comment) ever ended up rendered raw, the
-//     attacker would still be unable to load a script to read the
-//     token from window.localStorage.
+//     'self' is enough. The session JWT now lives in an httpOnly
+//     cookie (see internal/session) so JS can't read it at all; CSP is
+//     therefore defence in depth here — it still blocks an injected
+//     script from exfiltrating data or driving the API as the user,
+//     even though it can no longer reach the token itself.
 //   - style-src 'self' 'unsafe-inline'  → AntD injects style tags at
 //     runtime, so inline styles can't be banned without major rework.
 //     Inline styles cannot execute JavaScript so the relaxation is

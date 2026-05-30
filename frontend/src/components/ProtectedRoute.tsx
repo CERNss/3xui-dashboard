@@ -24,8 +24,8 @@ function loginSearch(pathname: string, fullPath: string, area: ProtectedArea): s
 
 export function ProtectedRoute({ area, children }: ProtectedRouteProps) {
   const location = useLocation()
-  const adminAuthenticated = useAdminAuthStore((state) => state.isAuthenticated || Boolean(state.token))
-  const portalAuthenticated = usePortalAuthStore((state) => state.isAuthenticated || Boolean(state.token))
+  const adminAuthenticated = useAdminAuthStore((state) => state.isAuthenticated)
+  const portalAuthenticated = usePortalAuthStore((state) => state.isAuthenticated)
   const authenticated = area === 'admin' ? adminAuthenticated : portalAuthenticated
 
   if (!authenticated) {

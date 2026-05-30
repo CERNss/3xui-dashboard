@@ -27,6 +27,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/messages"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
+	"github.com/cern/3xui-dashboard/internal/session"
 )
 
 type p5Harness struct {
@@ -85,7 +86,8 @@ func setupP5Harness(t *testing.T) *p5Harness {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	apiUser := engine.Group("/api/user")
-	NewAuthHandler(userService, authService, verifyService, true).RegisterRoutes(apiUser)
+	sess := session.NewManager(false, time.Hour)
+	NewAuthHandler(userService, authService, verifyService, true, sess).RegisterRoutes(apiUser)
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireActiveUser(authService, userRepo))
 	NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 

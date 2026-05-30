@@ -139,7 +139,7 @@ export function Login() {
     setSigningIn(true)
     try {
       const adminRes = await adminAuthApi.login(email, values.password)
-      setAdminSession(adminRes.token, adminRes.username)
+      setAdminSession(adminRes.username)
       navigate(adminNextPath, { replace: true })
       return
     } catch (adminError) {
@@ -156,7 +156,7 @@ export function Login() {
         email,
         password: values.password,
       })
-      setPortalSession(portalRes.token, portalSessionUser(portalRes))
+      setPortalSession(portalSessionUser(portalRes))
       navigate(
         rolePath(portalRes.redirect_after ?? portalRes.next, '/portal', portalNextPath),
         { replace: true },
@@ -178,7 +178,7 @@ export function Login() {
         password: values.password,
         code: verificationRequired ? values.code : undefined,
       })
-      setPortalSession(res.token, portalSessionUser(res))
+      setPortalSession(portalSessionUser(res))
       navigate(rolePath(res.redirect_after ?? res.next, '/portal', portalNextPath), { replace: true })
     } catch (registerError) {
       setError(formatError(registerError, t('auth.registerFailed')))

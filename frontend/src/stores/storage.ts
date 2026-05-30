@@ -1,7 +1,5 @@
 export const ADMIN_AUTH_STORAGE_KEY = '3xui.adminAuth'
 export const PORTAL_AUTH_STORAGE_KEY = '3xui.portalAuth'
-export const LEGACY_ADMIN_TOKEN_KEY = 'dashboard.admin.token'
-export const LEGACY_PORTAL_TOKEN_KEY = 'dashboard.portal.token'
 export const LOCALE_STORAGE_KEY = 'dashboard.locale'
 export const APP_THEME_STORAGE_KEY = 'dashboard.theme'
 export const THEME_STORAGE_KEY = 'cp.theme'
@@ -28,18 +26,18 @@ export function removeString(key: string): void {
   getLocalStorage()?.removeItem(key)
 }
 
-export function readPersistedToken(storageKey: string, legacyKey: string): string | null {
+// readPersistedField pulls one field out of a zustand-persist blob
+// (shape `{ state: {...}, version }`). Used by the auth stores to seed
+// their initial "is this browser probably logged in" identity before
+// rehydration runs. Returns null when absent or unparseable.
+export function readPersistedField<T>(storageKey: string, field: string): T | null {
   const stored = readString(storageKey)
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as { state?: { token?: unknown }; token?: unknown }
-      const token = parsed.state?.token ?? parsed.token
-      if (typeof token === 'string' && token.length > 0) return token
-    } catch {
-      return stored
-    }
+  if (!stored) return null
+  try {
+    const parsed = JSON.parse(stored) as { state?: Record<string, unknown> }
+    const value = parsed.state?.[field]
+    return (value ?? null) as T | null
+  } catch {
+    return null
   }
-
-  const legacyToken = readString(legacyKey)
-  return legacyToken && legacyToken.length > 0 ? legacyToken : null
 }

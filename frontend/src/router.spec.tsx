@@ -90,7 +90,7 @@ describe('AppRouter', () => {
     ['/admin/webhooks', 'Webhooks'],
     ['/admin/settings', 'Settings'],
   ])('resolves admin route %s', async (path, title) => {
-    useAdminAuthStore.getState().setSession('admin-token', 'root')
+    useAdminAuthStore.getState().setSession('root')
 
     renderRouter(path)
 
@@ -99,7 +99,7 @@ describe('AppRouter', () => {
   })
 
   it('redirects legacy /admin/stats to the system status stats tab', async () => {
-    useAdminAuthStore.getState().setSession('admin-token', 'root')
+    useAdminAuthStore.getState().setSession('root')
 
     renderRouter('/admin/stats')
 
@@ -114,7 +114,7 @@ describe('AppRouter', () => {
     ['/portal/orders', 'Portal Orders'],
     ['/portal/profile', 'Profile'],
   ])('resolves portal route %s', async (path, title) => {
-    usePortalAuthStore.getState().setSession('portal-token', { id: 7, email: 'user@example.com' })
+    usePortalAuthStore.getState().setSession({ id: 7, email: 'user@example.com' })
 
     renderRouter(path)
 
@@ -131,9 +131,9 @@ describe('AppRouter', () => {
     ['/portal', 'portal', '/portal/subscription'],
   ])('redirects default entry %s', async (path, area, expected) => {
     if (area === 'admin') {
-      useAdminAuthStore.getState().setSession('admin-token', 'root')
+      useAdminAuthStore.getState().setSession('root')
     } else {
-      usePortalAuthStore.getState().setSession('portal-token', { id: 7, email: 'user@example.com' })
+      usePortalAuthStore.getState().setSession({ id: 7, email: 'user@example.com' })
     }
 
     renderRouter(path)
@@ -142,7 +142,7 @@ describe('AppRouter', () => {
   })
 
   it('renders NotFound for unknown admin paths without redirecting away', async () => {
-    useAdminAuthStore.getState().setSession('admin-token', 'root')
+    useAdminAuthStore.getState().setSession('root')
 
     renderRouter('/admin/this-does-not-exist')
 

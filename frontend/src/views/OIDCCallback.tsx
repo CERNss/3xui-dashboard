@@ -172,7 +172,7 @@ export function OIDCCallback() {
   const params = useMemo(() => new URLSearchParams(location.search), [location.search])
 
   const acceptToken = useCallback((res: UserTokenResponse) => {
-    setSession(res.token, { id: res.user_id, email: res.email })
+    setSession({ id: res.user_id, email: res.email })
     navigate(
       safeLocalRedirect(res.redirect_after) ??
         safeLocalRedirect(res.next) ??

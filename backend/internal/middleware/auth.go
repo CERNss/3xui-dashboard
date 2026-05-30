@@ -1,7 +1,13 @@
 // Package middleware holds Gin middleware shared across handler
-// groups. The auth middleware verifies JWT bearer tokens and gates
-// access by audience: admin routes only admit aud=admin tokens; user
-// routes only admit aud=user tokens.
+// groups. The auth middleware verifies JWTs and gates access by
+// audience: admin routes only admit aud=admin tokens; user routes only
+// admit aud=user tokens.
+//
+// The token is read from the audience's httpOnly session cookie first,
+// then from an `Authorization: Bearer` header as a fallback. The
+// browser SPA only ever uses the cookie (it stores no token, closing
+// the localStorage-XSS hole); the Bearer fallback serves the test
+// harness and any programmatic clients.
 package middleware
 
 import (
@@ -15,6 +21,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/auth"
+	"github.com/cern/3xui-dashboard/internal/session"
 )
 
 // ContextKey is the Gin context key under which verified claims are
@@ -34,7 +41,7 @@ func RequireAdmin(a *auth.Service) gin.HandlerFunc {
 // continuing to use an old, otherwise-valid JWT until expiry.
 func RequireActiveUser(a *auth.Service, users *repository.UserRepo) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !verifyBearerClaims(c, a, auth.AudUser) {
+		if !verifyClaims(c, a, auth.AudUser) {
 			return
 		}
 		claims := Claims(c)
@@ -66,16 +73,21 @@ func RequireActiveUser(a *auth.Service, users *repository.UserRepo) gin.HandlerF
 
 func requireAudience(a *auth.Service, want string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if verifyBearerClaims(c, a, want) {
+		if verifyClaims(c, a, want) {
 			c.Next()
 		}
 	}
 }
 
-func verifyBearerClaims(c *gin.Context, a *auth.Service, want string) bool {
-	tok := bearerToken(c.GetHeader("Authorization"))
+// verifyClaims pulls the token from the audience's session cookie, or
+// the Authorization header if there's no cookie, then verifies it.
+func verifyClaims(c *gin.Context, a *auth.Service, want string) bool {
+	tok := session.ReadSession(c, want)
 	if tok == "" {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		tok = bearerToken(c.GetHeader("Authorization"))
+	}
+	if tok == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing credentials"})
 		return false
 	}
 	claims, err := a.VerifyToken(tok, want)

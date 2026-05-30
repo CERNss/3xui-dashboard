@@ -43,6 +43,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/verification"
 	"github.com/cern/3xui-dashboard/internal/service/webhook"
 	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
+	"github.com/cern/3xui-dashboard/internal/session"
 	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
@@ -108,7 +109,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	// Auth + middleware.
 	authSvc := auth.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL, cfg.Admin.Username, cfg.Admin.Password)
-	adminAuth := adminhandler.NewAuthHandler(authSvc)
+	// Session cookie transport. Secure cookies only in prod (TLS); over
+	// dev/test http://localhost a Secure cookie would be dropped. The
+	// cookie lifetime tracks the access-token TTL.
+	sess := session.NewManager(cfg.Env == "prod", cfg.Auth.AccessTokenTTL)
+	adminAuth := adminhandler.NewAuthHandler(authSvc, sess)
 	// Login endpoints get a per-IP rate limit so a password-spray
 	// attacker can't brute-force from a single source. Defaults:
 	// 10 attempts/min/IP. Other routes are unthrottled; auth
@@ -126,8 +131,13 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// every handler picks it up automatically; no per-handler
 	// integration needed.
 	adminActionRepo := repository.NewAdminActionRepo(db)
+	// CSRF runs after auth (only established sessions get a token) and
+	// before the audit log (a CSRF-rejected request isn't a real admin
+	// action). Cookie-authenticated mutations must carry a matching
+	// X-CSRF-Token; Bearer-authenticated requests are exempt.
 	apiAdminAuthed := engine.Group("/api/admin",
 		middleware.RequireAdmin(authSvc),
+		middleware.CSRF(sess),
 		middleware.AuditLog(adminActionRepo, logger),
 	)
 	// Sanitize 5xx error bodies on user-facing endpoints — without it,
@@ -135,7 +145,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// trust portal users. Admin routes intentionally keep the detail.
 	userSanitizer := middleware.Sanitize5xx(logger)
 	apiUser := engine.Group("/api/user", userSanitizer, loginLimiter)
-	apiUserAuthed := engine.Group("/api/user", userSanitizer, middleware.RequireActiveUser(authSvc, userRepo))
+	apiUserAuthed := engine.Group("/api/user", userSanitizer, middleware.RequireActiveUser(authSvc, userRepo), middleware.CSRF(sess))
 
 	// /sub/:subId is unauthenticated — anyone holding a sub_id
 	// gets the user's WG private keys + full link bundle. sub_id
@@ -221,7 +231,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	messagesSvc := messages.New(mailerSvc, notifyLogRepo, bus, userRepo, ownershipRepo, logger)
 	messagesSvc.Start()
 	verifyService := verification.New(db, messagesSvc, logger)
-	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.SMTP.Enabled()).RegisterRoutes(apiUser)
+	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.SMTP.Enabled(), sess).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)
