@@ -2,7 +2,9 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -12,6 +14,40 @@ import (
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/inbound"
 )
+
+// validateInboundJSONFields guards that the client-supplied (or
+// panel-echoed) Settings / StreamSettings / Sniffing strings are
+// well-formed JSON before they go to the panel or come back to the
+// admin UI. A compromised panel could otherwise round-trip garbage
+// that breaks the dashboard's downstream parsers. Empty strings are
+// allowed (treated as {} by the panel).
+//
+// 256 KiB ceiling per field is generous for any realistic inbound and
+// caps the blast radius of a runaway response.
+const inboundJSONFieldMaxBytes = 256 * 1024
+
+func validateInboundJSONFields(in *runtime.Inbound) error {
+	checks := []struct {
+		name  string
+		value string
+	}{
+		{"settings", in.Settings},
+		{"streamSettings", in.StreamSettings},
+		{"sniffing", in.Sniffing},
+	}
+	for _, c := range checks {
+		if c.value == "" {
+			continue
+		}
+		if len(c.value) > inboundJSONFieldMaxBytes {
+			return fmt.Errorf("%s exceeds %d bytes", c.name, inboundJSONFieldMaxBytes)
+		}
+		if !json.Valid([]byte(c.value)) {
+			return fmt.Errorf("%s is not valid JSON", c.name)
+		}
+	}
+	return nil
+}
 
 // TemplateLookup is the minimum surface InboundHandler needs to
 // resolve an optional `template_id` on the create-inbound POST body.
@@ -113,6 +149,10 @@ func (h *InboundHandler) Create(c *gin.Context) {
 		return
 	}
 	in := runtime.Inbound(body.inboundCreateAlias)
+	if err := validateInboundJSONFields(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
+		return
+	}
 	if body.TemplateID != nil && *body.TemplateID > 0 {
 		if h.templates == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "template lookup not wired on this deployment"})
@@ -165,10 +205,24 @@ func (h *InboundHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
 		return
 	}
+	if err := validateInboundJSONFields(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
+		return
+	}
 	updated, err := h.svc.Update(c.Request.Context(), nodeID, tag, &body)
 	if err != nil {
 		h.upstreamError(c, err)
 		return
+	}
+	// Defense-in-depth: if the panel echoes back garbage in any of the
+	// three JSON-string fields, refuse to forward it to the admin UI
+	// (where the frontend would render whatever it got). Surface as
+	// 502 — the upstream gave us something we don't trust.
+	if updated != nil {
+		if err := validateInboundJSONFields(updated); err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "panel returned invalid inbound: " + err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, updated)
 }

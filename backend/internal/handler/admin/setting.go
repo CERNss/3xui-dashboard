@@ -170,11 +170,16 @@ const (
 	templateProxyGroupsPlaceholder = "${proxy_groups}"
 )
 
+// Brand icons accept raster formats only. SVG was historically
+// permitted but is dropped because it can carry inline <script> and
+// event-handler attributes that browsers would execute when the icon
+// is rendered from /uploads/branding/* with image/svg+xml — and
+// sanitizing SVG is too easy to get wrong. Operators wanting vector
+// art should export to PNG.
 var allowedBrandIconTypes = map[string]string{
-	"image/png":     ".png",
-	"image/jpeg":    ".jpg",
-	"image/webp":    ".webp",
-	"image/svg+xml": ".svg",
+	"image/png":  ".png",
+	"image/jpeg": ".jpg",
+	"image/webp": ".webp",
 }
 
 // UploadBrandIcon accepts multipart field "file", stores it under
@@ -210,13 +215,8 @@ func (h *SettingHandler) UploadBrandIcon(c *gin.Context) {
 
 	contentType := http.DetectContentType(data)
 	ext, ok := allowedBrandIconTypes[contentType]
-	if !ok && looksLikeSVG(data) {
-		contentType = "image/svg+xml"
-		ext = ".svg"
-		ok = true
-	}
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "icon must be PNG, JPEG, WebP, or SVG"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "icon must be PNG, JPEG, or WebP"})
 		return
 	}
 	if err := os.MkdirAll(brandUploadDir, 0o755); err != nil {
@@ -242,11 +242,6 @@ func (h *SettingHandler) UploadBrandIcon(c *gin.Context) {
 		"content_type": contentType,
 		"size":         len(data),
 	})
-}
-
-func looksLikeSVG(data []byte) bool {
-	s := strings.TrimSpace(string(data))
-	return strings.HasPrefix(s, "<svg") || strings.Contains(s, "<svg ")
 }
 
 func randomHex(n int) string {

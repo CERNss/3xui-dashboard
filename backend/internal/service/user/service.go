@@ -21,6 +21,7 @@ import (
 
 	"github.com/cern/3xui-dashboard/internal/config"
 	"github.com/cern/3xui-dashboard/internal/model"
+	"github.com/cern/3xui-dashboard/internal/netsafe"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/service/event"
 )
@@ -75,7 +76,16 @@ func New(users *repository.UserRepo, settings *repository.SettingRepo, bus *even
 		log:          lg.With(slog.String("component", "service.user")),
 		oidcSessions: newOIDCSessions(),
 		oidcPending:  newOIDCPendingSessions(),
-		oidcHTTP:     &http.Client{Timeout: 10 * time.Second},
+		// OIDC issuer / discovery / token / userinfo URLs are admin-
+		// configured. Without netsafe, an admin (or anyone with the
+		// settings API) could point the issuer at 127.0.0.1 / link-local
+		// metadata services and exfiltrate internal endpoints through
+		// dashboard fetches. netsafe rejects private CIDRs unless the
+		// caller explicitly opts in — which OIDC never does.
+		oidcHTTP: &http.Client{
+			Transport: netsafe.NewHTTPTransport(netsafe.DialerOptions{Timeout: 10 * time.Second}),
+			Timeout:   10 * time.Second,
+		},
 	}
 }
 

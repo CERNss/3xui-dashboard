@@ -73,6 +73,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
+	engine.Use(middleware.SecurityHeaders())
 	// CORS — empty AllowedOrigins means "permissive (echo Origin,
 	// no creds)" which is what dev wants. In prod the operator
 	// pins this to the panel's public origin.
@@ -129,8 +130,12 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 		middleware.RequireAdmin(authSvc),
 		middleware.AuditLog(adminActionRepo, logger),
 	)
-	apiUser := engine.Group("/api/user", loginLimiter)
-	apiUserAuthed := engine.Group("/api/user", middleware.RequireActiveUser(authSvc, userRepo))
+	// Sanitize 5xx error bodies on user-facing endpoints — without it,
+	// raw database / network errors would leak to anonymous or low-
+	// trust portal users. Admin routes intentionally keep the detail.
+	userSanitizer := middleware.Sanitize5xx(logger)
+	apiUser := engine.Group("/api/user", userSanitizer, loginLimiter)
+	apiUserAuthed := engine.Group("/api/user", userSanitizer, middleware.RequireActiveUser(authSvc, userRepo))
 
 	// /sub/:subId is unauthenticated — anyone holding a sub_id
 	// gets the user's WG private keys + full link bundle. sub_id
@@ -236,7 +241,12 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	adminhandler.NewPlanHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewInboundTemplateHandler(billingService).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewProvisioningPoolHandler(billingService).RegisterRoutes(apiAdminAuthed)
-	userhandler.NewBillingHandler(billingService).RegisterRoutes(apiUserAuthed)
+	// Per-user rate limit on the billing endpoints: a single
+	// authenticated user could otherwise script-spam purchases or
+	// fan-out fetches. 30 ops / minute is comfortably above any
+	// legitimate human pace.
+	billingLimited := apiUserAuthed.Group("", middleware.UserRateLimiter(30, 30, time.Minute))
+	userhandler.NewBillingHandler(billingService).RegisterRoutes(billingLimited)
 	// Public payment notify endpoints — RSA-signed callbacks from
 	// the gateway. Mounted on the engine root, not under /api,
 	// because alipay requires a plain-text "success" response.
