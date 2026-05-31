@@ -1,5 +1,6 @@
 import {
   AlertOutlined,
+  CreditCardOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   HomeOutlined,
@@ -21,6 +22,7 @@ import { DataCollectionSettings } from './settings/DataCollectionSettings'
 import { GeneralSettings } from './settings/GeneralSettings'
 import { MessagesSettings } from './settings/MessagesSettings'
 import { NotificationsSettings } from './settings/NotificationsSettings'
+import { PaymentSettings } from './settings/PaymentSettings'
 import { SecurityAuthSettings } from './settings/SecurityAuthSettings'
 import { SubscriptionSettings } from './settings/SubscriptionSettings'
 import { UserDefaultsSettings } from './settings/UserDefaultsSettings'
@@ -41,6 +43,7 @@ function makeDrafts(items: SettingItem[]) {
 const settingsTabIcons: Record<SettingsTab, ReactNode> = {
   general: <HomeOutlined />,
   subscription: <FileTextOutlined />,
+  payment: <CreditCardOutlined />,
   alerts: <AlertOutlined />,
   dataCollection: <DatabaseOutlined />,
   securityAuth: <SafetyCertificateOutlined />,
@@ -122,6 +125,8 @@ export default function Settings() {
         <GeneralSettings {...sectionProps(tab)} />
       ) : tab === 'subscription' ? (
         <SubscriptionSettings {...sectionProps(tab)} />
+      ) : tab === 'payment' ? (
+        <PaymentSettings {...sectionProps(tab)} />
       ) : tab === 'alerts' ? (
         <AlertsSettings {...sectionProps(tab)} />
       ) : tab === 'dataCollection' ? (

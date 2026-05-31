@@ -756,12 +756,14 @@ export const en = {
     settings: {
       generalTab: 'General',
       subscriptionTab: 'Subscription',
+      paymentTab: 'Payment',
       alertsTab: 'Alerts',
       dataCollectionTab: 'Data collection',
       securityAuthTab: 'Security & auth',
       userDefaultsTab: 'User defaults',
       groupOther: 'Other',
       groupNotify: 'Notify channels',
+      groupPayment: 'Payment gateways',
       groupRegistration: 'Registration',
       groupSmtp: 'SMTP delivery',
       groupSubscription: 'Subscription',
@@ -917,6 +919,10 @@ export const en = {
       messages: {
         desc: 'User-facing email such as registration codes, password resets, and balance reminders.',
         title: 'User messages',
+      },
+      payment: {
+        desc: 'Alipay and Stripe credentials. Secrets are encrypted at rest; submitting a blank secret leaves it unchanged.',
+        title: 'Payment gateways',
       },
       generalDesc: 'Adjust portal presentation and operational reminder thresholds.',
       settingHelp: {

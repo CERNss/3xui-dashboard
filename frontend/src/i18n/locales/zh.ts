@@ -756,12 +756,14 @@ export const zh = {
     settings: {
       generalTab: '通用',
       subscriptionTab: '订阅配置',
+      paymentTab: '支付',
       alertsTab: '告警配置',
       dataCollectionTab: '数据收集',
       securityAuthTab: '安全与认证',
       userDefaultsTab: '用户默认值',
       groupOther: '其他',
       groupNotify: '通知渠道',
+      groupPayment: '支付网关',
       groupRegistration: '注册',
       groupSmtp: 'SMTP 邮件发送',
       groupSubscription: '订阅',
@@ -917,6 +919,10 @@ export const zh = {
       messages: {
         desc: '注册验证码、密码重置、余额提醒等用户向邮件。',
         title: '用户消息',
+      },
+      payment: {
+        desc: '支付宝与 Stripe 凭证。密钥加密存储；提交空密钥表示不修改。',
+        title: '支付网关',
       },
       generalDesc: '调整用户端展示和运营提醒阈值。',
       settingHelp: {

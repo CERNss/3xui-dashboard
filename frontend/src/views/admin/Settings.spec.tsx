@@ -79,6 +79,8 @@ beforeEach(() => {
     item({ key: 'new_user_initial_balance_cents', label: 'New-user initial balance', group: 'registration', type: 'int', value: '100' }),
     item({ key: 'smtp_host', label: 'SMTP host', group: 'smtp', type: 'string', value: 'smtp.example.test' }),
     item({ key: 'smtp_password', label: 'SMTP password', group: 'smtp', type: 'string', value: '', secret: true, has_override: true }),
+    item({ key: 'alipay_app_id', label: 'Alipay app ID', group: 'payment', type: 'string', value: '2021000000' }),
+    item({ key: 'alipay_private_key', label: 'Alipay private key', group: 'payment', type: 'string', value: '', secret: true, has_override: true }),
     item({ key: 'brand_title', label: 'Brand title', group: 'other', type: 'string', value: 'Hidden brand row' }),
     item({ key: 'brand_subtitle', label: 'Brand subtitle', group: 'other', type: 'string', value: 'Configuration platform' }),
     item({ key: 'brand_docs_url', label: 'Documentation link', group: 'other', type: 'string', value: 'https://docs.example.test' }),
@@ -99,15 +101,16 @@ beforeEach(() => {
 })
 
 describe('Settings', () => {
-  it('renders exactly eight tabs and preserves tab state through query params', async () => {
+  it('renders exactly nine tabs and preserves tab state through query params', async () => {
     const user = userEvent.setup()
     renderSettings('/admin/settings?tab=messages')
 
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(8)
+    expect(tabs).toHaveLength(9)
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       'General',
       'Subscription',
+      'Payment',
       'Alerts',
       'Data collection',
       'Security & auth',
@@ -136,6 +139,13 @@ describe('Settings', () => {
     const subscriptionCard = screen.getByText('Subscription remark model').closest('.ant-card')!
     await user.click(within(subscriptionCard as HTMLElement).getByRole('button', { name: 'Reset' }))
     await waitFor(() => expect(clearMutateAsync).toHaveBeenCalledWith('subscription_remark_model'))
+  })
+
+  it('renders payment gateway settings on the payment tab', () => {
+    const { container } = renderSettings('/admin/settings?tab=payment')
+    expect(screen.getByLabelText('Alipay app ID')).toHaveValue('2021000000')
+    // Secret fields are masked: the row exists but never carries the value.
+    expect(container.querySelector('[data-setting-key="alipay_private_key"]')).toBeInTheDocument()
   })
 
   it('keeps plain site settings on the general tab without brand or OIDC rows', async () => {

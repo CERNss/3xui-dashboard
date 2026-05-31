@@ -65,7 +65,7 @@ export function SettingRow({ item, drafts, saving, onDraftChange, onSave, onRese
               value={draft}
               onChange={(event) => onDraftChange(item.key, event.target.value)}
             />
-          ) : item.key.includes('template_') ? (
+          ) : item.key.includes('template_') || item.key.endsWith('_public_key') ? (
             <Input.TextArea
               aria-label={label}
               id={controlID}
