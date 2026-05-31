@@ -47,23 +47,32 @@ func clashProxyGroupsYAML(r policy.Resolved) string {
 	return b.String()
 }
 
-// clashRuleProvidersYAML renders the `rule-providers:` block from the
-// policy's referenced remote rulesets, or "" when none are remote.
-// Inline rulesets are not providers (their matchers are expanded into
-// rules elsewhere).
-func clashRuleProvidersYAML(r policy.Resolved) string {
-	var remote []policy.ResolvedRuleset
+// clashRuleProvidersYAML renders the `rule-providers:` block. The URL
+// each provider points at depends on the profile's delivery mode:
+//
+//   - passthrough: the ruleset's upstream URL (client fetches it).
+//     Inline rulesets have no upstream URL and are skipped here.
+//   - self_hosted: this dashboard's /sub/ruleset/<key> endpoint, for
+//     both remote and inline rulesets (we serve the content).
+//
+// Returns "" when there are no providers to emit.
+func clashRuleProvidersYAML(r policy.Resolved, mode, serveBase string) string {
+	selfHosted := mode == model.RulesetModeSelfHosted
+	var providers []policy.ResolvedRuleset
 	for _, rs := range r.Rulesets {
-		if rs.SourceType == model.RulesetSourceRemote && rs.URL != "" {
-			remote = append(remote, rs)
+		switch {
+		case selfHosted:
+			providers = append(providers, rs)
+		case rs.SourceType == model.RulesetSourceRemote && rs.URL != "":
+			providers = append(providers, rs)
 		}
 	}
-	if len(remote) == 0 {
+	if len(providers) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("rule-providers:")
-	for _, rs := range remote {
+	for _, rs := range providers {
 		interval := rs.TTLSeconds
 		if interval <= 0 {
 			interval = 86400
@@ -71,6 +80,10 @@ func clashRuleProvidersYAML(r policy.Resolved) string {
 		behavior := rs.Behavior
 		if behavior == "" {
 			behavior = model.RulesetBehaviorClassical
+		}
+		url := rs.URL
+		if selfHosted {
+			url = serveBase + "/sub/ruleset/" + rs.Key
 		}
 		b.WriteString("\n  ")
 		b.WriteString(rs.Key)
@@ -81,7 +94,7 @@ func clashRuleProvidersYAML(r policy.Resolved) string {
 			b.WriteString(rs.Format)
 		}
 		b.WriteString("\n    url: ")
-		b.WriteString(rs.URL)
+		b.WriteString(url)
 		b.WriteString("\n    path: ./ruleset/")
 		b.WriteString(rs.Key)
 		b.WriteString(".yaml")

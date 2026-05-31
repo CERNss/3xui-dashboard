@@ -274,8 +274,11 @@ func (a *Assembler) FormatJSON(d *SubscriptionData) ([]byte, error) {
 // proxy-groups + rule-providers + rules + dns — ready to drop into
 // Clash Verge / Mihomo / ClashX. The routing policy (groups + rules) is
 // resolved from `profile` against `rulesets`; `base` is an optional
-// operator template override (empty → built-in skeleton).
-func (a *Assembler) FormatClash(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base string) ([]byte, error) {
+// operator template override (empty → built-in skeleton). `serveBase`
+// (e.g. "https://panel.example.com") is the absolute origin used to
+// build self-hosted rule-provider URLs when the profile's RulesetMode
+// is self_hosted; it is ignored in passthrough mode.
+func (a *Assembler) FormatClash(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base, serveBase string) ([]byte, error) {
 	nodes := a.clashNodes(d)
 	names := make([]string, 0, len(nodes))
 	for _, n := range nodes {
@@ -286,7 +289,7 @@ func (a *Assembler) FormatClash(d *SubscriptionData, profile model.SubscriptionP
 	resolved := policy.Resolve(profile, names, policy.RulesetMap(rulesets))
 	pol := subtemplate.ClashPolicy{
 		Groups:        clashProxyGroupsYAML(resolved),
-		RuleProviders: clashRuleProvidersYAML(resolved),
+		RuleProviders: clashRuleProvidersYAML(resolved, profile.RulesetMode, serveBase),
 		Rules:         clashRulesYAML(resolved),
 	}
 	return subtemplate.RenderClash(nodes, pol, base)

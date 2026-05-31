@@ -122,10 +122,11 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		// repo-backed profile + ?profile= selection lands in a later
 		// phase. `base` is the optional operator template override.
 		base := h.clashBase(c.Request.Context())
-		body, err := h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), base)
+		serveBase := requestOrigin(c)
+		body, err := h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), base, serveBase)
 		if err != nil {
 			h.log.Error("FormatClash failed, retrying without operator base", "err", err)
-			body, err = h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), "")
+			body, err = h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), "", serveBase)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -247,6 +248,18 @@ func detectFormat(qs, ua string) Format {
 	default:
 		return FormatBase64
 	}
+}
+
+// requestOrigin reconstructs the absolute origin the client used to
+// reach us (scheme + host) so self-hosted rule-provider URLs point back
+// at this dashboard. Honors X-Forwarded-Proto for TLS-terminating
+// proxies.
+func requestOrigin(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Request.Host
 }
 
 // clashBase returns the operator's Clash template override, or "" when

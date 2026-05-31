@@ -27,6 +27,10 @@ const (
 	// Profile rule kinds.
 	RuleKindRuleset = "ruleset" // pull matchers from a referenced ruleset
 	RuleKindInline  = "inline"  // a single inline matcher,value pair
+
+	// Ruleset delivery modes (per profile).
+	RulesetModePassthrough = "passthrough" // rule-providers point at the upstream URL
+	RulesetModeSelfHosted  = "self_hosted" // rule-providers point at this dashboard's /sub/ruleset endpoint
 )
 
 // ProxyGroup is one policy group in a profile. Membership is computed
@@ -135,6 +139,7 @@ type SubscriptionProfile struct {
 	Description   string        `gorm:"column:description;not null;default:''"           json:"description"`
 	IsDefault     bool          `gorm:"column:is_default;not null;default:false"         json:"is_default"`
 	Enabled       bool          `gorm:"column:enabled;not null;default:true"             json:"enabled"`
+	RulesetMode   string        `gorm:"column:ruleset_mode;not null;default:'passthrough'" json:"ruleset_mode"`
 	ProxyGroups   ProxyGroups   `gorm:"column:proxy_groups;type:jsonb;not null;default:'[]'::jsonb"   json:"proxy_groups"`
 	Rules         Rules         `gorm:"column:rules;type:jsonb;not null;default:'[]'::jsonb"          json:"rules"`
 	Transforms    Transforms    `gorm:"column:transforms;type:jsonb;not null;default:'{}'::jsonb"     json:"transforms"`

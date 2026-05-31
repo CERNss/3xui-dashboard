@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/sub/policy"
 )
@@ -18,7 +19,7 @@ func TestFormatClash_DefaultProfileProducesFullConfig(t *testing.T) {
 		{Protocol: "vless", Host: "5.6.7.8", Port: 443, Inbound: in, Client: &runtime.Client{ID: "u2"}, Remark: "US-1"},
 	}}
 
-	out, err := a.FormatClash(d, policy.DefaultProfile(), policy.DefaultRulesets(), "")
+	out, err := a.FormatClash(d, policy.DefaultProfile(), policy.DefaultRulesets(), "", "")
 	if err != nil {
 		t.Fatalf("FormatClash: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestClashPolicyBlocks_DefaultComposesValidYAML(t *testing.T) {
 	r := policy.Resolve(policy.DefaultProfile(), []string{"HK-1", "US-1"}, policy.RulesetMap(policy.DefaultRulesets()))
 
 	groups := clashProxyGroupsYAML(r)
-	providers := clashRuleProvidersYAML(r)
+	providers := clashRuleProvidersYAML(r, model.RulesetModePassthrough, "")
 	rules := clashRulesYAML(r)
 
 	for _, want := range []string{"name: " + policy.GroupSelect, "name: " + policy.GroupAuto, "type: url-test", "tolerance: 50"} {
@@ -89,7 +90,18 @@ func TestClashFlowList_QuotesAndEmpty(t *testing.T) {
 }
 
 func TestClashRuleProviders_EmptyWhenNoRemote(t *testing.T) {
-	if got := clashRuleProvidersYAML(policy.Resolved{}); got != "" {
+	if got := clashRuleProvidersYAML(policy.Resolved{}, model.RulesetModePassthrough, ""); got != "" {
 		t.Errorf("no rulesets should yield empty providers block, got %q", got)
+	}
+}
+
+func TestClashRuleProviders_SelfHostedRewritesURLs(t *testing.T) {
+	r := policy.Resolve(policy.DefaultProfile(), []string{"n1"}, policy.RulesetMap(policy.DefaultRulesets()))
+	out := clashRuleProvidersYAML(r, model.RulesetModeSelfHosted, "https://panel.example.com")
+	if !strings.Contains(out, "url: https://panel.example.com/sub/ruleset/proxy") {
+		t.Errorf("self-hosted should point providers at our endpoint:\n%s", out)
+	}
+	if strings.Contains(out, "Loyalsoldier") {
+		t.Errorf("self-hosted should not leak upstream URLs:\n%s", out)
 	}
 }

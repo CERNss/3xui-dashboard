@@ -61,10 +61,11 @@ func DefaultRulesets() []model.SubscriptionRuleset {
 // admin-configured profiles, so behaviour is identical to before.
 func DefaultProfile() model.SubscriptionProfile {
 	return model.SubscriptionProfile{
-		Key:       "default",
-		Name:      "Default",
-		IsDefault: true,
-		Enabled:   true,
+		Key:         "default",
+		Name:        "Default",
+		IsDefault:   true,
+		Enabled:     true,
+		RulesetMode: model.RulesetModePassthrough,
 		ProxyGroups: model.ProxyGroups{
 			{Name: GroupSelect, Type: model.GroupTypeSelect, Include: []string{GroupAuto, "DIRECT"}},
 			{Name: GroupAuto, Type: model.GroupTypeURLTest, TestURL: defaultTestURL, Interval: 300},
