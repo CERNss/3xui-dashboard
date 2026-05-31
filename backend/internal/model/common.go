@@ -113,6 +113,28 @@ func (m *StringMap) Scan(value any) error {
 	return json.Unmarshal(bytes, (*map[string]string)(m))
 }
 
+// jsonbScan unmarshals a jsonb column value into dst. Shared by the
+// structured JSONB column types (e.g. the subscription policy docs).
+// A NULL or empty column leaves dst at its zero value.
+func jsonbScan(value, dst any) error {
+	if value == nil {
+		return nil
+	}
+	var b []byte
+	switch v := value.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("model: unsupported jsonb scan type %T", value)
+	}
+	if len(b) == 0 {
+		return nil
+	}
+	return json.Unmarshal(b, dst)
+}
+
 // User account status values.
 const (
 	UserStatusActive    = "active"
