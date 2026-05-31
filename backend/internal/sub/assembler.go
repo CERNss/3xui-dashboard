@@ -345,9 +345,9 @@ func (a *Assembler) FormatSingBox(d *SubscriptionData, base string) ([]byte, err
 // FormatSurge renders a Surge config. Only Surge-supported protocols
 // are included (surgeNode skips VLESS / WireGuard), and group membership
 // + rules resolve over exactly that supported subset, so the config is
-// always self-consistent. `serveBase` builds self-hosted rule-set URLs
-// in self_hosted mode.
-func (a *Assembler) FormatSurge(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base, serveBase string) ([]byte, error) {
+// always self-consistent. Ruleset-based rules are omitted for now (see
+// surgeRulesBlock's TODO); proxies + groups + inline rules are emitted.
+func (a *Assembler) FormatSurge(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base string) ([]byte, error) {
 	var proxyLines, names []string
 	for i := range d.Links {
 		l := &d.Links[i]
@@ -363,7 +363,7 @@ func (a *Assembler) FormatSurge(d *SubscriptionData, profile model.SubscriptionP
 	return subtemplate.RenderSurge(subtemplate.SurgePolicy{
 		Proxies: strings.Join(proxyLines, "\n"),
 		Groups:  surgeProxyGroupsBlock(resolved),
-		Rules:   surgeRulesBlock(resolved, profile.RulesetMode, serveBase),
+		Rules:   surgeRulesBlock(resolved),
 	}, base)
 }
 

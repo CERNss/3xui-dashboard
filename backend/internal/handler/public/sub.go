@@ -241,8 +241,7 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		_, _ = c.Writer.Write(body)
 	case FormatSurge:
 		profile, rulesets := h.resolveProfile(c.Request.Context(), c.Query("profile"))
-		serveBase := requestOrigin(c)
-		body, err := h.asm.FormatSurge(data, profile, rulesets, "", serveBase)
+		body, err := h.asm.FormatSurge(data, profile, rulesets, "")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

@@ -47,34 +47,26 @@ func surgeGroupType(t string) string {
 	}
 }
 
-// surgeRulesBlock renders the [Rule] lines. Surge has no rule-provider
-// section, so RULE-SET carries the list URL inline (upstream in
-// passthrough mode, our /sub/ruleset endpoint in self_hosted). MATCH
-// becomes Surge's terminal FINAL.
-func surgeRulesBlock(r policy.Resolved, mode, serveBase string) string {
-	byKey := make(map[string]policy.ResolvedRuleset, len(r.Rulesets))
-	for _, rs := range r.Rulesets {
-		byKey[rs.Key] = rs
-	}
-
+// surgeRulesBlock renders the [Rule] lines from the policy's INLINE
+// rules only (DOMAIN-SUFFIX/GEOIP/... + FINAL). MATCH becomes Surge's
+// terminal FINAL.
+//
+// TODO(sub-rulesets): ruleset (RULE-SET) rules are intentionally skipped
+// for non-Clash targets. Rule *lists* are client-format-specific, but
+// our default rulesets are Clash-format (Loyalsoldier), so emitting a
+// RULE-SET pointing at them would feed Surge a list it can't parse. The
+// full fix (deferred): server-side fetch + convert the list to the
+// target's format and serve it from /sub/ruleset/<key>?target=surge, or
+// let a ruleset carry per-target URLs. Until then Surge gets
+// proxies + groups + inline rules (correct, just coarser than Clash).
+func surgeRulesBlock(r policy.Resolved) string {
 	var lines []string
 	for _, rule := range r.Rules {
 		switch {
 		case strings.EqualFold(rule.Type, "MATCH"):
 			lines = append(lines, "FINAL,"+rule.Group)
 		case rule.Type == "RULE-SET":
-			rs, ok := byKey[rule.Payload]
-			if !ok {
-				continue
-			}
-			url := rs.URL
-			if mode == model.RulesetModeSelfHosted {
-				url = serveBase + "/sub/ruleset/" + rs.Key
-			}
-			if url == "" {
-				continue // inline ruleset in passthrough — nothing to point at
-			}
-			lines = append(lines, "RULE-SET,"+url+","+rule.Group)
+			continue // see TODO(sub-rulesets) above
 		default:
 			line := rule.Type + "," + rule.Payload + "," + rule.Group
 			if rule.NoResolve {
