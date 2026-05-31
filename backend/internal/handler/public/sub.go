@@ -15,6 +15,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/sub"
 	"github.com/cern/3xui-dashboard/internal/sub/policy"
+	"github.com/cern/3xui-dashboard/internal/sub/ruleset"
 )
 
 // Format names the supported subscription output formats.
@@ -34,8 +35,11 @@ const (
 type SubHandler struct {
 	asm       *sub.Assembler
 	settings  *repository.SettingRepo
-	remarkFmt string
-	log       *slog.Logger
+	profiles     *repository.SubscriptionProfileRepo
+	rulesets     *repository.SubscriptionRulesetRepo
+	rulesetCache *ruleset.Cache
+	remarkFmt    string
+	log          *slog.Logger
 }
 
 // NewSubHandler returns a handler. settings may be nil — when nil,
@@ -54,6 +58,44 @@ func NewSubHandler(a *sub.Assembler, settings *repository.SettingRepo, remarkFmt
 		remarkFmt: remarkFmt,
 		log:       lg.With(slog.String("component", "handler.public.sub")),
 	}
+}
+
+// SetProfileStore wires the DB-backed subscription profile + ruleset
+// repos and the ruleset fetch cache. When unset (e.g. in unit tests),
+// the handler falls back to the built-in default profile so rendering
+// still works.
+func (h *SubHandler) SetProfileStore(profiles *repository.SubscriptionProfileRepo, rulesets *repository.SubscriptionRulesetRepo, cache *ruleset.Cache) {
+	h.profiles = profiles
+	h.rulesets = rulesets
+	h.rulesetCache = cache
+}
+
+// resolveProfile picks the routing profile + its rulesets for a request:
+// ?profile=<key> if present and found, else the DB default, else the
+// built-in code default. Rulesets fall back to the built-in set when
+// none are configured.
+func (h *SubHandler) resolveProfile(ctx context.Context, key string) (model.SubscriptionProfile, []model.SubscriptionRuleset) {
+	if h.profiles == nil {
+		return policy.DefaultProfile(), policy.DefaultRulesets()
+	}
+	var p *model.SubscriptionProfile
+	if key != "" {
+		p, _ = h.profiles.GetByKey(ctx, key)
+	}
+	if p == nil {
+		p, _ = h.profiles.GetDefault(ctx)
+	}
+	if p == nil {
+		return policy.DefaultProfile(), policy.DefaultRulesets()
+	}
+	var rs []model.SubscriptionRuleset
+	if h.rulesets != nil {
+		rs, _ = h.rulesets.List(ctx)
+	}
+	if len(rs) == 0 {
+		rs = policy.DefaultRulesets()
+	}
+	return *p, rs
 }
 
 // RegisterRoutes mounts /sub/* on the supplied engine (no auth).
@@ -81,6 +123,51 @@ func (h *SubHandler) RegisterRoutes(r *gin.Engine, limiter gin.HandlerFunc) {
 	group.GET("/sip008/:subId", h.bind(FormatSIP008))
 	group.GET("/wireguard/:subId", h.bind(FormatWireGuard))
 	group.GET("/wireguard-zip/:subId", h.bind(FormatWGZip))
+	// Self-hosted rule lists: profiles in self_hosted mode point their
+	// rule-providers here instead of at the upstream URL.
+	group.GET("/ruleset/:key", h.ServeRuleset)
+}
+
+// ServeRuleset returns a ruleset's rule list (the body a self_hosted
+// profile's rule-providers point at). The :key maps to an admin-
+// configured ruleset (or a built-in default); the body is fetched +
+// cached server-side.
+func (h *SubHandler) ServeRuleset(c *gin.Context) {
+	rs := h.lookupRuleset(c.Request.Context(), c.Param("key"))
+	if rs == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ruleset not found"})
+		return
+	}
+	if h.rulesetCache == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ruleset cache unavailable"})
+		return
+	}
+	content, err := h.rulesetCache.Content(c.Request.Context(), *rs)
+	if err != nil {
+		h.log.Warn("ruleset fetch failed", slog.String("key", rs.Key), slog.String("err", err.Error()))
+		c.JSON(http.StatusBadGateway, gin.H{"error": "ruleset fetch failed"})
+		return
+	}
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.String(http.StatusOK, content)
+}
+
+// lookupRuleset resolves a ruleset key to its definition: the DB row if
+// present, else a built-in default ruleset of that key.
+func (h *SubHandler) lookupRuleset(ctx context.Context, key string) *model.SubscriptionRuleset {
+	if h.rulesets != nil {
+		if rs, _ := h.rulesets.GetByKey(ctx, key); rs != nil {
+			return rs
+		}
+	}
+	for _, rs := range policy.DefaultRulesets() {
+		if rs.Key == key {
+			rs := rs
+			return &rs
+		}
+	}
+	return nil
 }
 
 // Auto picks the format from ?format= or User-Agent and dispatches.
@@ -118,15 +205,16 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
 	case FormatClash:
-		// Routing policy is the built-in default profile for now; the
-		// repo-backed profile + ?profile= selection lands in a later
-		// phase. `base` is the optional operator template override.
+		// Routing policy comes from the selected profile (?profile= or the
+		// default), falling back to the built-in default. `base` is the
+		// optional operator template override.
+		profile, rulesets := h.resolveProfile(c.Request.Context(), c.Query("profile"))
 		base := h.clashBase(c.Request.Context())
 		serveBase := requestOrigin(c)
-		body, err := h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), base, serveBase)
+		body, err := h.asm.FormatClash(data, profile, rulesets, base, serveBase)
 		if err != nil {
 			h.log.Error("FormatClash failed, retrying without operator base", "err", err)
-			body, err = h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), "", serveBase)
+			body, err = h.asm.FormatClash(data, profile, rulesets, "", serveBase)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return

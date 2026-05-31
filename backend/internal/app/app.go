@@ -45,6 +45,8 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 	"github.com/cern/3xui-dashboard/internal/session"
 	"github.com/cern/3xui-dashboard/internal/sub"
+	"github.com/cern/3xui-dashboard/internal/sub/policy"
+	"github.com/cern/3xui-dashboard/internal/sub/ruleset"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -218,7 +220,12 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	if wgProvisioner != nil {
 		subAsm.SetWGPeerSource(&subWGAdapter{prov: wgProvisioner})
 	}
-	publichandler.NewSubHandler(subAsm, settingRepo, "", logger).RegisterRoutes(engine, subLimiter)
+	subHandler := publichandler.NewSubHandler(subAsm, settingRepo, "", logger)
+	subProfileRepo := repository.NewSubscriptionProfileRepo(db)
+	subRulesetRepo := repository.NewSubscriptionRulesetRepo(db)
+	subHandler.SetProfileStore(subProfileRepo, subRulesetRepo, ruleset.NewCache(nil))
+	seedSubscriptionDefaults(subProfileRepo, subRulesetRepo, logger)
+	subHandler.RegisterRoutes(engine, subLimiter)
 
 	// User accounts.
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
@@ -397,6 +404,41 @@ func (a *App) Shutdown(ctx context.Context) {
 		a.log.Warn("scheduler stop deadline exceeded")
 	}
 	a.WebhookService.Drain(ctx)
+}
+
+// seedSubscriptionDefaults inserts the built-in default profile + its
+// rulesets on first boot (when no profiles exist yet) so the admin has
+// something to edit. Idempotent and non-fatal: a failure just leaves the
+// handler falling back to the in-code default profile.
+func seedSubscriptionDefaults(profiles *repository.SubscriptionProfileRepo, rulesets *repository.SubscriptionRulesetRepo, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	existing, err := profiles.List(ctx)
+	if err != nil {
+		logger.Warn("subscription seed: list profiles failed", slog.String("err", err.Error()))
+		return
+	}
+	if len(existing) > 0 {
+		return // already seeded or admin-configured
+	}
+
+	p := policy.DefaultProfile()
+	if err := profiles.Create(ctx, &p); err != nil {
+		logger.Warn("subscription seed: create default profile failed", slog.String("err", err.Error()))
+		return
+	}
+	for _, rs := range policy.DefaultRulesets() {
+		rs := rs
+		if found, _ := rulesets.GetByKey(ctx, rs.Key); found != nil {
+			continue
+		}
+		if err := rulesets.Create(ctx, &rs); err != nil {
+			logger.Warn("subscription seed: create ruleset failed",
+				slog.String("key", rs.Key), slog.String("err", err.Error()))
+		}
+	}
+	logger.Info("seeded default subscription profile + rulesets")
 }
 
 // ---- adapters (kept private — main + tests share them) ---------------------
