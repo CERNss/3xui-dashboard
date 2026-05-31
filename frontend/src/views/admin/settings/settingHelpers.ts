@@ -79,7 +79,7 @@ export function filterSettings(items: SettingItem[], tab: SettingsTab) {
     if (tab === 'dataCollection') return item.group === 'data_collection'
     if (tab === 'securityAuth') return item.group === 'registration' || OIDC_KEYS.has(item.key)
     if (tab === 'userDefaults') return NEW_USER_KEYS.has(item.key)
-    if (tab === 'messages') return item.group === 'other' && !BRAND_INFO_KEYS.has(item.key) && !OIDC_KEYS.has(item.key)
+    if (tab === 'messages') return item.group === 'smtp'
     return false
   })
 }
@@ -89,6 +89,7 @@ export function groupTitleKey(group: string) {
     data_collection: 'admin.settings.groupDataCollection',
     other: 'admin.settings.groupOther',
     registration: 'admin.settings.groupRegistration',
+    smtp: 'admin.settings.groupSmtp',
     subscription: 'admin.settings.groupSubscription',
     traffic: 'admin.settings.groupTraffic',
   }[group]

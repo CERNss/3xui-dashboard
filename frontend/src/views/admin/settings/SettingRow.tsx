@@ -32,7 +32,17 @@ export function SettingRow({ item, drafts, saving, onDraftChange, onSave, onRese
           {item.env_fallback ? <Typography.Text type="secondary">{t('admin.settings.fallback', { value: item.env_fallback })}</Typography.Text> : null}
         </Space>
         <Space direction="vertical" size={8} style={{ alignItems: 'flex-end', width: '100%' }}>
-          {item.type === 'bool' ? (
+          {item.secret ? (
+            <Input.Password
+              aria-label={label}
+              id={controlID}
+              autoComplete="new-password"
+              placeholder={item.has_override || item.env_fallback ? '********' : ''}
+              style={{ maxWidth: 420 }}
+              value={draft}
+              onChange={(event) => onDraftChange(item.key, event.target.value)}
+            />
+          ) : item.type === 'bool' ? (
             <select
               aria-label={label}
               id={controlID}

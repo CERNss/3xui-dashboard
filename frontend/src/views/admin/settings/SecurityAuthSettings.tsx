@@ -211,7 +211,7 @@ function OIDCField({
       id={controlID}
       autoComplete="new-password"
       value={value}
-      placeholder={item.env_fallback ? '********' : ''}
+      placeholder={item.has_override || item.env_fallback ? '********' : ''}
       onChange={(event) => onDraftChange(item.key, event.target.value)}
     />
   ) : (

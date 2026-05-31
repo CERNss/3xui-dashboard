@@ -762,6 +762,7 @@ export const zh = {
       userDefaultsTab: '用户默认值',
       groupOther: '其他',
       groupRegistration: '注册',
+      groupSmtp: 'SMTP 邮件发送',
       groupSubscription: '订阅',
       groupTraffic: '流量阈值',
       groupDataCollection: '节点数据收集',

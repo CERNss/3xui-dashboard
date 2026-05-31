@@ -77,7 +77,8 @@ beforeEach(() => {
     item({ key: 'oidc_redirect_url', label: 'OIDC redirect URL', group: 'other', type: 'string', value: 'https://dash.example.test/oidc/callback' }),
     item({ key: 'oidc_icon_url', label: 'OIDC icon URL', group: 'other', type: 'string', value: 'https://auth.example.test/icon.svg' }),
     item({ key: 'new_user_initial_balance_cents', label: 'New-user initial balance', group: 'registration', type: 'int', value: '100' }),
-    item({ key: 'smtp_host', label: 'SMTP host', group: 'other', type: 'string', value: 'smtp.example.test' }),
+    item({ key: 'smtp_host', label: 'SMTP host', group: 'smtp', type: 'string', value: 'smtp.example.test' }),
+    item({ key: 'smtp_password', label: 'SMTP password', group: 'smtp', type: 'string', value: '', secret: true, has_override: true }),
     item({ key: 'brand_title', label: 'Brand title', group: 'other', type: 'string', value: 'Hidden brand row' }),
     item({ key: 'brand_subtitle', label: 'Brand subtitle', group: 'other', type: 'string', value: 'Configuration platform' }),
     item({ key: 'brand_docs_url', label: 'Documentation link', group: 'other', type: 'string', value: 'https://docs.example.test' }),
@@ -122,7 +123,7 @@ describe('Settings', () => {
 
   it('buffers drafts per setting key, saves changed rows, and resets overrides', async () => {
     const user = userEvent.setup()
-    renderSettings()
+    renderSettings('/admin/settings?tab=messages')
 
     const input = screen.getByLabelText('SMTP host')
     await user.clear(input)

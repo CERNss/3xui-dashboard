@@ -4,12 +4,16 @@ export interface SettingItem {
   key: string
   label: string
   type: 'bool' | 'int' | 'string'
-  group: 'registration' | 'subscription' | 'traffic' | 'data_collection' | 'other'
+  group: 'registration' | 'subscription' | 'traffic' | 'data_collection' | 'smtp' | 'other'
   default: string
   description: string
   value: string
   has_override: boolean
   env_fallback: string
+  // Secret settings are never sent with their value (masked server-side):
+  // `value` is empty and `has_override` signals a stored value exists.
+  // Submitting blank leaves the stored secret unchanged.
+  secret?: boolean
   // Optional Chinese variants. Backend started populating these so
   // the admin UI can render localized labels/descriptions for the
   // setting definitions themselves (which are defined server-side).

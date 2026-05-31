@@ -762,6 +762,7 @@ export const en = {
       userDefaultsTab: 'User defaults',
       groupOther: 'Other',
       groupRegistration: 'Registration',
+      groupSmtp: 'SMTP delivery',
       groupSubscription: 'Subscription',
       groupTraffic: 'Traffic thresholds',
       groupDataCollection: 'Node data collection',
