@@ -226,6 +226,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	subHandler.SetProfileStore(subProfileRepo, subRulesetRepo, ruleset.NewCache(nil))
 	seedSubscriptionDefaults(subProfileRepo, subRulesetRepo, logger)
 	subHandler.RegisterRoutes(engine, subLimiter)
+	adminhandler.NewSubscriptionHandler(subProfileRepo, subRulesetRepo).RegisterRoutes(apiAdminAuthed)
 
 	// User accounts.
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)

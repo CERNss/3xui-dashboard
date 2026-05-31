@@ -74,6 +74,24 @@ func (r *SubscriptionProfileRepo) Update(ctx context.Context, id int64, fields m
 	return nil
 }
 
+// Save replaces a profile's editable columns (a full PUT). is_default
+// (managed via SetDefault), id, and created_at are excluded.
+func (r *SubscriptionProfileRepo) Save(ctx context.Context, id int64, p *model.SubscriptionProfile) error {
+	p.UpdatedAt = time.Now().UTC()
+	res := r.db.WithContext(ctx).Model(&model.SubscriptionProfile{}).
+		Where("id = ?", id).
+		Select("key", "name", "description", "enabled", "ruleset_mode",
+			"proxy_groups", "rules", "transforms", "base_overrides", "updated_at").
+		Updates(p)
+	if res.Error != nil {
+		return fmt.Errorf("SubscriptionProfile.Save: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // SetDefault makes id the sole default in one transaction (the partial
 // unique index forbids two defaults, so the old one must be cleared
 // first).
@@ -167,6 +185,24 @@ func (r *SubscriptionRulesetRepo) Update(ctx context.Context, id int64, fields m
 	res := r.db.WithContext(ctx).Model(&model.SubscriptionRuleset{}).Where("id = ?", id).Updates(fields)
 	if res.Error != nil {
 		return fmt.Errorf("SubscriptionRuleset.Update: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// Save replaces a ruleset's admin-editable columns (a full PUT). The
+// server-managed cache columns (cached_content/etag, last_fetched_at/
+// status) are excluded so an edit never clobbers the fetch cache.
+func (r *SubscriptionRulesetRepo) Save(ctx context.Context, id int64, rs *model.SubscriptionRuleset) error {
+	rs.UpdatedAt = time.Now().UTC()
+	res := r.db.WithContext(ctx).Model(&model.SubscriptionRuleset{}).
+		Where("id = ?", id).
+		Select("key", "name", "source_type", "url", "content", "behavior", "format", "ttl_seconds", "enabled", "updated_at").
+		Updates(rs)
+	if res.Error != nil {
+		return fmt.Errorf("SubscriptionRuleset.Save: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
