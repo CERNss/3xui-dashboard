@@ -78,7 +78,7 @@ func setupP5Harness(t *testing.T) *p5Harness {
 	settingRepo := repository.NewSettingRepo(db)
 	bus := event.New()
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
-	mailerSvc := mailer.New(config.SMTP{}, logger)
+	mailerSvc := mailer.New(mailer.NewStaticSource(mailer.SMTPConfig{}), logger)
 	msgs := messages.New(mailerSvc, repository.NewNotificationLogRepo(db), bus, userRepo, nil, logger)
 	verifyService := verification.New(db, msgs, logger)
 	authService := authsvc.New("a-very-long-test-secret-value", time.Hour, "admin", "password")
@@ -87,7 +87,7 @@ func setupP5Harness(t *testing.T) *p5Harness {
 	engine := gin.New()
 	apiUser := engine.Group("/api/user")
 	sess := session.NewManager(false, time.Hour)
-	NewAuthHandler(userService, authService, verifyService, true, sess).RegisterRoutes(apiUser)
+	NewAuthHandler(userService, authService, verifyService, mailerSvc, sess).RegisterRoutes(apiUser)
 	apiUserAuthed := engine.Group("/api/user", middleware.RequireActiveUser(authService, userRepo))
 	NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 

@@ -152,7 +152,7 @@ func (h *SettingHandler) SMTPTest(c *gin.Context) {
 	}
 	subject := "3xui-dashboard SMTP test"
 	body := "If you received this, the dashboard's SMTP config is working.\n\nSent at " + time.Now().UTC().Format(time.RFC3339)
-	if err := h.mailer.Send(req.To, subject, body); err != nil {
+	if err := h.mailer.Send(c.Request.Context(), req.To, subject, body); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -276,6 +276,7 @@ type settingDescriptor struct {
 	Default       string `json:"default"`
 	Description   string `json:"description"`
 	DescriptionZh string `json:"description_zh,omitempty"`
+	Secret        bool   `json:"secret,omitempty"` // sensitive: masked in List, encrypted on Put
 }
 
 var knownSettings = []settingDescriptor{
@@ -360,6 +361,7 @@ var knownSettings = []settingDescriptor{
 		LabelZh:       "OIDC Client Secret",
 		Type:          "string",
 		Group:         "other",
+		Secret:        true,
 		Description:   "OIDC OAuth client secret. Empty falls back to OIDC_CLIENT_SECRET.",
 		DescriptionZh: "OIDC OAuth Client Secret。留空回退 OIDC_CLIENT_SECRET。",
 	},
@@ -435,6 +437,53 @@ var knownSettings = []settingDescriptor{
 		Group:         "other",
 		Description:   "Optional userinfo endpoint override. Empty uses discovery or OIDC_USERINFO_URL.",
 		DescriptionZh: "可选 userinfo 端点覆盖。留空使用 discovery 或 OIDC_USERINFO_URL。",
+	},
+	{
+		Key:           model.SettingSMTPHost,
+		Label:         "SMTP host",
+		LabelZh:       "SMTP 主机",
+		Type:          "string",
+		Group:         "smtp",
+		Description:   "SMTP server hostname. With host + from set, email delivery (verification codes, ops alerts) turns on. Empty falls back to SMTP_HOST.",
+		DescriptionZh: "SMTP 服务器主机名。配置主机 + 发件人后即开启邮件发送（验证码、运维告警）。留空回退 SMTP_HOST。",
+	},
+	{
+		Key:           model.SettingSMTPPort,
+		Label:         "SMTP port",
+		LabelZh:       "SMTP 端口",
+		Type:          "int",
+		Group:         "smtp",
+		Default:       "587",
+		Description:   "SMTP port. 465 uses implicit TLS; anything else uses STARTTLS. Empty falls back to SMTP_PORT.",
+		DescriptionZh: "SMTP 端口。465 使用隐式 TLS，其余使用 STARTTLS。留空回退 SMTP_PORT。",
+	},
+	{
+		Key:           model.SettingSMTPFrom,
+		Label:         "SMTP from address",
+		LabelZh:       "发件人地址",
+		Type:          "string",
+		Group:         "smtp",
+		Description:   "Envelope + header From address. Empty falls back to SMTP_FROM.",
+		DescriptionZh: "信封与邮件头的发件人地址。留空回退 SMTP_FROM。",
+	},
+	{
+		Key:           model.SettingSMTPUsername,
+		Label:         "SMTP username",
+		LabelZh:       "SMTP 用户名",
+		Type:          "string",
+		Group:         "smtp",
+		Description:   "SMTP auth username. Empty = unauthenticated, or falls back to SMTP_USERNAME.",
+		DescriptionZh: "SMTP 认证用户名。留空 = 不认证，或回退 SMTP_USERNAME。",
+	},
+	{
+		Key:           model.SettingSMTPPassword,
+		Label:         "SMTP password",
+		LabelZh:       "SMTP 密码",
+		Type:          "string",
+		Group:         "smtp",
+		Secret:        true,
+		Description:   "SMTP auth password, stored encrypted. Submitting blank leaves the stored value unchanged; delete the setting to clear it (then falls back to SMTP_PASSWORD).",
+		DescriptionZh: "SMTP 认证密码，加密存储。提交空值不会修改已存密码；删除该项即可清除（之后回退 SMTP_PASSWORD）。",
 	},
 	{
 		Key:           model.SettingOpsCollectEnabled,
@@ -706,12 +755,21 @@ func (h *SettingHandler) List(c *gin.Context) {
 	out := make([]settingItem, 0, len(knownSettings))
 	for _, d := range knownSettings {
 		v, ok := persisted[d.Key]
-		out = append(out, settingItem{
+		item := settingItem{
 			settingDescriptor: d,
 			Value:             v,
 			HasOverride:       ok,
 			EnvFallback:       h.envFallback(d.Key),
-		})
+		}
+		if d.Secret {
+			// Never echo secret material (the stored value is ciphertext
+			// anyway). HasOverride still signals a value is set; the env
+			// fallback is reduced to a "configured" marker.
+			item.Value = ""
+			item.HasOverride = ok && v != ""
+			item.EnvFallback = maskSet(item.EnvFallback)
+		}
+		out = append(out, item)
 	}
 	// Bring along any unknown persisted rows so admins see them.
 	for k, v := range persisted {
@@ -752,6 +810,21 @@ func (h *SettingHandler) Put(c *gin.Context) {
 	}
 	if err := h.validateSettingState(c.Request.Context(), key, body.Value); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Secret settings are encrypted at rest and never echoed back. A
+	// blank submit is a no-op so saving a masked form doesn't wipe the
+	// stored value — clearing is done via DELETE.
+	if d, ok := descriptorFor(key); ok && d.Secret {
+		if strings.TrimSpace(body.Value) == "" {
+			c.JSON(http.StatusOK, gin.H{"key": key, "unchanged": true})
+			return
+		}
+		if err := h.repo.SetSecret(c.Request.Context(), key, body.Value); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"key": key, "saved": true})
 		return
 	}
 	if err := h.repo.Set(c.Request.Context(), key, body.Value); err != nil {
@@ -809,6 +882,16 @@ func (h *SettingHandler) envFallback(key string) string {
 		return h.cfg.OIDC.JWKSURL
 	case model.SettingOIDCUserInfoURL:
 		return h.cfg.OIDC.UserURL
+	case model.SettingSMTPHost:
+		return h.cfg.SMTP.Host
+	case model.SettingSMTPPort:
+		return strconv.Itoa(h.cfg.SMTP.Port)
+	case model.SettingSMTPFrom:
+		return h.cfg.SMTP.From
+	case model.SettingSMTPUsername:
+		return h.cfg.SMTP.Username
+	case model.SettingSMTPPassword:
+		return h.cfg.SMTP.Password // masked by maskSet in List
 	default:
 		// no env equivalent
 		return ""
@@ -822,6 +905,25 @@ func isKnown(key string) bool {
 		}
 	}
 	return false
+}
+
+// descriptorFor returns the known descriptor for key, if any.
+func descriptorFor(key string) (settingDescriptor, bool) {
+	for _, d := range knownSettings {
+		if d.Key == key {
+			return d, true
+		}
+	}
+	return settingDescriptor{}, false
+}
+
+// maskSet collapses a non-empty secret to a fixed marker so the UI can
+// show "configured" without ever receiving the secret material.
+func maskSet(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "********"
 }
 
 func (h *SettingHandler) validateSettingState(ctx context.Context, key, value string) error {

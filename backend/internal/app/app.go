@@ -239,7 +239,17 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 
 	// User accounts.
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
-	mailerSvc := mailer.New(cfg.SMTP, logger)
+	// SMTP config is read from the settings table per send (panel-editable,
+	// password decrypted via the cipher above), falling back to the SMTP_*
+	// env / config.yaml values for any key the admin hasn't overridden.
+	smtpSource := mailer.NewSettingsSource(settingRepo, mailer.SMTPConfig{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		From:     cfg.SMTP.From,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+	})
+	mailerSvc := mailer.New(smtpSource, logger)
 	notifyLogRepo := repository.NewNotificationLogRepo(db)
 	// messages.Service is the user-facing SMTP surface — verification
 	// codes, low-balance alerts to user, client lifecycle (expired /
@@ -248,7 +258,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	messagesSvc := messages.New(mailerSvc, notifyLogRepo, bus, userRepo, ownershipRepo, logger)
 	messagesSvc.Start()
 	verifyService := verification.New(db, messagesSvc, logger)
-	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.SMTP.Enabled(), sess).RegisterRoutes(apiUser)
+	userhandler.NewAuthHandler(userService, authSvc, verifyService, mailerSvc, sess).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)

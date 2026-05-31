@@ -46,6 +46,14 @@ const (
 	SettingOIDCTokenURL                = "oidc_token_url"
 	SettingOIDCJWKSURL                 = "oidc_jwks_url"
 	SettingOIDCUserInfoURL             = "oidc_userinfo_url"
+	// SMTP delivery — runtime-editable in the panel; smtp_password is
+	// stored encrypted (SettingRepo.SetSecret). Empty rows fall back to
+	// the SMTP_* env / config.yaml values.
+	SettingSMTPHost     = "smtp_host"
+	SettingSMTPPort     = "smtp_port"
+	SettingSMTPFrom     = "smtp_from"
+	SettingSMTPUsername = "smtp_username"
+	SettingSMTPPassword = "smtp_password"
 	SettingOpsCollectEnabled           = "ops_collect_enabled"
 	SettingOpsCollectIntervalSeconds   = "ops_collect_interval_seconds"
 	SettingOpsCollectConcurrency       = "ops_collect_concurrency"

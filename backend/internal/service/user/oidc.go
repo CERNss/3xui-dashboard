@@ -229,9 +229,23 @@ func (s *Service) effectiveOIDC(ctx context.Context) (config.OIDC, error) {
 		}
 		return v
 	}
+	// readSecret decrypts an at-rest secret setting, falling back like
+	// read. The client secret is stored encrypted (SettingRepo.SetSecret).
+	readSecret := func(key, fallback string) string {
+		if err != nil {
+			return fallback
+		}
+		var v string
+		v, err = s.settings.GetSecret(ctx, key, fallback)
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return fallback
+		}
+		return v
+	}
 	oidc.Issuer = read(model.SettingOIDCIssuer, oidc.Issuer)
 	oidc.ClientID = read(model.SettingOIDCClientID, oidc.ClientID)
-	oidc.ClientSecret = read(model.SettingOIDCClientSecret, oidc.ClientSecret)
+	oidc.ClientSecret = readSecret(model.SettingOIDCClientSecret, oidc.ClientSecret)
 	oidc.RedirectURL = read(model.SettingOIDCRedirectURL, oidc.RedirectURL)
 	scopesRaw := read(model.SettingOIDCScopes, strings.Join(oidc.Scopes, ","))
 	if scopesRaw != "" {

@@ -32,7 +32,7 @@ func (e *Email) Enabled() bool {
 	return e.mailer != nil && e.mailer.Enabled()
 }
 
-func (e *Email) Send(_ context.Context, msg notify.Message) error {
+func (e *Email) Send(ctx context.Context, msg notify.Message) error {
 	if !e.Enabled() {
 		return nil
 	}
@@ -62,5 +62,5 @@ func (e *Email) Send(_ context.Context, msg notify.Message) error {
 		b.WriteString(msg.URL)
 		b.WriteByte('\n')
 	}
-	return e.mailer.Send(to, subject, b.String())
+	return e.mailer.Send(ctx, to, subject, b.String())
 }
