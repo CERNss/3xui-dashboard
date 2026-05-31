@@ -62,9 +62,14 @@ function OIDCSettingsPanel({
   const issuer = draftValue(byKey.get('oidc_issuer'), drafts)
   const redirectURL = draftValue(byKey.get('oidc_redirect_url'), drafts)
   const discoveryURL = issuer ? `${issuer.replace(/\/+$/, '')}/.well-known/openid-configuration` : ''
-  const configured = ['oidc_issuer', 'oidc_client_id', 'oidc_client_secret', 'oidc_redirect_url'].every((key) =>
-    Boolean(draftValue(byKey.get(key), drafts)),
-  )
+  // A field counts as configured if it has a draft value OR a stored
+  // override. The has_override check matters for secrets (oidc_client_secret),
+  // whose value is masked to "" in the List response — without it, a fully
+  // configured provider would read as unconfigured here.
+  const configured = ['oidc_issuer', 'oidc_client_id', 'oidc_client_secret', 'oidc_redirect_url'].every((key) => {
+    const item = byKey.get(key)
+    return Boolean(draftValue(item, drafts)) || Boolean(item?.has_override)
+  })
   const enabledItem = byKey.get('oidc_enabled')
   const enabledDraft = draftValue(enabledItem, drafts)
   const oidcEnabled = enabledDraft === '' ? configured : isTruthy(enabledDraft)

@@ -67,7 +67,7 @@ beforeEach(() => {
     item({ key: 'oidc_enabled', label: 'OIDC login enabled', group: 'other', type: 'bool', value: 'true', has_override: true }),
     item({ key: 'oidc_display_name', label: 'OIDC display name', group: 'other', type: 'string', value: 'Acme SSO' }),
     item({ key: 'oidc_client_id', label: 'OIDC client ID', group: 'other', type: 'string', value: 'client-123' }),
-    item({ key: 'oidc_client_secret', label: 'OIDC client secret', group: 'other', type: 'string', value: 'secret-123' }),
+    item({ key: 'oidc_client_secret', label: 'OIDC client secret', group: 'other', type: 'string', value: '', secret: true, has_override: true }),
     item({ key: 'oidc_issuer', label: 'OIDC issuer', group: 'other', type: 'string', value: 'https://auth.example.test', has_override: true }),
     item({ key: 'oidc_auth_url', label: 'OIDC auth URL', group: 'other', type: 'string', value: 'https://auth.example.test/oauth/authorize' }),
     item({ key: 'oidc_token_url', label: 'OIDC token URL', group: 'other', type: 'string', value: 'https://auth.example.test/oauth/token' }),
@@ -183,6 +183,21 @@ describe('Settings', () => {
     await user.click(screen.getByRole('button', { name: 'Save OIDC' }))
 
     await waitFor(() => expect(setMutateAsync).toHaveBeenCalledWith({ key: 'oidc_display_name', value: 'New SSO' }))
+  })
+
+  it('counts a masked (stored) client secret as configured for the enable toggle', () => {
+    // The real backend masks secrets (value '' + has_override). With
+    // oidc_enabled left unset the toggle follows `configured`, so the masked
+    // secret must still count via has_override — otherwise a fully set-up
+    // provider would render as disabled. Regression guard.
+    for (const s of settings) {
+      if (s.key === 'oidc_enabled') {
+        s.value = ''
+        s.has_override = false
+      }
+    }
+    renderSettings('/admin/settings?tab=securityAuth')
+    expect(screen.getByLabelText('Enable OIDC login')).toBeChecked()
   })
 
   it('keeps new-user defaults on the user defaults tab', async () => {
