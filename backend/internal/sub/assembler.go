@@ -342,6 +342,31 @@ func (a *Assembler) FormatSingBox(d *SubscriptionData, base string) ([]byte, err
 	return subtemplate.RenderSingBox(outs, base)
 }
 
+// FormatSurge renders a Surge config. Only Surge-supported protocols
+// are included (surgeNode skips VLESS / WireGuard), and group membership
+// + rules resolve over exactly that supported subset, so the config is
+// always self-consistent. `serveBase` builds self-hosted rule-set URLs
+// in self_hosted mode.
+func (a *Assembler) FormatSurge(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base, serveBase string) ([]byte, error) {
+	var proxyLines, names []string
+	for i := range d.Links {
+		l := &d.Links[i]
+		body, ok := surgeNode(l.Host, l.Port, l.Inbound, l.Client)
+		if !ok {
+			continue
+		}
+		name := surgeName(l.Remark)
+		proxyLines = append(proxyLines, name+" = "+body)
+		names = append(names, name)
+	}
+	resolved := policy.Resolve(profile, names, policy.RulesetMap(rulesets))
+	return subtemplate.RenderSurge(subtemplate.SurgePolicy{
+		Proxies: strings.Join(proxyLines, "\n"),
+		Groups:  surgeProxyGroupsBlock(resolved),
+		Rules:   surgeRulesBlock(resolved, profile.RulesetMode, serveBase),
+	}, base)
+}
+
 // FormatSIP008 returns a SIP008 v1 JSON document containing only the
 // user's Shadowsocks clients. Non-SS clients are dropped (SIP008 is
 // SS-specific). Empty users get {"version":1,"servers":[]} rather

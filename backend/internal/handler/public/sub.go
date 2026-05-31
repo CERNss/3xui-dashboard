@@ -26,6 +26,7 @@ const (
 	FormatJSON      Format = "json"
 	FormatClash     Format = "clash"
 	FormatSingBox   Format = "singbox"
+	FormatSurge     Format = "surge"
 	FormatSIP008    Format = "sip008"
 	FormatWireGuard Format = "wireguard"
 	FormatWGZip     Format = "wireguard-zip"
@@ -120,6 +121,7 @@ func (h *SubHandler) RegisterRoutes(r *gin.Engine, limiter gin.HandlerFunc) {
 	group.GET("/json/:subId", h.bind(FormatJSON))
 	group.GET("/clash/:subId", h.bind(FormatClash))
 	group.GET("/singbox/:subId", h.bind(FormatSingBox))
+	group.GET("/surge/:subId", h.bind(FormatSurge))
 	group.GET("/sip008/:subId", h.bind(FormatSIP008))
 	group.GET("/wireguard/:subId", h.bind(FormatWireGuard))
 	group.GET("/wireguard-zip/:subId", h.bind(FormatWGZip))
@@ -237,6 +239,17 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Header("Content-Type", "application/json; charset=utf-8")
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
+	case FormatSurge:
+		profile, rulesets := h.resolveProfile(c.Request.Context(), c.Query("profile"))
+		serveBase := requestOrigin(c)
+		body, err := h.asm.FormatSurge(data, profile, rulesets, "", serveBase)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.Write(body)
 	case FormatSIP008:
 		body, err := h.asm.FormatSIP008(data)
 		if err != nil {
@@ -267,7 +280,7 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		_, _ = c.Writer.Write(body)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "unsupported format; valid: base64, json, clash, singbox, sip008, wireguard, wireguard-zip",
+			"error": "unsupported format; valid: base64, json, clash, singbox, surge, sip008, wireguard, wireguard-zip",
 		})
 	}
 }
@@ -312,6 +325,8 @@ func detectFormat(qs, ua string) Format {
 			return FormatClash
 		case "singbox", "sing-box":
 			return FormatSingBox
+		case "surge":
+			return FormatSurge
 		case "sip008":
 			return FormatSIP008
 		case "wireguard", "wg":
@@ -331,6 +346,8 @@ func detectFormat(qs, ua string) Format {
 	case strings.Contains(l, "sing-box"),
 		strings.Contains(l, "singbox"):
 		return FormatSingBox
+	case strings.Contains(l, "surge"):
+		return FormatSurge
 	case strings.Contains(l, "shadowsocks"):
 		return FormatSIP008
 	default:
