@@ -6,8 +6,38 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/sub/policy"
 )
+
+func TestFormatClash_DefaultProfileProducesFullConfig(t *testing.T) {
+	a := &Assembler{}
+	in := fixture("vless", `{"network":"tcp","security":"tls","tlsSettings":{"serverName":"e.com"}}`, "")
+	d := &SubscriptionData{Links: []Link{
+		{Protocol: "vless", Host: "1.2.3.4", Port: 443, Inbound: in, Client: &runtime.Client{ID: "u1"}, Remark: "HK-1"},
+		{Protocol: "vless", Host: "5.6.7.8", Port: 443, Inbound: in, Client: &runtime.Client{ID: "u2"}, Remark: "US-1"},
+	}}
+
+	out, err := a.FormatClash(d, policy.DefaultProfile(), policy.DefaultRulesets(), "")
+	if err != nil {
+		t.Fatalf("FormatClash: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("default-profile clash output not valid YAML: %v\n---\n%s", err, out)
+	}
+	for _, key := range []string{"proxies", "proxy-groups", "rule-providers", "rules"} {
+		if _, ok := doc[key]; !ok {
+			t.Errorf("default render missing %q key", key)
+		}
+	}
+	s := string(out)
+	for _, want := range []string{"HK-1", "US-1", "name: 节点选择", "name: 自动选择", "RULE-SET,proxy,节点选择", "MATCH,节点选择"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("default render missing %q", want)
+		}
+	}
+}
 
 func TestClashPolicyBlocks_DefaultComposesValidYAML(t *testing.T) {
 	r := policy.Resolve(policy.DefaultProfile(), []string{"HK-1", "US-1"}, policy.RulesetMap(policy.DefaultRulesets()))

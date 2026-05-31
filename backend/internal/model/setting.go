@@ -61,14 +61,9 @@ const (
 
 	// Subscription format templates — admins override the embedded
 	// defaults shipped by internal/sub/template/defaults.go.
+	// Operator base-template overrides for the subscription renderers.
+	// Routing policy (groups + rules) is configured via subscription
+	// profiles, not these — these only replace the base skeleton.
 	SettingClashTemplateYAML   = "clash_template_yaml"
 	SettingSingBoxTemplateJSON = "singbox_template_json"
-	// One of "auto-only" / "select-only" / "auto+select". Only affects
-	// the default Clash template; ignored when clash_template_yaml is
-	// non-empty.
-	SettingProxyGroupStrategy = "proxy_group_strategy"
-	// When false, the default Clash template emits no rule-providers /
-	// rules — just proxies + a single MATCH fallback. Ignored when
-	// clash_template_yaml is non-empty.
-	SettingRuleProvidersEnabled = "rule_providers_enabled"
 )

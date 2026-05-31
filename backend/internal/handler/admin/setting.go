@@ -681,26 +681,6 @@ var knownSettings = []settingDescriptor{
 		Description:   "Override the embedded sing-box template. Must contain ${proxies} and ${proxy_names} placeholders. Empty = use built-in default.",
 		DescriptionZh: "覆盖内置 sing-box 模板。必须包含 ${proxies} 和 ${proxy_names} 占位符。空 = 用内置默认。",
 	},
-	{
-		Key:           model.SettingProxyGroupStrategy,
-		Label:         "Proxy group strategy",
-		LabelZh:       "代理组策略",
-		Type:          "string",
-		Group:         "subscription",
-		Default:       "auto+select",
-		Description:   "One of: auto-only / select-only / auto+select. Controls the default Clash template's proxy-groups block. Ignored when clash_template_yaml is set.",
-		DescriptionZh: "取值之一：auto-only / select-only / auto+select。控制默认 Clash 模板 proxy-groups。如已设置 clash_template_yaml 则忽略。",
-	},
-	{
-		Key:           model.SettingRuleProvidersEnabled,
-		Label:         "Rule providers enabled",
-		LabelZh:       "启用 rule providers",
-		Type:          "bool",
-		Group:         "subscription",
-		Default:       "true",
-		Description:   "When false, the default Clash template strips rule-providers + rules — emitting just proxies + groups + a MATCH fallback. Ignored when clash_template_yaml is set.",
-		DescriptionZh: "关闭后默认 Clash 模板会剥离 rule-providers + rules，仅输出 proxies + groups + MATCH 兜底。如已设置 clash_template_yaml 则忽略。",
-	},
 }
 
 // listResponse pairs the descriptor with the current persisted value
@@ -986,13 +966,6 @@ func validate(key, value string) error {
 			}
 			if !strings.Contains(value, templateProxiesPlaceholder) {
 				return errors.New("singbox_template_json: must contain the " + templateProxiesPlaceholder + " placeholder")
-			}
-		case model.SettingProxyGroupStrategy:
-			switch strings.TrimSpace(value) {
-			case "", "auto-only", "select-only", "auto+select":
-				return nil
-			default:
-				return fmt.Errorf("proxy_group_strategy must be one of: auto-only, select-only, auto+select")
 			}
 		case model.SettingBrandIconURL:
 			v := strings.TrimSpace(value)

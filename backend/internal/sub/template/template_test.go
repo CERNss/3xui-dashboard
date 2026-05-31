@@ -8,12 +8,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestRenderClash_DefaultParses(t *testing.T) {
+func sampleClashPolicy() ClashPolicy {
+	return ClashPolicy{
+		Groups: "proxy-groups:\n" +
+			"  - name: 节点选择\n    type: select\n    proxies: [DIRECT, node-1, node-2]",
+		RuleProviders: "rule-providers:\n" +
+			"  proxy:\n    type: http\n    behavior: domain\n" +
+			"    url: https://example.com/proxy.txt\n    path: ./ruleset/proxy.yaml\n    interval: 86400",
+		Rules: "rules:\n  - RULE-SET,proxy,节点选择\n  - MATCH,节点选择",
+	}
+}
+
+func TestRenderClash_SubstitutesPolicyBlocks(t *testing.T) {
 	nodes := []map[string]any{
 		{"name": "node-1", "type": "vless", "server": "1.1.1.1", "port": 443, "uuid": "x"},
 		{"name": "node-2", "type": "trojan", "server": "2.2.2.2", "port": 443, "password": "pw"},
 	}
-	out, err := RenderClash(nodes, Options{RuleProvidersEnabled: true})
+	out, err := RenderClash(nodes, sampleClashPolicy(), "")
 	if err != nil {
 		t.Fatalf("RenderClash: %v", err)
 	}
@@ -21,65 +32,72 @@ func TestRenderClash_DefaultParses(t *testing.T) {
 	if err := yaml.Unmarshal(out, &doc); err != nil {
 		t.Fatalf("output not valid YAML: %v\n---\n%s", err, out)
 	}
-
-	// Must contain proxies + proxy-groups + rules
-	if _, ok := doc["proxies"]; !ok {
-		t.Errorf("missing proxies key")
-	}
-	if _, ok := doc["proxy-groups"]; !ok {
-		t.Errorf("missing proxy-groups key")
-	}
-	if _, ok := doc["rules"]; !ok {
-		t.Errorf("missing rules (rule_providers_enabled=true)")
+	for _, key := range []string{"proxies", "proxy-groups", "rule-providers", "rules"} {
+		if _, ok := doc[key]; !ok {
+			t.Errorf("missing %q key", key)
+		}
 	}
 	if !strings.Contains(string(out), "node-1") || !strings.Contains(string(out), "node-2") {
 		t.Errorf("output does not contain expected node names")
 	}
 }
 
-func TestRenderClash_RuleProvidersDisabled(t *testing.T) {
-	nodes := []map[string]any{
-		{"name": "n", "type": "vless", "server": "1.1.1.1", "port": 443, "uuid": "x"},
+func TestRenderClash_EmptyRuleProvidersOmitsSection(t *testing.T) {
+	nodes := []map[string]any{{"name": "n", "type": "vless", "server": "1.1.1.1", "port": 443, "uuid": "x"}}
+	pol := ClashPolicy{
+		Groups: "proxy-groups:\n  - name: G\n    type: select\n    proxies: [DIRECT, n]",
+		Rules:  "rules:\n  - MATCH,G",
 	}
-	out, err := RenderClash(nodes, Options{RuleProvidersEnabled: false})
+	out, err := RenderClash(nodes, pol, "")
 	if err != nil {
 		t.Fatalf("RenderClash: %v", err)
 	}
 	if strings.Contains(string(out), "rule-providers:") {
-		t.Errorf("rule_providers_enabled=false should strip rule-providers")
+		t.Errorf("empty RuleProviders should not emit a rule-providers section")
 	}
-	if strings.Contains(string(out), "loyalsoldier") {
-		t.Errorf("ruleset URLs leaked despite disabled flag")
-	}
-	// Should still be valid YAML
 	var doc map[string]any
 	if err := yaml.Unmarshal(out, &doc); err != nil {
 		t.Fatalf("output not valid YAML: %v\n---\n%s", err, out)
 	}
 }
 
-func TestRenderClash_StrategyAutoOnly(t *testing.T) {
+func TestRenderClash_OperatorBaseUsesPlaceholders(t *testing.T) {
 	nodes := []map[string]any{
-		{"name": "n", "type": "vless", "server": "1.1.1.1", "port": 443, "uuid": "x"},
+		{"name": "node-1", "type": "vless", "server": "1.1.1.1", "port": 443, "uuid": "x"},
 	}
-	out, err := RenderClash(nodes, Options{ProxyGroupStrategy: "auto-only", RuleProvidersEnabled: true})
+	base := "mode: rule\n" +
+		"proxies:\n${proxies}\n" +
+		"proxy-groups:\n  - name: PROXY\n    type: select\n    proxies: [${proxy_names}]\n" +
+		"rules:\n  - MATCH,PROXY\n"
+	out, err := RenderClash(nodes, ClashPolicy{}, base)
 	if err != nil {
-		t.Fatalf("RenderClash: %v", err)
+		t.Fatalf("RenderClash operator base: %v", err)
 	}
 	s := string(out)
-	if !strings.Contains(s, "name: 自动选择") {
-		t.Errorf("auto-only strategy missing 自动选择 group")
+	if !strings.Contains(s, "name: PROXY") || !strings.Contains(s, "node-1") {
+		t.Errorf("operator base did not substitute placeholders:\n%s", s)
 	}
-	if strings.Contains(s, "name: 节点选择") {
-		t.Errorf("auto-only should not have 节点选择 group")
+	var doc map[string]any
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("operator output not valid YAML: %v\n---\n%s", err, s)
 	}
 }
 
-func TestRenderClash_BadOperatorTemplateFails(t *testing.T) {
+func TestRenderClash_BadOperatorBaseFails(t *testing.T) {
 	nodes := []map[string]any{{"name": "n", "type": "vless"}}
-	_, err := RenderClash(nodes, Options{ClashTemplate: "this: is: not: valid: yaml::"})
-	if err == nil {
-		t.Fatalf("expected parse error on broken operator template, got nil")
+	if _, err := RenderClash(nodes, ClashPolicy{}, "this: is: not: valid: yaml::"); err == nil {
+		t.Fatalf("expected parse error on broken operator base, got nil")
+	}
+}
+
+func TestRenderClash_EmptyNodes(t *testing.T) {
+	out, err := RenderClash(nil, ClashPolicy{}, "")
+	if err != nil {
+		t.Fatalf("RenderClash empty: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("empty render not valid YAML: %v\n---\n%s", err, out)
 	}
 }
 
@@ -88,7 +106,7 @@ func TestRenderSingBox_DefaultParses(t *testing.T) {
 		{"tag": "node-1", "type": "vless", "server": "1.1.1.1", "server_port": 443, "uuid": "x"},
 		{"tag": "node-2", "type": "shadowsocks", "server": "2.2.2.2", "server_port": 8388, "method": "aes-256-gcm", "password": "pw"},
 	}
-	out, err := RenderSingBox(outs, Options{})
+	out, err := RenderSingBox(outs, "")
 	if err != nil {
 		t.Fatalf("RenderSingBox: %v", err)
 	}
@@ -101,18 +119,6 @@ func TestRenderSingBox_DefaultParses(t *testing.T) {
 		t.Fatalf("outbounds is not a JSON array")
 	}
 	if len(obs) < 4 {
-		t.Errorf("expected ≥4 outbounds (selector + urltest + nodes + direct + block + dns), got %d", len(obs))
-	}
-}
-
-func TestRenderClash_EmptyNodes(t *testing.T) {
-	out, err := RenderClash(nil, Options{RuleProvidersEnabled: true})
-	if err != nil {
-		t.Fatalf("RenderClash empty: %v", err)
-	}
-	// Should still be valid YAML even with no nodes
-	var doc map[string]any
-	if err := yaml.Unmarshal(out, &doc); err != nil {
-		t.Fatalf("empty render not valid YAML: %v\n---\n%s", err, out)
+		t.Errorf("expected ≥4 outbounds, got %d", len(obs))
 	}
 }

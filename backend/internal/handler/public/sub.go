@@ -14,6 +14,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/sub"
+	"github.com/cern/3xui-dashboard/internal/sub/policy"
 )
 
 // Format names the supported subscription output formats.
@@ -117,14 +118,14 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
 	case FormatClash:
-		opts := h.loadFormatOpts(c.Request.Context())
-		body, err := h.asm.FormatClash(data, opts)
+		// Routing policy is the built-in default profile for now; the
+		// repo-backed profile + ?profile= selection lands in a later
+		// phase. `base` is the optional operator template override.
+		base := h.clashBase(c.Request.Context())
+		body, err := h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), base)
 		if err != nil {
-			h.log.Error("FormatClash failed, falling back to default", "err", err)
-			// Last-ditch fallback — call again with zero opts to ignore
-			// the (broken) operator template.
-			opts.ClashTemplate = ""
-			body, err = h.asm.FormatClash(data, opts)
+			h.log.Error("FormatClash failed, retrying without operator base", "err", err)
+			body, err = h.asm.FormatClash(data, policy.DefaultProfile(), policy.DefaultRulesets(), "")
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -134,12 +135,11 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
 	case FormatSingBox:
-		opts := h.loadFormatOpts(c.Request.Context())
-		body, err := h.asm.FormatSingBox(data, opts)
+		base := h.singboxBase(c.Request.Context())
+		body, err := h.asm.FormatSingBox(data, base)
 		if err != nil {
-			h.log.Error("FormatSingBox failed, falling back to default", "err", err)
-			opts.SingBoxTemplate = ""
-			body, err = h.asm.FormatSingBox(data, opts)
+			h.log.Error("FormatSingBox failed, retrying without operator base", "err", err)
+			body, err = h.asm.FormatSingBox(data, "")
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -249,30 +249,24 @@ func detectFormat(qs, ua string) Format {
 	}
 }
 
-// loadFormatOpts populates FormatOpts from the settings repo. Missing
-// keys leave the corresponding field at its zero value so the template
-// engine uses its embedded default.
-func (h *SubHandler) loadFormatOpts(ctx context.Context) sub.FormatOpts {
-	opts := sub.FormatOpts{RuleProvidersEnabled: true} // default ON
+// clashBase returns the operator's Clash template override, or "" when
+// unset (use the built-in skeleton).
+func (h *SubHandler) clashBase(ctx context.Context) string {
 	if h.settings == nil {
-		return opts
+		return ""
 	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingClashTemplateYAML); ok {
-		opts.ClashTemplate = v
+	v, _, _ := h.settings.Get(ctx, model.SettingClashTemplateYAML)
+	return v
+}
+
+// singboxBase returns the operator's sing-box template override, or ""
+// when unset.
+func (h *SubHandler) singboxBase(ctx context.Context) string {
+	if h.settings == nil {
+		return ""
 	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingSingBoxTemplateJSON); ok {
-		opts.SingBoxTemplate = v
-	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingProxyGroupStrategy); ok && v != "" {
-		opts.ProxyGroupStrategy = v
-	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingRuleProvidersEnabled); ok {
-		// only "false" turns it off; any other string (or absent) means on
-		if strings.EqualFold(v, "false") || v == "0" {
-			opts.RuleProvidersEnabled = false
-		}
-	}
-	return opts
+	v, _, _ := h.settings.Get(ctx, model.SettingSingBoxTemplateJSON)
+	return v
 }
 
 func (h *SubHandler) errorResponse(c *gin.Context, err error) {
