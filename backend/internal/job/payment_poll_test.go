@@ -19,7 +19,7 @@ func TestPaymentPollJob_NilRegistryNoop(t *testing.T) {
 
 func TestPaymentPollJob_DefaultExpiryWindow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	j := NewPaymentPollJob(nil, payment.NewRegistry(), 0, logger)
+	j := NewPaymentPollJob(nil, payment.NewStaticRegistry(), 0, logger)
 	if j.expiryWindow != 15*time.Minute {
 		t.Errorf("expiryWindow = %v, want 15m default", j.expiryWindow)
 	}
@@ -27,7 +27,7 @@ func TestPaymentPollJob_DefaultExpiryWindow(t *testing.T) {
 
 func TestPaymentPollJob_HonorsCustomWindow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	j := NewPaymentPollJob(nil, payment.NewRegistry(), 5*time.Minute, logger)
+	j := NewPaymentPollJob(nil, payment.NewStaticRegistry(), 5*time.Minute, logger)
 	if j.expiryWindow != 5*time.Minute {
 		t.Errorf("expiryWindow = %v, want 5m", j.expiryWindow)
 	}

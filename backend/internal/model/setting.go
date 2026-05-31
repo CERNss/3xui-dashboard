@@ -65,6 +65,21 @@ const (
 	SettingNotifyDiscordWebhookURL  = "notify_discord_webhook_url"
 	SettingNotifyFeishuWebhookURL   = "notify_feishu_webhook_url"
 	SettingNotifyFeishuCardTemplate = "notify_feishu_card_template"
+	// Payment gateways — runtime-editable in the panel. The Alipay
+	// private key and the Stripe secret key + webhook secret are stored
+	// encrypted (SettingRepo.SetSecret). Empty rows fall back to the
+	// ALIPAY_* / STRIPE_* env values.
+	SettingAlipayAppID                = "alipay_app_id"
+	SettingAlipayPrivateKey           = "alipay_private_key"
+	SettingAlipayPublicKey            = "alipay_public_key"
+	SettingAlipayGateway              = "alipay_gateway"
+	SettingAlipayNotifyURL            = "alipay_notify_url"
+	SettingStripeSecretKey            = "stripe_secret_key"
+	SettingStripeWebhookSecret        = "stripe_webhook_secret"
+	SettingStripeCurrency             = "stripe_currency"
+	SettingStripeSuccessURL           = "stripe_success_url"
+	SettingStripeCancelURL            = "stripe_cancel_url"
+	SettingStripeSessionExpiryMinutes = "stripe_session_expiry_minutes"
 	SettingOpsCollectEnabled           = "ops_collect_enabled"
 	SettingOpsCollectIntervalSeconds   = "ops_collect_interval_seconds"
 	SettingOpsCollectConcurrency       = "ops_collect_concurrency"

@@ -67,8 +67,7 @@ type fakeBilling struct {
 // the test can read them post-request.
 func newHandlerWithFake(t *testing.T, fg *fakeGateway) (*gin.Engine, *fakeGateway) {
 	t.Helper()
-	reg := payment.NewRegistry()
-	reg.Register(fg)
+	reg := payment.NewStaticRegistry(fg)
 	// Build a minimal billing.Service. Pass nil for repos that the
 	// notify path doesn't touch — the handler only uses Gateways()
 	// + ConfirmPayment/FailPayment. ConfirmPayment will crash on
@@ -134,7 +133,7 @@ func TestAlipayNotify_BadSignature(t *testing.T) {
 
 func TestStripeWebhook_GatewayNotConfigured(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := billing.New(nil, nil, nil, nil, nil, payment.NewRegistry(), logger)
+	svc := billing.New(nil, nil, nil, nil, nil, payment.NewStaticRegistry(), logger)
 	h := NewPaymentNotifyHandler(svc, logger)
 	e := gin.New()
 	h.RegisterRoutes(e)
@@ -152,7 +151,7 @@ func TestStripeWebhook_GatewayNotConfigured(t *testing.T) {
 func TestAlipayNotify_GatewayNotConfigured(t *testing.T) {
 	// Build a handler with NO gateway registered.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := billing.New(nil, nil, nil, nil, nil, payment.NewRegistry(), logger)
+	svc := billing.New(nil, nil, nil, nil, nil, payment.NewStaticRegistry(), logger)
 	h := NewPaymentNotifyHandler(svc, logger)
 	e := gin.New()
 	h.RegisterRoutes(e)

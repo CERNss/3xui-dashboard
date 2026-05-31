@@ -36,8 +36,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/notify"
 	"github.com/cern/3xui-dashboard/internal/service/notify/channels"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
-	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
-	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
+	"github.com/cern/3xui-dashboard/internal/service/payment/paymentcfg"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
@@ -267,9 +266,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Billing + payment gateways. provisioningPoolRepo was created
 	// earlier alongside inbound handler wiring.
 	orderRepo := repository.NewOrderRepo(db)
-	paymentRegistry := payment.NewRegistry()
-	paymentRegistry.Register(alipay.New(cfg.Alipay))
-	paymentRegistry.Register(stripe.New(cfg.Stripe))
+	// Gateways are resolved from the settings table per operation
+	// (panel-editable; private key / secret key / webhook secret
+	// decrypted via the cipher), falling back to the ALIPAY_* / STRIPE_*
+	// env values — so credential edits take effect without a restart.
+	paymentRegistry := payment.NewRegistry(paymentcfg.NewResolver(settingRepo, cfg.Alipay, cfg.Stripe))
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
 	billingService.SetOwnershipRepo(ownershipRepo)
 	billingService.SetSettings(settingRepo)

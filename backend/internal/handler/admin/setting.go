@@ -553,6 +553,110 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "可选的 Go text/template，生成完整的飞书 Webhook JSON 负载。留空使用默认富文本卡片。覆盖 FEISHU_CARD_TEMPLATE。",
 	},
 	{
+		Key:           model.SettingAlipayAppID,
+		Label:         "Alipay app ID",
+		LabelZh:       "支付宝 App ID",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Alipay open-platform application ID. Needs the private key + Alipay public key to enable the gateway. Empty falls back to ALIPAY_APP_ID.",
+		DescriptionZh: "支付宝开放平台应用 ID。还需配置应用私钥 + 支付宝公钥才能启用网关。留空回退 ALIPAY_APP_ID。",
+	},
+	{
+		Key:           model.SettingAlipayPrivateKey,
+		Label:         "Alipay private key",
+		LabelZh:       "支付宝应用私钥",
+		Type:          "string",
+		Group:         "payment",
+		Secret:        true,
+		Description:   "Our RSA2 application private key (PEM), stored encrypted. Submitting blank leaves it unchanged; delete to clear. Empty falls back to ALIPAY_PRIVATE_KEY.",
+		DescriptionZh: "应用 RSA2 私钥（PEM），加密存储。提交空值不修改；删除即清除。留空回退 ALIPAY_PRIVATE_KEY。",
+	},
+	{
+		Key:           model.SettingAlipayPublicKey,
+		Label:         "Alipay public key",
+		LabelZh:       "支付宝公钥",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Alipay's platform RSA2 public key (PEM), used to verify their signatures. Not secret. Empty falls back to ALIPAY_PUBLIC_KEY.",
+		DescriptionZh: "支付宝平台 RSA2 公钥（PEM），用于验签。非机密。留空回退 ALIPAY_PUBLIC_KEY。",
+	},
+	{
+		Key:           model.SettingAlipayGateway,
+		Label:         "Alipay gateway URL",
+		LabelZh:       "支付宝网关地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Alipay OpenAPI gateway URL. Empty defaults to https://openapi.alipay.com/gateway.do (or ALIPAY_GATEWAY).",
+		DescriptionZh: "支付宝 OpenAPI 网关地址。留空默认 https://openapi.alipay.com/gateway.do（或 ALIPAY_GATEWAY）。",
+	},
+	{
+		Key:           model.SettingAlipayNotifyURL,
+		Label:         "Alipay notify URL",
+		LabelZh:       "支付宝异步通知地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Public URL Alipay POSTs payment results to, e.g. https://panel.example.com/api/public/payment/alipay/notify. Empty falls back to ALIPAY_NOTIFY_URL.",
+		DescriptionZh: "支付宝异步通知回调的公网地址，如 https://panel.example.com/api/public/payment/alipay/notify。留空回退 ALIPAY_NOTIFY_URL。",
+	},
+	{
+		Key:           model.SettingStripeSecretKey,
+		Label:         "Stripe secret key",
+		LabelZh:       "Stripe Secret Key",
+		Type:          "string",
+		Group:         "payment",
+		Secret:        true,
+		Description:   "Stripe API secret key (sk_live_… / sk_test_…), stored encrypted. Needs the webhook secret too. Empty falls back to STRIPE_SECRET_KEY.",
+		DescriptionZh: "Stripe API Secret Key（sk_live_… / sk_test_…），加密存储。还需配置 Webhook Secret。留空回退 STRIPE_SECRET_KEY。",
+	},
+	{
+		Key:           model.SettingStripeWebhookSecret,
+		Label:         "Stripe webhook secret",
+		LabelZh:       "Stripe Webhook Secret",
+		Type:          "string",
+		Group:         "payment",
+		Secret:        true,
+		Description:   "Stripe webhook signing secret (whsec_…), stored encrypted. Empty falls back to STRIPE_WEBHOOK_SECRET.",
+		DescriptionZh: "Stripe Webhook 签名密钥（whsec_…），加密存储。留空回退 STRIPE_WEBHOOK_SECRET。",
+	},
+	{
+		Key:           model.SettingStripeCurrency,
+		Label:         "Stripe currency",
+		LabelZh:       "Stripe 货币",
+		Type:          "string",
+		Group:         "payment",
+		Default:       "usd",
+		Description:   "ISO 4217 currency code (lowercase) for Stripe checkout. Empty defaults to usd (or STRIPE_CURRENCY).",
+		DescriptionZh: "Stripe 结账使用的 ISO 4217 货币代码（小写）。留空默认 usd（或 STRIPE_CURRENCY）。",
+	},
+	{
+		Key:           model.SettingStripeSuccessURL,
+		Label:         "Stripe success URL",
+		LabelZh:       "Stripe 成功跳转地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Where Stripe redirects after a successful checkout. Empty falls back to STRIPE_SUCCESS_URL.",
+		DescriptionZh: "Stripe 结账成功后的跳转地址。留空回退 STRIPE_SUCCESS_URL。",
+	},
+	{
+		Key:           model.SettingStripeCancelURL,
+		Label:         "Stripe cancel URL",
+		LabelZh:       "Stripe 取消跳转地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Where Stripe redirects on a cancelled checkout. Empty falls back to STRIPE_CANCEL_URL.",
+		DescriptionZh: "Stripe 结账取消后的跳转地址。留空回退 STRIPE_CANCEL_URL。",
+	},
+	{
+		Key:           model.SettingStripeSessionExpiryMinutes,
+		Label:         "Stripe session expiry (minutes)",
+		LabelZh:       "Stripe 会话过期（分钟）",
+		Type:          "int",
+		Group:         "payment",
+		Default:       "30",
+		Description:   "Checkout session lifetime in minutes. 0 uses 30. Empty falls back to STRIPE_SESSION_EXPIRY_MINUTES.",
+		DescriptionZh: "结账会话有效期（分钟）。0 表示 30。留空回退 STRIPE_SESSION_EXPIRY_MINUTES。",
+	},
+	{
 		Key:           model.SettingOpsCollectEnabled,
 		Label:         "Node health collection",
 		LabelZh:       "节点健康采集",
@@ -973,6 +1077,28 @@ func (h *SettingHandler) envFallback(key string) string {
 		return h.cfg.Notify.Feishu.WebhookURL // masked
 	case model.SettingNotifyFeishuCardTemplate:
 		return h.cfg.Notify.Feishu.CardTemplate
+	case model.SettingAlipayAppID:
+		return h.cfg.Alipay.AppID
+	case model.SettingAlipayPrivateKey:
+		return h.cfg.Alipay.PrivateKey // masked
+	case model.SettingAlipayPublicKey:
+		return h.cfg.Alipay.AlipayPublicKey
+	case model.SettingAlipayGateway:
+		return h.cfg.Alipay.Gateway
+	case model.SettingAlipayNotifyURL:
+		return h.cfg.Alipay.NotifyURL
+	case model.SettingStripeSecretKey:
+		return h.cfg.Stripe.SecretKey // masked
+	case model.SettingStripeWebhookSecret:
+		return h.cfg.Stripe.WebhookSecret // masked
+	case model.SettingStripeCurrency:
+		return h.cfg.Stripe.Currency
+	case model.SettingStripeSuccessURL:
+		return h.cfg.Stripe.SuccessURL
+	case model.SettingStripeCancelURL:
+		return h.cfg.Stripe.CancelURL
+	case model.SettingStripeSessionExpiryMinutes:
+		return strconv.Itoa(h.cfg.Stripe.SessionExpiryMinutes)
 	default:
 		// no env equivalent
 		return ""

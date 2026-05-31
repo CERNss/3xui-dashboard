@@ -89,45 +89,60 @@ type RawBodyVerifier interface {
 	VerifyWebhookRaw(rawBody []byte, sigHeader string) error
 }
 
-// Registry holds the enabled gateways keyed by provider name. App
-// wiring builds the registry once at boot; the billing service +
-// notify handler share the same instance.
+// Resolver builds the live gateway set (keyed by provider name) from
+// current configuration. Called on each Get/EnabledProviders so an
+// admin editing payment credentials in the panel takes effect without
+// a restart. Gateways are cheap to build (they hold config strings;
+// keys are parsed lazily at sign-time), so resolving per call is fine.
+// A nil/unconfigured provider is simply absent from the returned map.
+type Resolver func(ctx context.Context) map[string]Gateway
+
+// Registry resolves enabled gateways by provider name. App wiring
+// builds it once with a settings-backed Resolver; the billing service,
+// poll job, and notify handler share the same instance.
 type Registry struct {
-	gateways map[string]Gateway
+	resolve Resolver
 }
 
-// NewRegistry builds an empty registry. Callers use Register to add
-// providers.
-func NewRegistry() *Registry {
-	return &Registry{gateways: map[string]Gateway{}}
-}
-
-// Register adds a provider. Passing nil is a no-op so callers can
-// write the idiomatic `registry.Register(alipay.New(cfg))` even when
-// alipay.New returns nil for an unconfigured provider.
-func (r *Registry) Register(g Gateway) {
-	if g == nil {
-		return
+// NewRegistry builds a registry over resolve. A nil resolver yields an
+// always-empty registry.
+func NewRegistry(resolve Resolver) *Registry {
+	if resolve == nil {
+		resolve = func(context.Context) map[string]Gateway { return map[string]Gateway{} }
 	}
-	r.gateways[g.Provider()] = g
+	return &Registry{resolve: resolve}
 }
 
-// Get returns the gateway for `provider`, or ErrUnknownProvider.
+// NewStaticRegistry builds a registry over a fixed gateway set (nil
+// entries skipped). For tests and callers without runtime config.
+func NewStaticRegistry(gws ...Gateway) *Registry {
+	m := map[string]Gateway{}
+	for _, g := range gws {
+		if g != nil {
+			m[g.Provider()] = g
+		}
+	}
+	return &Registry{resolve: func(context.Context) map[string]Gateway { return m }}
+}
+
+// Get returns the gateway for `provider`, or ErrUnknownProvider. The
+// gateway set is resolved fresh (background context — a fast settings
+// lookup); the returned gateway's own methods take the request context.
 func (r *Registry) Get(provider string) (Gateway, error) {
-	g, ok := r.gateways[provider]
+	g, ok := r.resolve(context.Background())[provider]
 	if !ok {
 		return nil, ErrUnknownProvider
 	}
 	return g, nil
 }
 
-// EnabledProviders returns the list of registered provider names.
+// EnabledProviders returns the currently-configured provider names.
 // Caller-friendly for the /payment-methods endpoint. "balance" is
 // always included as the first element since balance-pay needs no
 // gateway registration.
 func (r *Registry) EnabledProviders() []string {
 	out := []string{"balance"}
-	for name := range r.gateways {
+	for name := range r.resolve(context.Background()) {
 		out = append(out, name)
 	}
 	return out
