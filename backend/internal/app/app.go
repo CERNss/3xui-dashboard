@@ -212,6 +212,15 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Settings repo — also used by the subscription handler so admin
 	// template overrides take effect without a restart.
 	settingRepo := repository.NewSettingRepo(db)
+	// Wire the at-rest cipher so secret settings (SMTP/notify/payment
+	// creds, as they move to panel-managed) can be stored encrypted.
+	if cfg.SecretEncryptionKey != "" {
+		if cipher, err := wgcrypto.NewCipherFromHexKey(cfg.SecretEncryptionKey); err != nil {
+			logger.Error("SECRET_ENCRYPTION_KEY rejected; encrypted settings disabled", slog.String("err", err.Error()))
+		} else {
+			settingRepo.SetCipher(cipher)
+		}
+	}
 	dataCollectionConfig := datacollection.NewConfigService(settingRepo, logger)
 
 	// Subscription.

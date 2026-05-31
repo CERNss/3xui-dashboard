@@ -32,6 +32,12 @@ type Config struct {
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
+
+	// SecretEncryptionKey (hex-encoded 32-byte AES key) encrypts secret
+	// settings stored in the DB (SMTP/notify/payment credentials as those
+	// move to panel-managed). Empty = secret settings can't be stored.
+	// A KEK: keep it in .env, out of the DB it protects.
+	SecretEncryptionKey string
 }
 
 // Bootstrap carries optional startup seed data. These settings are intended
@@ -357,6 +363,7 @@ func Load(envFile, configFile string) (*Config, error) {
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),
 		EmailDomainAllowlist: splitCSV(v.GetString("EMAIL_DOMAIN_ALLOWLIST")),
+		SecretEncryptionKey:  v.GetString("SECRET_ENCRYPTION_KEY"),
 	}
 
 	// LOG_FORMAT defaults to text in dev, json in prod.
