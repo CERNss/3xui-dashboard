@@ -54,6 +54,17 @@ const (
 	SettingSMTPFrom     = "smtp_from"
 	SettingSMTPUsername = "smtp_username"
 	SettingSMTPPassword = "smtp_password"
+	// Notify ops fan-out — runtime-editable in the panel. Bot tokens and
+	// webhook URLs (the URL alone is the credential) are stored encrypted
+	// (SettingRepo.SetSecret). Empty rows fall back to the NOTIFY_* /
+	// TELEGRAM_* / DISCORD_* / FEISHU_* env values.
+	SettingNotifyRoutes             = "notify_routes"
+	SettingNotifyOpsRecipient       = "notify_ops_recipient"
+	SettingNotifyTelegramBotToken   = "notify_telegram_bot_token"
+	SettingNotifyTelegramChatID     = "notify_telegram_chat_id"
+	SettingNotifyDiscordWebhookURL  = "notify_discord_webhook_url"
+	SettingNotifyFeishuWebhookURL   = "notify_feishu_webhook_url"
+	SettingNotifyFeishuCardTemplate = "notify_feishu_card_template"
 	SettingOpsCollectEnabled           = "ops_collect_enabled"
 	SettingOpsCollectIntervalSeconds   = "ops_collect_interval_seconds"
 	SettingOpsCollectConcurrency       = "ops_collect_concurrency"

@@ -22,6 +22,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
+	"github.com/cern/3xui-dashboard/internal/service/notify"
 )
 
 // SettingHandler serves /api/admin/settings/*.
@@ -486,6 +487,72 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "SMTP 认证密码，加密存储。提交空值不会修改已存密码；删除该项即可清除（之后回退 SMTP_PASSWORD）。",
 	},
 	{
+		Key:           model.SettingNotifyRoutes,
+		Label:         "Notify routes",
+		LabelZh:       "通知路由",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Ops event fan-out rules: `event_type:channel1,channel2;event2:channel3`. Channels: email, telegram, discord, feishu. Empty = no ops fan-out. Overrides NOTIFY_ROUTES.",
+		DescriptionZh: "运维事件分发规则：`事件类型:渠道1,渠道2;事件类型2:渠道3`。渠道可选 email、telegram、discord、feishu。留空 = 不分发。覆盖 NOTIFY_ROUTES。",
+	},
+	{
+		Key:           model.SettingNotifyOpsRecipient,
+		Label:         "Ops email recipient",
+		LabelZh:       "运维邮件收件人",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Destination address for ops alerts routed to the email channel. Empty falls back to NOTIFY_OPS_RECIPIENT.",
+		DescriptionZh: "运维告警走 email 渠道时的收件地址。留空回退 NOTIFY_OPS_RECIPIENT。",
+	},
+	{
+		Key:           model.SettingNotifyTelegramBotToken,
+		Label:         "Telegram bot token",
+		LabelZh:       "Telegram Bot Token",
+		Type:          "string",
+		Group:         "notify",
+		Secret:        true,
+		Description:   "Telegram Bot API token, stored encrypted. Needs a chat ID too. Empty falls back to TELEGRAM_BOT_TOKEN.",
+		DescriptionZh: "Telegram Bot API Token，加密存储。还需配置 Chat ID。留空回退 TELEGRAM_BOT_TOKEN。",
+	},
+	{
+		Key:           model.SettingNotifyTelegramChatID,
+		Label:         "Telegram chat ID",
+		LabelZh:       "Telegram Chat ID",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Target chat ID for the Telegram channel. Empty falls back to TELEGRAM_CHAT_ID.",
+		DescriptionZh: "Telegram 渠道的目标 Chat ID。留空回退 TELEGRAM_CHAT_ID。",
+	},
+	{
+		Key:           model.SettingNotifyDiscordWebhookURL,
+		Label:         "Discord webhook URL",
+		LabelZh:       "Discord Webhook URL",
+		Type:          "string",
+		Group:         "notify",
+		Secret:        true,
+		Description:   "Discord channel webhook URL (the URL alone is the credential), stored encrypted. Empty falls back to DISCORD_WEBHOOK_URL.",
+		DescriptionZh: "Discord 频道 Webhook URL（该 URL 本身即凭证），加密存储。留空回退 DISCORD_WEBHOOK_URL。",
+	},
+	{
+		Key:           model.SettingNotifyFeishuWebhookURL,
+		Label:         "Feishu webhook URL",
+		LabelZh:       "飞书 Webhook URL",
+		Type:          "string",
+		Group:         "notify",
+		Secret:        true,
+		Description:   "Feishu (Lark) custom-bot webhook URL, stored encrypted. Empty falls back to FEISHU_WEBHOOK_URL.",
+		DescriptionZh: "飞书自定义机器人 Webhook URL，加密存储。留空回退 FEISHU_WEBHOOK_URL。",
+	},
+	{
+		Key:           model.SettingNotifyFeishuCardTemplate,
+		Label:         "Feishu card template",
+		LabelZh:       "飞书卡片模板",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Optional Go text/template producing the full Feishu webhook JSON payload. Empty uses the default rich card. Overrides FEISHU_CARD_TEMPLATE.",
+		DescriptionZh: "可选的 Go text/template，生成完整的飞书 Webhook JSON 负载。留空使用默认富文本卡片。覆盖 FEISHU_CARD_TEMPLATE。",
+	},
+	{
 		Key:           model.SettingOpsCollectEnabled,
 		Label:         "Node health collection",
 		LabelZh:       "节点健康采集",
@@ -892,6 +959,20 @@ func (h *SettingHandler) envFallback(key string) string {
 		return h.cfg.SMTP.Username
 	case model.SettingSMTPPassword:
 		return h.cfg.SMTP.Password // masked by maskSet in List
+	case model.SettingNotifyRoutes:
+		return h.cfg.Notify.Routes
+	case model.SettingNotifyOpsRecipient:
+		return h.cfg.Notify.OpsRecipient
+	case model.SettingNotifyTelegramBotToken:
+		return h.cfg.Notify.Telegram.BotToken // masked
+	case model.SettingNotifyTelegramChatID:
+		return h.cfg.Notify.Telegram.ChatID
+	case model.SettingNotifyDiscordWebhookURL:
+		return h.cfg.Notify.Discord.WebhookURL // masked
+	case model.SettingNotifyFeishuWebhookURL:
+		return h.cfg.Notify.Feishu.WebhookURL // masked
+	case model.SettingNotifyFeishuCardTemplate:
+		return h.cfg.Notify.Feishu.CardTemplate
 	default:
 		// no env equivalent
 		return ""
@@ -1068,6 +1149,13 @@ func validate(key, value string) error {
 			}
 			if !strings.Contains(value, templateProxiesPlaceholder) {
 				return errors.New("singbox_template_json: must contain the " + templateProxiesPlaceholder + " placeholder")
+			}
+		case model.SettingNotifyRoutes:
+			if strings.TrimSpace(value) == "" {
+				return nil // empty = no ops fan-out
+			}
+			if _, err := notify.ParseRoutes(value); err != nil {
+				return fmt.Errorf("notify_routes: %w", err)
 			}
 		case model.SettingBrandIconURL:
 			v := strings.TrimSpace(value)

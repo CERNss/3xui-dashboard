@@ -339,51 +339,21 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// (empty env vars) report Enabled()=false and the dispatch loop
 	// silently skips them. Router parsed from NOTIFY_ROUTES; empty
 	// means no ops fanout.
-	notifyRouter, routerErr := notify.ParseRoutes(cfg.Notify.Routes)
-	if routerErr != nil {
-		// Misconfigured routes are a hard boot error — operator should
-		// see this immediately, not silently.
-		logger.Error("invalid NOTIFY_ROUTES",
-			"error", routerErr.Error(),
-			"value", cfg.Notify.Routes,
-		)
-		panic("invalid NOTIFY_ROUTES: " + routerErr.Error())
-	}
-	notifyChannels := []notify.Channel{
-		channels.NewEmail(mailerSvc, cfg.Notify.OpsRecipient),
-		channels.NewTelegram(cfg.Notify.Telegram.BotToken, cfg.Notify.Telegram.ChatID),
-		channels.NewDiscord(cfg.Notify.Discord.WebhookURL),
-		channels.NewFeishu(cfg.Notify.Feishu.WebhookURL, cfg.Notify.Feishu.CardTemplate),
-	}
-	// Warn for channels referenced in routes but unconfigured — helps
-	// operators catch missing env vars without crashing the app.
-	enabledByName := map[string]bool{}
-	for _, c := range notifyChannels {
-		enabledByName[c.Name()] = c.Enabled()
-	}
-	for _, name := range notifyRouter.ConfiguredChannels() {
-		if !enabledByName[name] {
-			logger.Warn("notify route references unconfigured channel",
-				"channel", name,
-				"hint", "events routed only to this channel will be dropped")
-		}
-	}
-	// Per-event check: if email is routed for ops events (anything
-	// not per-user) but NOTIFY_OPS_RECIPIENT is empty, those events
-	// land in /dev/null. Surface at boot so the operator can fix.
-	if cfg.Notify.OpsRecipient == "" && enabledByName["email"] {
-		for _, eventType := range notify.OpsEventTypes() {
-			for _, c := range notifyRouter.Channels(eventType) {
-				if c == "email" {
-					logger.Warn("notify email routed for ops event but NOTIFY_OPS_RECIPIENT is empty",
-						"event", eventType,
-						"hint", "set NOTIFY_OPS_RECIPIENT or remove email from this route")
-					break
-				}
-			}
-		}
-	}
-	notify.New(bus, notifyRouter, notifyChannels, notifyLogRepo, logger).Start()
+	// Notify routing + channels are read from the settings table per
+	// dispatch (panel-editable; bot tokens / webhook URLs decrypted via
+	// the cipher), falling back to the NOTIFY_* / TELEGRAM_* / ... env
+	// values. Routes are validated on write, so a bad stored value
+	// degrades to the env default rather than crashing the app.
+	notifyProvider := channels.NewSettingsProvider(settingRepo, mailerSvc, channels.NotifyDefaults{
+		Routes:             cfg.Notify.Routes,
+		OpsRecipient:       cfg.Notify.OpsRecipient,
+		TelegramBotToken:   cfg.Notify.Telegram.BotToken,
+		TelegramChatID:     cfg.Notify.Telegram.ChatID,
+		DiscordWebhookURL:  cfg.Notify.Discord.WebhookURL,
+		FeishuWebhookURL:   cfg.Notify.Feishu.WebhookURL,
+		FeishuCardTemplate: cfg.Notify.Feishu.CardTemplate,
+	}, logger)
+	notify.New(bus, notifyProvider, notifyLogRepo, logger).Start()
 
 	// Configured payment-provider currencies — surface at INFO so an
 	// operator who forgot STRIPE_CURRENCY=cny sees the active value
