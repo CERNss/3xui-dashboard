@@ -1776,6 +1776,7 @@ export const en = {
         base64: { hint: 'Default link bundle', apps: 'V2RayN · Shadowrocket' },
         clash: { hint: 'Full Mihomo config', apps: 'Clash Verge · Mihomo · Stash' },
         singbox: { hint: 'sing-box JSON', apps: 'Sing-box official client' },
+        surge: { hint: 'Surge config (VLESS nodes excluded — Surge has no VLESS support)', apps: 'Surge 5 (iOS / macOS)' },
         sip008: { hint: 'Shadowsocks-only', apps: 'Original Shadowsocks app' },
         wireguard: { hint: 'wg-quick .conf', apps: 'WireGuard App · TunSafe' },
         wireguardZip: { hint: 'Multi-peer ZIP', apps: 'WireGuard App (one file per node)' },

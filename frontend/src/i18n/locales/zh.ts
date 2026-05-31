@@ -1776,6 +1776,7 @@ export const zh = {
         base64: { hint: '默认链接束', apps: 'V2RayN · Shadowrocket' },
         clash: { hint: '完整 Mihomo 配置', apps: 'Clash Verge · Mihomo · Stash' },
         singbox: { hint: 'sing-box JSON', apps: 'Sing-box 官方客户端' },
+        surge: { hint: 'Surge 配置（不含 VLESS 节点 —— Surge 不支持 VLESS）', apps: 'Surge 5（iOS / macOS）' },
         sip008: { hint: 'Shadowsocks-only', apps: 'Shadowsocks 原版应用' },
         wireguard: { hint: 'wg-quick .conf', apps: 'WireGuard App · TunSafe' },
         wireguardZip: { hint: '多 peer 打包下载', apps: 'WireGuard App（每节点单文件）' },

@@ -77,11 +77,11 @@ beforeEach(() => {
 })
 
 describe('Subscription', () => {
-  it('renders the seven formats and keeps base64 URL query-free', async () => {
+  it('renders the eight formats and keeps base64 URL query-free', async () => {
     renderSubscription()
 
     expect(await screen.findByRole('button', { name: /Base64/ })).toBeInTheDocument()
-    for (const label of ['Clash', 'Sing-box', 'SIP008', 'WireGuard', 'WG (ZIP)', 'JSON']) {
+    for (const label of ['Clash', 'Sing-box', 'Surge', 'SIP008', 'WireGuard', 'WG (ZIP)', 'JSON']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
 
