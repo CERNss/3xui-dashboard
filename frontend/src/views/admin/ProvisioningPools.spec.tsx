@@ -146,10 +146,29 @@ describe('ProvisioningPools', () => {
 
     expect(screen.getByRole('heading', { name: 'Provisioning Pools' })).toBeInTheDocument()
     expect(screen.getByText('Default Pool')).toBeInTheDocument()
-    expect(screen.getByText('Primary pool')).toBeInTheDocument()
+    expect(screen.queryByText('Primary pool')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Target inbound/ })).toHaveAttribute('aria-expanded', 'true')
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(screen.getByText('Node A')).toBeInTheDocument()
     expect(screen.getByText('7 / 20')).toBeInTheDocument()
+  })
+
+  it('collapses and expands target lists per pool', async () => {
+    const user = userEvent.setup()
+    renderPools()
+
+    const toggle = screen.getByRole('button', { name: /Target inbound/ })
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('[data-component="responsive-list-table"]')).not.toBeInTheDocument()
+    expect(screen.queryByText('Node A')).not.toBeInTheDocument()
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
+    expect(screen.getByText('Node A')).toBeInTheDocument()
   })
 
   it('creates template-driven pools and validates port ranges', async () => {

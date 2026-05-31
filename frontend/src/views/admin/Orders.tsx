@@ -1,4 +1,4 @@
-import { Button, Card, Modal, Segmented, Space, Tag, Typography, message } from 'antd'
+import { Button, Card, Modal, Segmented, Space, Switch, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,7 +8,7 @@ import type { AdminUser } from '@/api/admin/users'
 import { ConfigListPage, RefreshButton } from '@/components/common'
 import { useOrdersList, useRefundOrder } from '@/hooks/queries/admin/orders'
 import { usePlansList } from '@/hooks/queries/admin/plans'
-import { useUsersList } from '@/hooks/queries/admin/users'
+import { useUpdateUser, useUsersList } from '@/hooks/queries/admin/users'
 
 type StatusFilter = 'all' | OrderStatus
 
@@ -48,6 +48,7 @@ export default function Orders() {
   const plansQuery = usePlansList()
   const usersQuery = useUsersList({ limit: 500 })
   const refundOrder = useRefundOrder()
+  const updateUser = useUpdateUser()
 
   const orders = useMemo(() => ordersQuery.data?.orders ?? [], [ordersQuery.data])
   const plansById = useMemo(() => asMap<AdminPlan>(plansQuery.data ?? []), [plansQuery.data])
@@ -89,6 +90,11 @@ export default function Orders() {
     usersQuery.refetch()
   }
 
+  const toggleAutoRenew = async (user: AdminUser) => {
+    await updateUser.mutateAsync({ id: user.id, fields: { auto_renew: !user.auto_renew } })
+    message.success(t(user.auto_renew ? 'admin.users.autoRenewOff' : 'admin.users.autoRenewOn', { email: user.email ?? `#${user.id}` }))
+  }
+
   const confirmRefund = (order: AdminOrder) => {
     Modal.confirm({
       title: t('admin.orders.refundTitle'),
@@ -118,12 +124,27 @@ export default function Orders() {
     {
       title: t('admin.orders.column.user'),
       dataIndex: 'user_id',
-      render: (id: number) => (
-        <Space direction="vertical" size={0}>
-          <Typography.Text>{userEmail(id)}</Typography.Text>
-          <Typography.Text type="secondary">{t('admin.stats.unknownUser', { id })}</Typography.Text>
-        </Space>
-      ),
+      render: (id: number) => {
+        const user = usersById.get(id)
+        return (
+          <Space direction="vertical" size={4}>
+            <Typography.Text>{userEmail(id)}</Typography.Text>
+            <Typography.Text type="secondary">{t('admin.stats.unknownUser', { id })}</Typography.Text>
+            {user ? (
+              <Space size={8}>
+                <Switch
+                  size="small"
+                  checked={user.auto_renew}
+                  loading={updateUser.isPending}
+                  aria-label={`${user.auto_renew ? t('admin.users.autoRenewOff') : t('admin.users.autoRenewOn')} ${userEmail(id)}`}
+                  onChange={() => toggleAutoRenew(user)}
+                />
+                <Typography.Text type="secondary">{t('admin.orders.autoRenew')}</Typography.Text>
+              </Space>
+            ) : null}
+          </Space>
+        )
+      },
     },
     {
       title: t('admin.orders.column.plan'),

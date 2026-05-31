@@ -913,11 +913,11 @@ body {
 }
 
 .provisioning-pool-card .ant-card-head {
-  min-height: 56px;
+  min-height: 64px;
 }
 
 .provisioning-pool-card .ant-card-body {
-  padding-block: 14px;
+  padding: 14px 24px 16px;
 }
 
 .provisioning-pool-card-title {
@@ -926,11 +926,206 @@ body {
   gap: 10px;
 }
 
-.provisioning-pool-summary {
-  align-items: flex-start;
+.provisioning-pool-actions.ant-space {
+  justify-content: flex-end;
+}
+
+.provisioning-pool-actions .ant-btn {
+  min-height: 32px;
+}
+
+.provisioning-pool-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.provisioning-pool-meta > span {
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+}
+
+.provisioning-targets-toggle {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 14px;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease;
+  width: 100%;
+}
+
+.provisioning-targets-toggle:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.provisioning-targets-toggle:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.55);
+  outline-offset: 2px;
+}
+
+.provisioning-targets-toggle-title {
+  align-items: center;
+  display: inline-flex;
+  font-weight: 600;
+  gap: 8px;
+}
+
+.provisioning-targets-toggle-title .anticon {
+  color: #2563eb;
+  font-size: 12px;
+}
+
+.provisioning-targets-region {
+  overflow: hidden;
+}
+
+.provisioning-targets-empty {
+  align-items: center;
+  border: 1px dashed rgba(148, 163, 184, 0.32);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 12px 14px;
+}
+
+.user-balance-cell.ant-space {
+  gap: 8px;
+}
+
+.user-balance-cell .ant-btn-link {
+  font-weight: 600;
+  height: auto;
+  padding: 0;
+}
+
+.user-balance-ledger-modal .ant-modal-body {
+  max-height: min(720px, calc(100vh - 180px));
+  overflow: auto;
+}
+
+.user-balance-summary-card {
+  align-items: center;
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 18px;
+}
+
+.user-balance-avatar {
+  align-items: center;
+  background: rgba(20, 184, 166, 0.18);
+  border-radius: 999px;
+  color: #0f766e;
+  display: inline-flex;
+  font-weight: 700;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.user-balance-summary-main,
+.user-balance-summary-amounts {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.user-balance-summary-amounts {
+  align-items: flex-end;
+}
+
+.user-balance-summary-amounts .ant-typography {
+  margin: 0;
+}
+
+.user-balance-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.user-balance-action-form {
+  align-items: flex-end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
+}
+
+.user-balance-action-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.user-balance-ledger-list {
+  display: grid;
+  gap: 12px;
+}
+
+.user-balance-ledger-item {
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 82px;
+  padding: 14px 16px;
+}
+
+.user-balance-ledger-icon {
+  align-items: center;
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 8px;
+  color: #059669;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.user-balance-ledger-icon[data-kind='debit'] {
+  background: rgba(244, 63, 94, 0.12);
+  color: #e11d48;
+}
+
+.user-balance-ledger-main,
+.user-balance-ledger-amount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-balance-ledger-amount {
+  align-items: flex-end;
+}
+
+.user-balance-ledger-empty {
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
 }
 
 .config-list-page--viewport .config-list-page-card-grid,
@@ -952,6 +1147,55 @@ body {
 .dark .config-list-page--viewport .config-list-page-footer {
   background: var(--config-list-surface);
   border-color: var(--config-list-border);
+}
+
+.dark .provisioning-pool-meta > span {
+  background: rgba(15, 23, 42, 0.24);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.dark .provisioning-targets-toggle {
+  background: rgba(15, 23, 42, 0.34);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.dark .provisioning-targets-toggle:hover {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.42);
+}
+
+.dark .provisioning-targets-toggle-title .anticon {
+  color: #60a5fa;
+}
+
+.dark .provisioning-targets-empty {
+  background: rgba(15, 23, 42, 0.2);
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+.dark .user-balance-summary-card {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.dark .user-balance-avatar {
+  background: rgba(45, 212, 191, 0.2);
+  color: #99f6e4;
+}
+
+.dark .user-balance-ledger-item,
+.dark .user-balance-ledger-empty {
+  background: rgba(15, 23, 42, 0.2);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.dark .user-balance-ledger-icon {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+}
+
+.dark .user-balance-ledger-icon[data-kind='debit'] {
+  background: rgba(244, 63, 94, 0.16);
+  color: #fb7185;
 }
 
 .admin-audit-log-page {
@@ -1850,6 +2094,45 @@ body {
   .provisioning-pool-switch-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .provisioning-pool-card .ant-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    padding-block: 12px;
+  }
+
+  .provisioning-pool-card .ant-card-extra {
+    margin-inline-start: 0;
+    width: 100%;
+  }
+
+  .provisioning-pool-actions.ant-space {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .provisioning-targets-toggle,
+  .provisioning-targets-empty {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .user-balance-summary-card,
+  .user-balance-ledger-item {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .user-balance-summary-amounts,
+  .user-balance-ledger-amount {
+    align-items: flex-start;
+  }
+
+  .user-balance-action-form {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .inbounds-list-footer {

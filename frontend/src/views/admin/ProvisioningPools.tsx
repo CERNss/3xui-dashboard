@@ -1,4 +1,4 @@
-import { DeleteOutlined, EditOutlined, LinkOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DownOutlined, EditOutlined, LinkOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo, useState } from 'react'
@@ -96,6 +96,7 @@ export default function ProvisioningPools() {
   const [poolModalOpen, setPoolModalOpen] = useState(false)
   const [editingPool, setEditingPool] = useState<ProvisioningPool | null>(null)
   const [targetPool, setTargetPool] = useState<ProvisioningPool | null>(null)
+  const [collapsedTargetPools, setCollapsedTargetPools] = useState<Set<number>>(() => new Set())
 
   const poolsQuery = useProvisioningPoolsList()
   const nodesQuery = useNodesList()
@@ -238,6 +239,18 @@ export default function ProvisioningPools() {
     await removeTarget.mutateAsync(target.id)
   }
 
+  const toggleTargetsExpanded = (poolID: number) => {
+    setCollapsedTargetPools((current) => {
+      const next = new Set(current)
+      if (next.has(poolID)) {
+        next.delete(poolID)
+      } else {
+        next.add(poolID)
+      }
+      return next
+    })
+  }
+
   const targetColumns: ColumnsType<ProvisioningPoolTarget> = [
     {
       title: t('admin.provisioningPools.column.target'),
@@ -321,92 +334,120 @@ export default function ProvisioningPools() {
           pools.length > 0 || loading ? (
             <>
               {pools.map((pool) => (
-                <Card
-                  key={pool.id}
-                  className="provisioning-pool-card"
-                  title={
-                    <div className="provisioning-pool-card-title">
-                      <Typography.Text strong>{pool.name}</Typography.Text>
-                      <Space size={6} wrap>
-                        <Tag color={pool.enabled ? 'green' : 'default'}>
-                          {pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}
-                        </Tag>
-                      </Space>
-                    </div>
-                  }
-                  extra={
-                    <Space>
-                      <Button
-                        type="primary"
-                        size="small"
-                        icon={<LinkOutlined />}
-                        aria-label={`${t('admin.provisioningPools.addTarget')} ${pool.name}`}
-                        onClick={() => openAddTarget(pool)}
-                      >
-                        {t('admin.provisioningPools.addTarget')}
-                      </Button>
-                      <Button size="small" aria-label={`${t('admin.provisioningPools.edit')} ${pool.name}`} icon={<EditOutlined />} onClick={() => openEditPool(pool)} />
-                      <Button
-                        danger
-                        size="small"
-                        aria-label={`${t('admin.provisioningPools.delete')} ${pool.name}`}
-                        icon={<DeleteOutlined />}
-                        onClick={() => confirmDeletePool(pool)}
-                      />
-                    </Space>
-                  }
-                >
-                  <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                    <div className="provisioning-pool-summary">
-                      {pool.description ? (
-                        <Typography.Text type="secondary">{pool.description}</Typography.Text>
-                      ) : null}
-                      <Space size={[8, 6]} wrap>
-                        <Tag>{protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Tag>
-                        <Tag>
-                          {t('admin.provisioningPools.targetsCount')}: {(pool.targets ?? []).length}
-                        </Tag>
-                      </Space>
-                    </div>
-                    {pool.targets?.length ? (
-                      <ResponsiveListTable
-                        rowKey="id"
-                        columns={targetColumns}
-                        dataSource={pool.targets}
-                        pagination={false}
-                        mobileCard={(target) => (
-                          <Card size="small" style={{ width: '100%' }}>
-                            <Space direction="vertical" size={6}>
-                              <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
-                              <Typography.Text type="secondary">
-                                {target.inbound_tag} · {target.protocol || '-'}
-                              </Typography.Text>
-                              <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
-                              <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
-                              <Space>
-                                <Switch
-                                  checked={target.enabled}
-                                  aria-label={`${target.enabled ? t('admin.nodes.disable') : t('admin.nodes.enable')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`}
-                                  onChange={() => toggleTarget(target)}
-                                />
-                                <Button size="small" danger aria-label={`${t('admin.provisioningPools.delete')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`} onClick={() => deleteTarget(target)}>
-                                  {t('admin.provisioningPools.delete')}
+                (() => {
+                  const targets = pool.targets ?? []
+                  const targetCount = targets.length
+                  const targetsCollapsed = collapsedTargetPools.has(pool.id)
+                  return (
+                    <Card
+                      key={pool.id}
+                      className="provisioning-pool-card"
+                      title={
+                        <div className="provisioning-pool-card-title">
+                          <Typography.Text strong>{pool.name}</Typography.Text>
+                          <Tag color={pool.enabled ? 'green' : 'default'}>
+                            {pool.enabled ? t('admin.provisioningPools.enabled') : t('admin.provisioningPools.disabled')}
+                          </Tag>
+                        </div>
+                      }
+                      extra={
+                        <Space className="provisioning-pool-actions" size={8} wrap>
+                          <Button
+                            type="primary"
+                            icon={<LinkOutlined />}
+                            aria-label={`${t('admin.provisioningPools.addTarget')} ${pool.name}`}
+                            onClick={() => openAddTarget(pool)}
+                          >
+                            {t('admin.provisioningPools.addTarget')}
+                          </Button>
+                          <Button aria-label={`${t('admin.provisioningPools.edit')} ${pool.name}`} icon={<EditOutlined />} onClick={() => openEditPool(pool)}>
+                            {t('admin.provisioningPools.edit')}
+                          </Button>
+                          <Button
+                            danger
+                            aria-label={`${t('admin.provisioningPools.delete')} ${pool.name}`}
+                            icon={<DeleteOutlined />}
+                            onClick={() => confirmDeletePool(pool)}
+                          >
+                            {t('admin.provisioningPools.delete')}
+                          </Button>
+                        </Space>
+                      }
+                    >
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <div className="provisioning-pool-meta">
+                          <span>
+                            <Typography.Text type="secondary">{t('admin.provisioningPools.allowedProtocols')}</Typography.Text>
+                            <Typography.Text strong>{protocolsText(pool, t('admin.provisioningPools.unlimitedProtocols'))}</Typography.Text>
+                          </span>
+                          <span>
+                            <Typography.Text type="secondary">{t('admin.provisioningPools.targetsCount')}</Typography.Text>
+                            <Typography.Text strong>{targetCount}</Typography.Text>
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="provisioning-targets-toggle"
+                          aria-expanded={!targetsCollapsed}
+                          aria-controls={`provisioning-pool-targets-${pool.id}`}
+                          onClick={() => toggleTargetsExpanded(pool.id)}
+                        >
+                          <span className="provisioning-targets-toggle-title">
+                            {targetsCollapsed ? <RightOutlined /> : <DownOutlined />}
+                            <span>{t('admin.provisioningPools.column.target')}</span>
+                            <Tag>{targetCount}</Tag>
+                          </span>
+                          <Typography.Text type="secondary">
+                            {targetsCollapsed ? t('admin.provisioningPools.expandTargets') : t('admin.provisioningPools.collapseTargets')}
+                          </Typography.Text>
+                        </button>
+
+                        {!targetsCollapsed ? (
+                          <div id={`provisioning-pool-targets-${pool.id}`} className="provisioning-targets-region">
+                            {targetCount > 0 ? (
+                              <ResponsiveListTable
+                                rowKey="id"
+                                columns={targetColumns}
+                                dataSource={targets}
+                                pagination={false}
+                                mobileCard={(target) => (
+                                  <Card size="small" style={{ width: '100%' }}>
+                                    <Space direction="vertical" size={6}>
+                                      <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
+                                      <Typography.Text type="secondary">
+                                        {target.inbound_tag} · {target.protocol || '-'}
+                                      </Typography.Text>
+                                      <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
+                                      <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
+                                      <Space>
+                                        <Switch
+                                          checked={target.enabled}
+                                          aria-label={`${target.enabled ? t('admin.nodes.disable') : t('admin.nodes.enable')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`}
+                                          onChange={() => toggleTarget(target)}
+                                        />
+                                        <Button danger aria-label={`${t('admin.provisioningPools.delete')} ${t('admin.provisioningPools.targetNoun')} ${target.inbound_tag}`} onClick={() => deleteTarget(target)}>
+                                          {t('admin.provisioningPools.delete')}
+                                        </Button>
+                                      </Space>
+                                    </Space>
+                                  </Card>
+                                )}
+                              />
+                            ) : (
+                              <div className="provisioning-targets-empty">
+                                <Typography.Text type="secondary">{t('admin.provisioningPools.noTargets')}</Typography.Text>
+                                <Button type="primary" icon={<PlusOutlined />} onClick={() => openAddTarget(pool)}>
+                                  {t('admin.provisioningPools.addTarget')}
                                 </Button>
-                              </Space>
-                            </Space>
-                          </Card>
-                        )}
-                      />
-                    ) : (
-                      <Space>
-                        <Typography.Text type="secondary">{t('admin.provisioningPools.noGeneratedTargets')}</Typography.Text>
-                        <Button size="small" type="link" icon={<PlusOutlined />} onClick={() => openAddTarget(pool)}>
-                          {t('admin.provisioningPools.addTarget')}
-                        </Button>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
                       </Space>
-                    )}
-                  </Space>
-                </Card>
+                    </Card>
+                  )
+                })()
               ))}
             </>
           ) : (

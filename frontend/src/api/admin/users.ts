@@ -18,8 +18,25 @@ export interface AdminUser {
   last_active_at?: string | null
 }
 
+export interface BalanceLog {
+  id: number
+  user_id: number
+  delta_cents: number
+  balance_after_cents: number
+  reason: string
+  order_id?: number | null
+  note?: string
+  created_at: string
+}
+
 export interface ListUsersResponse {
   users: AdminUser[]
+  limit: number
+  offset: number
+}
+
+export interface ListBalanceLogsResponse {
+  logs: BalanceLog[]
   limit: number
   offset: number
 }
@@ -40,7 +57,7 @@ export const adminUsersApi = {
   create: (body: { email: string; password: string; initial_balance_cents?: number }) =>
     adminClient.post<AdminUser>('/users', body).then((r) => r.data),
 
-  update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'email_verified' | 'status' | 'auto_renew' | 'balance_cents'>> & { password?: string }) =>
+  update: (id: number, fields: Partial<Pick<AdminUser, 'email' | 'email_verified' | 'status' | 'auto_renew'>> & { password?: string }) =>
     adminClient.put<AdminUser>(`/users/${id}`, fields).then((r) => r.data),
 
   suspend: (id: number) =>
@@ -50,12 +67,18 @@ export const adminUsersApi = {
     adminClient.post<{ id: number; status: UserStatus }>(`/users/${id}/unsuspend`),
 
   /** Adjusts balance by `delta_cents` (positive credits, negative debits). */
-  adjustBalance: (id: number, deltaCents: number, reason: string) =>
+  adjustBalance: (id: number, deltaCents: number, reason: string, note?: string) =>
     adminClient
       .post<{ id: number; balance_cents: number }>(`/users/${id}/balance`, {
         delta_cents: deltaCents,
         reason,
+        note: note ?? '',
       })
+      .then((r) => r.data),
+
+  balanceLogs: (id: number, params?: { limit?: number; offset?: number }) =>
+    adminClient
+      .get<ListBalanceLogsResponse>(`/users/${id}/balance-logs`, { params })
       .then((r) => r.data),
 
   remove: (id: number) => adminClient.delete<void>(`/users/${id}`),

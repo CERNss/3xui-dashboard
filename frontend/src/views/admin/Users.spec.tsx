@@ -8,6 +8,7 @@ import Users from './Users'
 
 const mocks = vi.hoisted(() => ({
   listUsers: vi.fn(),
+  balanceLogs: vi.fn(),
   createMutateAsync: vi.fn(),
   updateMutateAsync: vi.fn(),
   suspendMutateAsync: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('@/api/admin/users', async (importOriginal) => {
     adminUsersApi: {
       ...actual.adminUsersApi,
       list: mocks.listUsers,
+      balanceLogs: mocks.balanceLogs,
     },
   }
 })
@@ -79,6 +81,31 @@ beforeEach(() => {
       }),
     ]),
   )
+  mocks.balanceLogs.mockResolvedValue({
+    logs: [
+      {
+        id: 1,
+        user_id: 1,
+        delta_cents: 1000,
+        balance_after_cents: 1500,
+        reason: 'admin_adjust',
+        note: 'manual top-up',
+        created_at: '2026-05-03T00:00:00Z',
+      },
+      {
+        id: 2,
+        user_id: 1,
+        delta_cents: -250,
+        balance_after_cents: 1250,
+        reason: 'order_charge',
+        order_id: 9,
+        note: 'Basic plan',
+        created_at: '2026-05-04T00:00:00Z',
+      },
+    ],
+    limit: 80,
+    offset: 0,
+  })
   mocks.createMutateAsync.mockResolvedValue(makeUser({ id: 3, email: 'carol@example.com' }))
   mocks.updateMutateAsync.mockImplementation(({ id, fields }) => Promise.resolve(makeUser({ id, ...fields })))
   mocks.suspendMutateAsync.mockResolvedValue({})
@@ -97,7 +124,7 @@ describe('Users', () => {
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(await screen.findByRole('row', { name: /alice@example.com/i })).toBeInTheDocument()
     expect(screen.getByRole('row', { name: /bob@example.com/i })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '¥15.00 Adjust' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: '¥15.00 Top up' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Suspended' })).toBeInTheDocument()
   })
 
@@ -143,7 +170,7 @@ describe('Users', () => {
     expect(await screen.findByText('Created carol@example.com.')).toBeInTheDocument()
   })
 
-  it('updates email, password, verified state, and balance from the edit dialog', async () => {
+  it('updates email, password, and verified state from the edit dialog', async () => {
     const user = userEvent.setup()
     renderUsers()
     await screen.findByRole('row', { name: /alice@example.com/i })
@@ -154,8 +181,7 @@ describe('Users', () => {
     await user.type(within(dialog).getByLabelText('Email'), 'alice2@example.com')
     await user.click(within(dialog).getByLabelText('Email verified'))
     await user.type(within(dialog).getByLabelText('Password'), 'newpass123')
-    await user.clear(within(dialog).getByLabelText('Balance'))
-    await user.type(within(dialog).getByLabelText('Balance'), '45.67')
+    expect(within(dialog).queryByLabelText('Balance')).not.toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'OK' }))
 
     await waitFor(() =>
@@ -165,33 +191,51 @@ describe('Users', () => {
           email: 'alice2@example.com',
           email_verified: false,
           password: 'newpass123',
-          balance_cents: 4567,
         },
       }),
     )
   })
 
-  it('toggles auto renew and adjusts balance', async () => {
+  it('opens balance ledger and posts top-ups or refunds', async () => {
     const user = userEvent.setup()
     renderUsers()
     await screen.findByRole('row', { name: /alice@example.com/i })
 
-    await user.click(screen.getByRole('switch', { name: 'Enable auto renew for alice@example.com' }))
-    await waitFor(() => expect(mocks.updateMutateAsync).toHaveBeenCalledWith({ id: 1, fields: { auto_renew: true } }))
-
     const aliceRow = screen.getByRole('row', { name: /alice@example.com/i })
-    await user.click(within(aliceRow).getByRole('button', { name: 'Adjust' }))
-    const dialog = screen.getByRole('dialog', { name: 'Adjust alice@example.com' })
-    await user.clear(within(dialog).getByLabelText('Amount'))
-    await user.type(within(dialog).getByLabelText('Amount'), '-2.5')
-    await user.type(within(dialog).getByLabelText('Reason'), 'manual debit')
-    await user.click(within(dialog).getByRole('button', { name: 'OK' }))
+    await user.click(within(aliceRow).getByRole('button', { name: 'Top up' }))
+    const dialog = await screen.findByRole('dialog', { name: 'User top-ups and balance changes' })
+
+    expect(within(dialog).getByText('manual top-up')).toBeInTheDocument()
+    expect(within(dialog).getByText('Plan purchase charge')).toBeInTheDocument()
+
+    await user.clear(within(dialog).getByLabelText('Top-up amount'))
+    await user.type(within(dialog).getByLabelText('Top-up amount'), '2.5')
+    await user.type(within(dialog).getByLabelText('Reason'), 'manual credit')
+    await user.type(within(dialog).getByLabelText('Note'), 'support request')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm top-up' }))
 
     await waitFor(() =>
       expect(mocks.adjustBalanceMutateAsync).toHaveBeenCalledWith({
         id: 1,
-        deltaCents: -250,
-        reason: 'manual debit',
+        deltaCents: 250,
+        reason: 'manual credit',
+        note: 'support request',
+      }),
+    )
+
+    await user.click(within(dialog).getByText('Refund'))
+    await user.clear(within(dialog).getByLabelText('Refund amount'))
+    await user.type(within(dialog).getByLabelText('Refund amount'), '1')
+    await user.clear(within(dialog).getByLabelText('Reason'))
+    await user.type(within(dialog).getByLabelText('Reason'), 'manual refund')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm refund' }))
+
+    await waitFor(() =>
+      expect(mocks.adjustBalanceMutateAsync).toHaveBeenCalledWith({
+        id: 1,
+        deltaCents: -100,
+        reason: 'manual refund',
+        note: '',
       }),
     )
   })

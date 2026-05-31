@@ -2,6 +2,7 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  MinusOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -30,7 +31,7 @@ import type { CheckboxProps } from 'antd/es/checkbox'
 import type { Key } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { adminUsersApi, type AdminUser, type UserStatus } from '@/api/admin/users'
+import { adminUsersApi, type AdminUser, type BalanceLog, type UserStatus } from '@/api/admin/users'
 import { ConfigListPage, RefreshButton } from '@/components/common'
 import {
   useAdjustUserBalance,
@@ -46,6 +47,7 @@ import { queryKeys } from '@/hooks/queries/keys'
 type StatusFilter = 'all' | UserStatus
 type VerifiedFilter = 'all' | 'verified' | 'unverified'
 type RegisterFilter = 'all' | 'email' | 'oidc'
+type BalanceLogFilter = 'all' | 'credit' | 'debit'
 type SortKey = 'created_at:desc' | 'created_at:asc' | 'balance:desc' | 'balance:asc' | 'id:desc' | 'email:asc' | 'email:desc'
 
 interface CreateFormValues {
@@ -58,12 +60,12 @@ interface EditFormValues {
   email: string
   email_verified: boolean
   password?: string
-  balance_yuan: number
 }
 
 interface BalanceFormValues {
-  delta_yuan: number
+  amount_yuan: number
   reason: string
+  note?: string
 }
 
 const AUTO_REFRESH_MS = 15_000
@@ -90,6 +92,17 @@ function statusTag(status: UserStatus, label: string) {
 function verifiedTag(user: AdminUser, verified: string, unverified: string) {
   if (!user.email) return null
   return <Tag color={user.email_verified ? 'green' : 'gold'}>{user.email_verified ? verified : unverified}</Tag>
+}
+
+function userInitial(user: AdminUser) {
+  return (user.email || `#${user.id}`).trim().charAt(0).toUpperCase()
+}
+
+function balanceLogTitle(log: BalanceLog, t: ReturnType<typeof useTranslation>['t']) {
+  if (log.reason === 'order_refund') return t('admin.users.balance.log.orderRefund')
+  if (log.reason === 'order_charge') return t('admin.users.balance.log.orderCharge')
+  if (log.reason === 'bonus') return t('admin.users.balance.log.bonus')
+  return log.delta_cents >= 0 ? t('admin.users.balance.log.deposit') : t('admin.users.balance.log.refund')
 }
 
 function sortUsers(users: AdminUser[], sort: SortKey) {
@@ -128,6 +141,8 @@ export default function Users() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<AdminUser | null>(null)
   const [balanceUser, setBalanceUser] = useState<AdminUser | null>(null)
+  const [balanceMode, setBalanceMode] = useState<'deposit' | 'refund'>('deposit')
+  const [balanceLogFilter, setBalanceLogFilter] = useState<BalanceLogFilter>('all')
 
   const usersQuery = useQuery({
     queryKey: userKeys.list(listParams),
@@ -136,6 +151,13 @@ export default function Users() {
     refetchOnWindowFocus: true,
   })
   useQueryErrorReporter(usersQuery.error, usersQuery.isError)
+
+  const balanceLogsQuery = useQuery({
+    queryKey: userKeys.op('balanceLogs', balanceUser?.id ?? 0),
+    queryFn: () => adminUsersApi.balanceLogs(balanceUser!.id, { limit: 80 }),
+    enabled: Boolean(balanceUser),
+  })
+  useQueryErrorReporter(balanceLogsQuery.error, balanceLogsQuery.isError)
 
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -179,6 +201,13 @@ export default function Users() {
     return sortUsers(visible, sort)
   }, [query, registerFilter, sort, statusFilter, users, verifiedFilter])
 
+  const balanceLogs = useMemo(() => balanceLogsQuery.data?.logs ?? [], [balanceLogsQuery.data])
+  const filteredBalanceLogs = useMemo(() => {
+    if (balanceLogFilter === 'credit') return balanceLogs.filter((log) => log.delta_cents > 0)
+    if (balanceLogFilter === 'debit') return balanceLogs.filter((log) => log.delta_cents < 0)
+    return balanceLogs
+  }, [balanceLogFilter, balanceLogs])
+
   useEffect(() => {
     const visibleIds = new Set(filteredUsers.map((user) => user.id))
     setSelectedRowKeys((current) => {
@@ -207,13 +236,14 @@ export default function Users() {
       email: user.email || '',
       email_verified: user.email_verified,
       password: '',
-      balance_yuan: user.balance_cents / 100,
     })
   }
 
   const openBalance = (user: AdminUser) => {
     setBalanceUser(user)
-    balanceForm.setFieldsValue({ delta_yuan: 0, reason: '' })
+    setBalanceMode('deposit')
+    setBalanceLogFilter('all')
+    balanceForm.setFieldsValue({ amount_yuan: 0, reason: '', note: '' })
   }
 
   const closeCreate = () => {
@@ -228,6 +258,8 @@ export default function Users() {
 
   const closeBalance = () => {
     setBalanceUser(null)
+    setBalanceMode('deposit')
+    setBalanceLogFilter('all')
     balanceForm.resetFields()
   }
 
@@ -250,7 +282,6 @@ export default function Users() {
     const fields: Parameters<typeof updateUser.mutateAsync>[0]['fields'] = {
       email: values.email.trim(),
       email_verified: values.email_verified,
-      balance_cents: Math.round(values.balance_yuan * 100),
     }
     if (values.password) fields.password = values.password
     const updated = await updateUser.mutateAsync({ id: editing.id, fields })
@@ -262,18 +293,16 @@ export default function Users() {
     if (!balanceUser) return
     const values = await balanceForm.validateFields().catch(() => null)
     if (!values) return
+    const amountCents = Math.round(Math.abs(values.amount_yuan) * 100)
     await adjustBalance.mutateAsync({
       id: balanceUser.id,
-      deltaCents: Math.round(values.delta_yuan * 100),
+      deltaCents: balanceMode === 'deposit' ? amountCents : -amountCents,
       reason: values.reason.trim(),
+      note: values.note?.trim() ?? '',
     })
-    closeBalance()
+    balanceForm.setFieldsValue({ amount_yuan: 0, reason: '', note: '' })
+    await Promise.all([usersQuery.refetch(), balanceLogsQuery.refetch()])
     setFlash({ type: 'success', text: t('admin.users.balance.success', { email: userLabel(balanceUser) }) })
-  }
-
-  const toggleAutoRenew = async (user: AdminUser) => {
-    await updateUser.mutateAsync({ id: user.id, fields: { auto_renew: !user.auto_renew } })
-    setFlash({ type: 'success', text: t(user.auto_renew ? 'admin.users.autoRenewOff' : 'admin.users.autoRenewOn') })
   }
 
   const toggleSuspend = async (user: AdminUser) => {
@@ -392,26 +421,12 @@ export default function Users() {
       width: 150,
       sorter: (a, b) => a.balance_cents - b.balance_cents,
       render: (_value, user) => (
-        <Space>
+        <Space className="user-balance-cell">
           <Typography.Text strong>{formatYuan(user.balance_cents)}</Typography.Text>
-          <Button size="small" onClick={() => openBalance(user)}>
-            {t('admin.users.balance.adjustShort')}
+          <Button type="link" onClick={() => openBalance(user)}>
+            {t('admin.users.balance.deposit')}
           </Button>
         </Space>
-      ),
-    },
-    {
-      title: t('admin.users.column.autoRenew'),
-      dataIndex: 'auto_renew',
-      align: 'center',
-      width: 120,
-      render: (_value, user) => (
-        <Switch
-          checked={user.auto_renew}
-          aria-label={`${user.auto_renew ? t('admin.users.autoRenewOff') : t('admin.users.autoRenewOn')} ${userLabel(user)}`}
-          loading={updateUser.isPending}
-          onChange={() => toggleAutoRenew(user)}
-        />
       ),
     },
     {
@@ -625,12 +640,11 @@ export default function Users() {
               </Space>
               <Typography.Text type="secondary">#{user.id} · {user.sub_id.slice(0, 12)}...</Typography.Text>
               <Typography.Text>{t('admin.users.column.balance')}: {formatYuan(user.balance_cents)}</Typography.Text>
-              <Typography.Text>{t('admin.users.column.autoRenew')}: {user.auto_renew ? t('admin.users.on') : t('admin.users.off')}</Typography.Text>
               <Typography.Text>{t('admin.users.column.registered')}: {formatDate(user.created_at)}</Typography.Text>
               <Typography.Text>{t('admin.users.column.lastActive')}: {formatDate(user.last_active_at)}</Typography.Text>
               <Space wrap>
                 <Button size="small" onClick={() => openBalance(user)}>
-                  {t('admin.users.balance.adjustShort')}
+                  {t('admin.users.balance.deposit')}
                 </Button>
                 <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(user)}>
                   {t('admin.users.edit.open')}
@@ -672,31 +686,121 @@ export default function Users() {
           <Form.Item name="password" label={t('admin.users.edit.passwordLabel')} rules={[{ min: 8, message: t('admin.users.edit.passwordMin') }]}>
             <Input.Password autoComplete="new-password" placeholder={t('admin.users.edit.passwordPlaceholder')} />
           </Form.Item>
-          <Form.Item name="balance_yuan" label={t('admin.users.edit.balanceLabel')} rules={[{ required: true, type: 'number', min: 0, message: t('admin.users.edit.balanceInvalid') }]}>
-            <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
-          </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title={balanceUser ? `${t('admin.users.balance.adjust')} ${userLabel(balanceUser)}` : t('admin.users.balance.title')} open={Boolean(balanceUser)} onCancel={closeBalance} onOk={saveBalance} confirmLoading={adjustBalance.isPending} destroyOnHidden>
-        <Form form={balanceForm} layout="vertical" preserve={false}>
-          <Form.Item
-            name="delta_yuan"
-            label={t('admin.users.balance.amountLabel')}
-            rules={[
-              { required: true, type: 'number', message: t('admin.users.balance.amountRequired') },
-              {
-                validator: (_, value) =>
-                  value === 0 ? Promise.reject(new Error(t('admin.users.balance.deltaMustNonZero'))) : Promise.resolve(),
-              },
-            ]}
-          >
-            <InputNumber step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')} rules={[{ required: true, whitespace: true, message: t('admin.users.balance.reasonRequired') }]}>
-            <Input />
-          </Form.Item>
-        </Form>
+      <Modal
+        className="user-balance-ledger-modal"
+        title={t('admin.users.balance.ledgerTitle')}
+        open={Boolean(balanceUser)}
+        onCancel={closeBalance}
+        footer={null}
+        destroyOnHidden
+        width={880}
+      >
+        {balanceUser ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div className="user-balance-summary-card">
+              <div className="user-balance-avatar" aria-hidden>
+                {userInitial(balanceUser)}
+              </div>
+              <div className="user-balance-summary-main">
+                <Space wrap size={8}>
+                  <Typography.Text strong>{userLabel(balanceUser)}</Typography.Text>
+                  {userVerifiedTag(balanceUser)}
+                </Space>
+                <Typography.Text type="secondary">
+                  {t('admin.users.column.registered')}: {formatDate(balanceUser.created_at)}
+                </Typography.Text>
+              </div>
+              <div className="user-balance-summary-amounts">
+                <Typography.Text type="secondary">{t('admin.users.balance.currentBalance')}</Typography.Text>
+                <Typography.Title level={3}>{formatYuan(balanceUser.balance_cents)}</Typography.Title>
+              </div>
+            </div>
+
+            <div className="user-balance-toolbar">
+              <Segmented
+                aria-label={t('admin.users.balance.filterLabel')}
+                value={balanceLogFilter}
+                onChange={(value) => setBalanceLogFilter(value as BalanceLogFilter)}
+                options={[
+                  { label: t('admin.users.balance.filterAll'), value: 'all' },
+                  { label: t('admin.users.balance.filterCredit'), value: 'credit' },
+                  { label: t('admin.users.balance.filterDebit'), value: 'debit' },
+                ]}
+              />
+              <Segmented
+                aria-label={t('admin.users.balance.modeLabel')}
+                value={balanceMode}
+                onChange={(value) => setBalanceMode(value as 'deposit' | 'refund')}
+                options={[
+                  { label: t('admin.users.balance.deposit'), value: 'deposit', icon: <PlusOutlined /> },
+                  { label: t('admin.users.balance.refund'), value: 'refund', icon: <MinusOutlined /> },
+                ]}
+              />
+            </div>
+
+            <Form form={balanceForm} layout="vertical" preserve={false} className="user-balance-action-form">
+              <Form.Item
+                name="amount_yuan"
+                label={balanceMode === 'deposit' ? t('admin.users.balance.depositAmount') : t('admin.users.balance.refundAmount')}
+                rules={[
+                  { required: true, type: 'number', message: t('admin.users.balance.amountRequired') },
+                  {
+                    validator: (_, value) =>
+                      !value || value <= 0 ? Promise.reject(new Error(t('admin.users.balance.amountMustPositive'))) : Promise.resolve(),
+                  },
+                ]}
+              >
+                <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')} rules={[{ required: true, whitespace: true, message: t('admin.users.balance.reasonRequired') }]}>
+                <Input placeholder={balanceMode === 'deposit' ? t('admin.users.balance.depositReasonPlaceholder') : t('admin.users.balance.refundReasonPlaceholder')} />
+              </Form.Item>
+              <Form.Item name="note" label={t('admin.users.balance.noteLabel')}>
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder={t('admin.users.balance.notePlaceholder')} />
+              </Form.Item>
+              <Button type="primary" loading={adjustBalance.isPending} onClick={saveBalance}>
+                {balanceMode === 'deposit' ? t('admin.users.balance.confirmDeposit') : t('admin.users.balance.confirmRefund')}
+              </Button>
+            </Form>
+
+            <div className="user-balance-ledger-list">
+              {balanceLogsQuery.isLoading ? (
+                <Typography.Text type="secondary">{t('admin.users.balance.loadingLogs')}</Typography.Text>
+              ) : filteredBalanceLogs.length > 0 ? (
+                filteredBalanceLogs.map((log) => (
+                  <div className="user-balance-ledger-item" key={log.id}>
+                    <div className="user-balance-ledger-icon" data-kind={log.delta_cents >= 0 ? 'credit' : 'debit'}>
+                      {log.delta_cents >= 0 ? <PlusOutlined /> : <MinusOutlined />}
+                    </div>
+                    <div className="user-balance-ledger-main">
+                      <Typography.Text strong>{balanceLogTitle(log, t)}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {log.note || log.reason}
+                        {log.order_id ? ` · #${log.order_id}` : ''}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">{formatDate(log.created_at)}</Typography.Text>
+                    </div>
+                    <div className="user-balance-ledger-amount">
+                      <Typography.Text strong type={log.delta_cents >= 0 ? 'success' : 'danger'}>
+                        {log.delta_cents >= 0 ? '+' : '-'}{formatYuan(Math.abs(log.delta_cents))}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t('admin.users.balance.afterBalance')}: {formatYuan(log.balance_after_cents)}
+                      </Typography.Text>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="user-balance-ledger-empty">
+                  <Typography.Text type="secondary">{t('admin.users.balance.noLogs')}</Typography.Text>
+                </div>
+              )}
+            </div>
+          </Space>
+        ) : null}
       </Modal>
     </section>
   )

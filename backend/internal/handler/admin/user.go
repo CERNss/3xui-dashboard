@@ -33,6 +33,7 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("/:id/suspend", h.Suspend)
 	g.POST("/:id/unsuspend", h.Unsuspend)
 	g.POST("/:id/balance", h.AdjustBalance)
+	g.GET("/:id/balance-logs", h.BalanceLogs)
 	g.DELETE("/:id", h.Delete)
 }
 
@@ -192,6 +193,21 @@ func (h *UserHandler) AdjustBalance(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"id": id, "balance_cents": newBal})
+}
+
+func (h *UserHandler) BalanceLogs(c *gin.Context) {
+	id, ok := parseInt64(c, "id")
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	rows, err := h.repo.ListBalanceLogs(c.Request.Context(), id, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logs": rows, "limit": limit, "offset": offset})
 }
 
 func (h *UserHandler) Delete(c *gin.Context) {
