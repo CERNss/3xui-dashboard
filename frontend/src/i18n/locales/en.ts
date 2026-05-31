@@ -761,6 +761,7 @@ export const en = {
       securityAuthTab: 'Security & auth',
       userDefaultsTab: 'User defaults',
       groupOther: 'Other',
+      groupNotify: 'Notify channels',
       groupRegistration: 'Registration',
       groupSmtp: 'SMTP delivery',
       groupSubscription: 'Subscription',
@@ -882,8 +883,9 @@ export const en = {
         verifyTitle: 'Email verification',
       },
       notifications: {
-        desc: 'Send order, node, and client events to external systems.',
+        desc: 'Fan out ops events (node, order) to chat channels, and forward events to external systems via webhooks.',
         title: 'Ops notifications',
+        webhooksTitle: 'Webhooks',
       },
       notificationsTab: 'Notifications',
       refresh: 'Refresh',

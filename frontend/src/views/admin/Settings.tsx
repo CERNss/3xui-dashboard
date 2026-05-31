@@ -133,7 +133,7 @@ export default function Settings() {
       ) : tab === 'messages' ? (
         <MessagesSettings {...sectionProps(tab)} />
       ) : (
-        <NotificationsSettings />
+        <NotificationsSettings {...sectionProps(tab)} />
       ),
   }))
 

@@ -80,6 +80,7 @@ export function filterSettings(items: SettingItem[], tab: SettingsTab) {
     if (tab === 'securityAuth') return item.group === 'registration' || OIDC_KEYS.has(item.key)
     if (tab === 'userDefaults') return NEW_USER_KEYS.has(item.key)
     if (tab === 'messages') return item.group === 'smtp'
+    if (tab === 'notifications') return item.group === 'notify'
     return false
   })
 }
@@ -88,6 +89,7 @@ export function groupTitleKey(group: string) {
   return {
     data_collection: 'admin.settings.groupDataCollection',
     other: 'admin.settings.groupOther',
+    notify: 'admin.settings.groupNotify',
     registration: 'admin.settings.groupRegistration',
     smtp: 'admin.settings.groupSmtp',
     subscription: 'admin.settings.groupSubscription',

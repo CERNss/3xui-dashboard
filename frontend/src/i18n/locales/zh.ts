@@ -761,6 +761,7 @@ export const zh = {
       securityAuthTab: '安全与认证',
       userDefaultsTab: '用户默认值',
       groupOther: '其他',
+      groupNotify: '通知渠道',
       groupRegistration: '注册',
       groupSmtp: 'SMTP 邮件发送',
       groupSubscription: '订阅',
@@ -882,8 +883,9 @@ export const zh = {
         verifyTitle: '邮箱验证',
       },
       notifications: {
-        desc: '把订单、节点和客户端事件推送到外部系统。',
+        desc: '把运维事件（节点、订单）分发到聊天渠道，并通过 Webhook 转发到外部系统。',
         title: '运营通知',
+        webhooksTitle: 'Webhook',
       },
       notificationsTab: '通知',
       refresh: '刷新',
