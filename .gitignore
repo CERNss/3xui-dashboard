@@ -32,6 +32,10 @@ node_modules/
 .env
 .env.*
 !.env.example
+# Non-secret runtime config — committed template is config.yaml.example;
+# the working copy (incl. deploy/config.yaml) is local.
+config.yaml
+!config.yaml.example
 *.pem
 *.key
 
