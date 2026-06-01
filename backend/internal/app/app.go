@@ -343,8 +343,13 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Notify routing + channels are read from the settings table per
 	// dispatch (panel-editable; bot tokens / webhook URLs decrypted via
 	// the cipher), falling back to the NOTIFY_* / TELEGRAM_* / ... env
-	// values. Routes are validated on write, so a bad stored value
-	// degrades to the env default rather than crashing the app.
+	// values. Panel-stored routes are validated on write; the env
+	// fallback is validated here so a malformed NOTIFY_ROUTES is a hard
+	// boot error the operator sees immediately, not a silent no-fanout.
+	if _, err := notify.ParseRoutes(cfg.Notify.Routes); err != nil {
+		logger.Error("invalid NOTIFY_ROUTES", "error", err.Error(), "value", cfg.Notify.Routes)
+		panic("invalid NOTIFY_ROUTES: " + err.Error())
+	}
 	notifyProvider := channels.NewSettingsProvider(settingRepo, mailerSvc, channels.NotifyDefaults{
 		Routes:             cfg.Notify.Routes,
 		OpsRecipient:       cfg.Notify.OpsRecipient,
