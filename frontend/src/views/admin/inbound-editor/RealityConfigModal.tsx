@@ -94,7 +94,7 @@ export function RealityConfigModal({ open, onClose, generationEnabled = true }: 
       onCancel={onClose}
       footer={<Button type="primary" onClick={onClose}>{t('admin.inboundEditor.stream.done')}</Button>}
       width={760}
-      destroyOnClose={false}
+      destroyOnHidden={false}
       maskClosable
     >
       {contextHolder}

@@ -18,7 +18,7 @@ export function HysteriaMasqueradeModal({ open, onClose }: HysteriaMasqueradeMod
       onCancel={onClose}
       footer={<Button type="primary" onClick={onClose}>{t('admin.inboundEditor.stream.done')}</Button>}
       width={640}
-      destroyOnClose={false}
+      destroyOnHidden={false}
       maskClosable
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
