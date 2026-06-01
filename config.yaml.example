@@ -34,8 +34,11 @@ db_migrate_on_boot: true  # apply pending migrations on startup
 access_token_ttl: 24h
 
 # =============================================================================
-# Integrations — configured here for now; slated to move into the admin panel
-# (DB) so they can be changed at runtime. Their SECRETS already live in .env.
+# Integrations — now managed in the admin panel (Settings → SMTP / Payment /
+# Notifications), stored encrypted in the DB so they change at runtime. The
+# values below — and their SECRETS in .env — are first-boot FALLBACKS: they
+# apply only until an admin sets the matching panel value, which then wins.
+# Configuring them here is optional (handy for IaC / bootstrap).
 # =============================================================================
 
 # --- SMTP (password → .env) — needed for email verification + the email channel
@@ -63,7 +66,8 @@ stripe_session_expiry_minutes: 30
 
 # --- Notify: ops fanout routing (channel tokens/webhooks → .env) --------------
 # Maps event types to channel lists: "event.type:chan1,chan2;event.type2:chan3".
-# Empty = no ops fanout. Channels referenced but unconfigured warn at boot.
+# Empty = no ops fanout. A malformed value fails fast at boot. (Panel-set
+# routes are validated on save.)
 #   notify_routes: "node.offline:telegram,discord;order.payment_failed:telegram;client.expired:email"
 notify_routes: ""
 notify_ops_recipient: ""  # fallback "to:" for email-routed ops events
