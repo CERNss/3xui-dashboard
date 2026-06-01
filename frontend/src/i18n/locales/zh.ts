@@ -810,6 +810,7 @@ export const zh = {
       fallback: '回退值：{value}',
       loadFailed: '加载设置失败',
       operationFailed: '操作失败',
+      secretsUnavailable: '在服务器环境中配置 SECRET_ENCRYPTION_KEY 之前，无法保存密钥类设置（SMTP 密码、OIDC Client Secret、支付密钥、通知 Token）。',
       messagesTab: '消息',
       oidc: {
         advancedTitle: '高级端点',

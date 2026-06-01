@@ -44,6 +44,11 @@ func NewSettingRepo(db *gorm.DB) *SettingRepo {
 // unset, SetSecret errors and GetSecret can only return plaintext rows.
 func (r *SettingRepo) SetCipher(c Cipher) { r.cipher = c }
 
+// HasCipher reports whether an at-rest cipher is configured — i.e.
+// whether secret settings can be stored. The admin UI uses this to warn
+// when SECRET_ENCRYPTION_KEY is unset before a save fails.
+func (r *SettingRepo) HasCipher() bool { return r.cipher != nil }
+
 // Get returns the value for key. Returns ("", false, nil) if the key
 // is not present. A storage error is returned as a non-nil error.
 func (r *SettingRepo) Get(ctx context.Context, key string) (string, bool, error) {

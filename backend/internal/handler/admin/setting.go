@@ -955,7 +955,7 @@ func (h *SettingHandler) List(c *gin.Context) {
 			HasOverride: true,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"settings": out})
+	c.JSON(http.StatusOK, gin.H{"settings": out, "secrets_available": h.repo.HasCipher()})
 }
 
 // putRequest binds the body for PUT /:key.
@@ -989,6 +989,12 @@ func (h *SettingHandler) Put(c *gin.Context) {
 	if d, ok := descriptorFor(key); ok && d.Secret {
 		if strings.TrimSpace(body.Value) == "" {
 			c.JSON(http.StatusOK, gin.H{"key": key, "unchanged": true})
+			return
+		}
+		if !h.repo.HasCipher() {
+			// Precondition, not a server error: the operator must set the
+			// KEK before secrets can be encrypted at rest.
+			c.JSON(http.StatusBadRequest, gin.H{"error": "secret settings require SECRET_ENCRYPTION_KEY to be configured"})
 			return
 		}
 		if err := h.repo.SetSecret(c.Request.Context(), key, body.Value); err != nil {

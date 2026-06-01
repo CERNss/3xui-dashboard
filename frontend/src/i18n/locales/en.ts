@@ -810,6 +810,7 @@ export const en = {
       fallback: 'Fallback: {value}',
       loadFailed: 'Failed to load settings',
       operationFailed: 'Operation failed',
+      secretsUnavailable: 'Secret settings (SMTP password, OIDC client secret, payment keys, notify tokens) cannot be saved until SECRET_ENCRYPTION_KEY is configured in the server environment.',
       messagesTab: 'Messages',
       oidc: {
         advancedTitle: 'Advanced endpoints',

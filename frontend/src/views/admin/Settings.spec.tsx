@@ -13,10 +13,11 @@ const smtpMutateAsync = vi.fn()
 const refetch = vi.fn()
 
 let settings: SettingItem[] = []
+let secretsAvailable = true
 
 vi.mock('@/hooks/queries/admin/settings', () => ({
   useSettingsList: () => ({
-    data: settings,
+    data: { settings, secrets_available: secretsAvailable },
     error: null,
     isFetching: false,
     isLoading: false,
@@ -98,6 +99,7 @@ beforeEach(() => {
   uploadMutateAsync.mockClear()
   smtpMutateAsync.mockClear()
   refetch.mockReset()
+  secretsAvailable = true
 })
 
 describe('Settings', () => {
@@ -122,6 +124,16 @@ describe('Settings', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Notifications' }))
     expect(screen.getByRole('tab', { name: 'Notifications' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('warns when secret settings cannot be stored, and stays quiet when they can', () => {
+    const { unmount } = renderSettings()
+    expect(screen.queryByText(/SECRET_ENCRYPTION_KEY/)).not.toBeInTheDocument()
+    unmount()
+
+    secretsAvailable = false
+    renderSettings()
+    expect(screen.getByText(/SECRET_ENCRYPTION_KEY/)).toBeInTheDocument()
   })
 
   it('buffers drafts per setting key, saves changed rows, and resets overrides', async () => {

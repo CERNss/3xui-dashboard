@@ -25,8 +25,8 @@ export interface SettingItem {
 export const settingsApi = {
   list: () =>
     adminClient
-      .get<{ settings: SettingItem[] }>('/settings')
-      .then((r) => r.data.settings),
+      .get<{ settings: SettingItem[]; secrets_available: boolean }>('/settings')
+      .then((r) => r.data),
 
   set: (key: string, value: string) =>
     adminClient.put<{ key: string; value: string }>(`/settings/${encodeURIComponent(key)}`, { value }),

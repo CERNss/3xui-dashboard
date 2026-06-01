@@ -62,7 +62,8 @@ export default function Settings() {
   const settingsQuery = useSettingsList()
   const setSetting = useSetSetting()
   const clearSetting = useClearSetting()
-  const settings = useMemo(() => settingsQuery.data ?? [], [settingsQuery.data])
+  const settings = useMemo(() => settingsQuery.data?.settings ?? [], [settingsQuery.data])
+  const secretsAvailable = settingsQuery.data?.secrets_available ?? true
 
   useEffect(() => {
     setDrafts(makeDrafts(settings))
@@ -152,6 +153,9 @@ export default function Settings() {
         actions={<RefreshButton loading={settingsQuery.isFetching} onClick={() => settingsQuery.refetch()} />}
       />
       {error ? <Alert type="error" showIcon message={t('admin.settings.operationFailed')} style={{ marginBottom: 16 }} /> : null}
+      {!secretsAvailable ? (
+        <Alert type="warning" showIcon message={t('admin.settings.secretsUnavailable')} style={{ marginBottom: 16 }} />
+      ) : null}
       {settingsQuery.isLoading ? (
         <Skeleton active />
       ) : (
