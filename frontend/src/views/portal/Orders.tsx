@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Space, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -7,7 +8,7 @@ import type { Order, PaymentMethod, Plan } from '@/api/portal/billing'
 import { portalBillingApi } from '@/api/portal/billing'
 import { AlipayPayModal } from '@/components/portal'
 import { ConfigListPage } from '@/components/common'
-import { usePortalOrdersList, usePortalPlansList } from '@/hooks/queries/portal/billing'
+import { invalidatePortalProvisioningQueries, usePortalOrdersList, usePortalPlansList } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { formatError } from '@/utils/format'
 import { canContinuePayment, formatYuan, OrderStatusTag, paymentMethodLabel } from './_shared/billing'
@@ -18,6 +19,7 @@ function planName(plans: Plan[], planId: number, fallback: string): string {
 
 export default function Orders() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const ordersQuery = usePortalOrdersList()
   const plansQuery = usePortalPlansList()
   const profileQuery = useProfile()
@@ -87,6 +89,7 @@ export default function Orders() {
       type: 'success',
       text: t('portal.orders.orderPaid', { id: order.id }),
     })
+    invalidatePortalProvisioningQueries(queryClient)
     void ordersQuery.refetch()
     window.setTimeout(() => setAlipayOrder(null), 1000)
   }

@@ -5,10 +5,15 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { useThemeStore } from '@/stores/theme'
 import { AdminLayout, AuthLayout, PortalLayout } from './index'
 
+const mocks = vi.hoisted(() => ({
+  useDashboardAutoRefresh: vi.fn(),
+}))
+
 const translations: Record<string, string> = {
   'account.openMenu': 'Open account menu',
   'account.profile': 'Profile',
   'account.adminRole': 'Admin',
+  'account.userRole': 'User',
   'admin.notifications': 'Notifications',
   'admin.topbarWelcome': 'Welcome back. Here is your account overview.',
   'a11y.openNav': 'Open navigation',
@@ -39,6 +44,9 @@ const translations: Record<string, string> = {
   'nav.usage': 'Usage',
   'nav.users': 'Users',
   'nav.webhooks': 'Webhooks',
+  'portal.shell.balanceLabel': 'Account balance {amount}',
+  'portal.shell.navigation': 'Portal navigation',
+  'portal.shell.notifications': 'Messages',
   'section.nodes': 'Node ops',
   'section.overview': 'Overview',
   'section.system': 'System',
@@ -52,7 +60,13 @@ const translations: Record<string, string> = {
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     i18n: { changeLanguage: vi.fn() },
-    t: (key: string) => translations[key] ?? key,
+    t: (key: string, values?: Record<string, string | number>) => {
+      let text = translations[key] ?? key
+      Object.entries(values ?? {}).forEach(([name, value]) => {
+        text = text.replace(`{${name}}`, String(value))
+      })
+      return text
+    },
   }),
 }))
 
@@ -66,6 +80,18 @@ vi.mock('@/hooks/queries/branding', () => ({
       footer: 'Footer text',
     },
   }),
+}))
+
+vi.mock('@/hooks/queries/portal/profile', () => ({
+  useProfile: () => ({
+    data: { balance_cents: 132721 },
+    error: null,
+    isLoading: false,
+  }),
+}))
+
+vi.mock('@/hooks/queries/admin/settings', () => ({
+  useDashboardAutoRefresh: () => mocks.useDashboardAutoRefresh(),
 }))
 
 function mockMinWidth(matches: boolean) {
@@ -89,6 +115,7 @@ afterEach(() => {
     useThemeStore.getState().setMode('system')
   })
   vi.restoreAllMocks()
+  mocks.useDashboardAutoRefresh.mockClear()
 })
 
 describe('layout components', () => {
@@ -115,6 +142,7 @@ describe('layout components', () => {
     expect(screen.getByRole('button', { name: 'Users' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Status' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stats' })).not.toBeInTheDocument()
+    expect(mocks.useDashboardAutoRefresh).toHaveBeenCalled()
   })
 
   it('renders PortalLayout with the shared shell + hamburger on narrow screens', () => {
@@ -134,6 +162,8 @@ describe('layout components', () => {
     // in the topbar opens a left Drawer with the full AppSidebar.
     expect(screen.getByTestId('portal-layout')).toBeInTheDocument()
     expect(screen.getByLabelText('Open navigation')).toBeInTheDocument()
+    expect(screen.getByLabelText('Messages')).toBeInTheDocument()
+    expect(screen.getByLabelText('Account balance ¥1327.21')).toBeInTheDocument()
     expect(screen.getByText('Orders view')).toBeInTheDocument()
   })
 

@@ -5,7 +5,11 @@ import { useTranslation } from 'react-i18next'
 import { RealityConfigModal } from './RealityConfigModal'
 import { TLSConfigModal } from './TLSConfigModal'
 
-export function StreamSettingsForm() {
+interface StreamSettingsFormProps {
+  generationEnabled?: boolean
+}
+
+export function StreamSettingsForm({ generationEnabled = true }: StreamSettingsFormProps) {
   const { t } = useTranslation()
   const form = Form.useFormInstance()
   const network = Form.useWatch('network')
@@ -210,7 +214,7 @@ export function StreamSettingsForm() {
       {security === 'tls' ? (
         <Space direction="vertical" size={4}>
           <Space size={12} align="center">
-            <Button icon={<SettingOutlined />} onClick={() => setTlsOpen(true)}>
+            <Button aria-label={t('admin.inboundEditor.stream.configureTLS')} icon={<SettingOutlined />} onClick={() => setTlsOpen(true)}>
               {t('admin.inboundEditor.stream.configureTLS')}
             </Button>
           </Space>
@@ -221,7 +225,7 @@ export function StreamSettingsForm() {
       {security === 'reality' ? (
         <Space direction="vertical" size={4}>
           <Space size={12} align="center">
-            <Button icon={<SettingOutlined />} onClick={() => setRealityOpen(true)}>
+            <Button aria-label={t('admin.inboundEditor.stream.configureReality')} icon={<SettingOutlined />} onClick={() => setRealityOpen(true)}>
               {t('admin.inboundEditor.stream.configureReality')}
             </Button>
           </Space>
@@ -230,7 +234,7 @@ export function StreamSettingsForm() {
       ) : null}
 
       <TLSConfigModal open={tlsOpen} onClose={() => setTlsOpen(false)} />
-      <RealityConfigModal open={realityOpen} onClose={() => setRealityOpen(false)} />
+      <RealityConfigModal open={realityOpen} onClose={() => setRealityOpen(false)} generationEnabled={generationEnabled} />
     </Space>
   )
 }

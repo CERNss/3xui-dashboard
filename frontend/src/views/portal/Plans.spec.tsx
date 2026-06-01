@@ -77,6 +77,7 @@ function renderPlans() {
     <Routes>
       <Route path="/portal/plans" element={<Plans />} />
       <Route path="/portal/orders" element={<LocationProbe />} />
+      <Route path="/portal/subscription" element={<LocationProbe />} />
     </Routes>,
     { initialPath: '/portal/plans' },
   )
@@ -194,7 +195,7 @@ describe('Portal Plans', () => {
     })
   })
 
-  it('balance branch calls purchase and then navigates to orders', async () => {
+  it('balance branch calls purchase and then navigates to subscription provisioning', async () => {
     const user = userEvent.setup()
     renderPlans()
 
@@ -204,7 +205,7 @@ describe('Portal Plans', () => {
     )
     expect(purchaseViaPaymentMutateAsync).not.toHaveBeenCalled()
 
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/portal/orders'))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/portal/subscription'))
   })
 
   it('renders plan traffic, duration, and optional IP limit text', () => {

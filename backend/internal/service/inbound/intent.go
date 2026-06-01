@@ -6,10 +6,23 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"strings"
 
 	"github.com/cern/3xui-dashboard/internal/runtime"
 	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 )
+
+var realityTargetPool = []string{
+	"www.cloudflare.com:443",
+	"www.amazon.com:443",
+	"www.apple.com:443",
+	"www.bing.com:443",
+	"www.microsoft.com:443",
+	"www.yahoo.com:443",
+	"www.wikipedia.org:443",
+	"www.speedtest.net:443",
+}
 
 // resolveIntent reads the `_intent` sub-block (if any) on the inbound's
 // settings + streamSettings JSON strings, calls the matching panel
@@ -106,8 +119,9 @@ func resolveStreamIntent(ctx context.Context, r *runtime.Remote, in *runtime.Inb
 		if err != nil {
 			return fmt.Errorf("getNewX25519Cert: %w", err)
 		}
+		settings := ensureMap(reality, "settings")
 		reality["privateKey"] = cert.PrivateKey
-		reality["publicKey"] = cert.PublicKey
+		settings["publicKey"] = cert.PublicKey
 	}
 
 	if asBool(intent["realityMldsa65"]) {
@@ -115,8 +129,9 @@ func resolveStreamIntent(ctx context.Context, r *runtime.Remote, in *runtime.Inb
 		if err != nil {
 			return fmt.Errorf("getNewMldsa65: %w", err)
 		}
+		settings := ensureMap(reality, "settings")
 		reality["mldsa65Seed"] = cert.Seed
-		reality["mldsa65Verify"] = cert.Verify
+		settings["mldsa65Verify"] = cert.Verify
 	}
 
 	// Local-only randomizers (no panel round-trip).
@@ -127,10 +142,22 @@ func resolveStreamIntent(ctx context.Context, r *runtime.Remote, in *runtime.Inb
 		}
 		reality["shortIds"] = ids
 	}
-	// realityRandomTarget / realityRandomSNI: not implemented yet because
-	// picking a "good" Reality destination requires a curated pool of
-	// CDN endpoints that pass Reality probes; for now those flags get
-	// stripped without effect so the operator's typed-in values survive.
+	if asBool(intent["realityRandomTarget"]) || asBool(intent["realityRandomSNI"]) {
+		target, err := randomRealityTarget()
+		if err != nil {
+			return fmt.Errorf("random Reality target: %w", err)
+		}
+		host := strings.TrimSuffix(strings.Split(target, ":")[0], ".")
+		if asBool(intent["realityRandomTarget"]) {
+			reality["target"] = target
+			reality["dest"] = target
+		}
+		if asBool(intent["realityRandomSNI"]) {
+			reality["serverNames"] = []string{host}
+			settings := ensureMap(reality, "settings")
+			settings["serverName"] = host
+		}
+	}
 
 	delete(stream, "_intent")
 	encoded, err := json.Marshal(stream)
@@ -139,6 +166,16 @@ func resolveStreamIntent(ctx context.Context, r *runtime.Remote, in *runtime.Inb
 	}
 	in.StreamSettings = string(encoded)
 	return nil
+}
+
+func ensureMap(parent map[string]any, key string) map[string]any {
+	existing, _ := parent[key].(map[string]any)
+	if existing != nil {
+		return existing
+	}
+	next := make(map[string]any)
+	parent[key] = next
+	return next
 }
 
 func decodeIntentObject(s string) (map[string]any, bool) {
@@ -174,4 +211,12 @@ func randomShortIDs(count int) ([]string, error) {
 		ids = append(ids, hex.EncodeToString(buf))
 	}
 	return ids, nil
+}
+
+func randomRealityTarget() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(realityTargetPool))))
+	if err != nil {
+		return "", err
+	}
+	return realityTargetPool[n.Int64()], nil
 }

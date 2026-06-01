@@ -1,4 +1,5 @@
 import { CheckOutlined } from '@ant-design/icons'
+import { useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Modal, Radio, Space, Typography } from 'antd'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -6,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Plan, PaymentMethod, Order } from '@/api/portal/billing'
 import { AlipayPayModal } from '@/components/portal'
 import { ConfigListPage, EmptyState } from '@/components/common'
-import { usePaymentMethods, usePortalPlansList, usePurchasePlan, usePurchaseViaPayment } from '@/hooks/queries/portal/billing'
+import { invalidatePortalProvisioningQueries, usePaymentMethods, usePortalPlansList, usePurchasePlan, usePurchaseViaPayment } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { formatError } from '@/utils/format'
 import { formatTraffic, formatYuan, paymentMethodLabel } from './_shared/billing'
@@ -37,6 +38,7 @@ function confirmPurchase(title: string, content: string, okText: string, cancelT
 export default function Plans() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const plansQuery = usePortalPlansList()
   const profileQuery = useProfile()
   const methodsQuery = usePaymentMethods()
@@ -107,7 +109,7 @@ export default function Plans() {
         text: t('portal.plans.orderCreated', { id: order.id }),
       })
       await profileQuery.refetch()
-      window.setTimeout(() => navigate('/portal/orders'), 800)
+      window.setTimeout(() => navigate('/portal/subscription'), 800)
     } catch (err) {
       setFlash({
         type: 'error',
@@ -123,10 +125,11 @@ export default function Plans() {
       type: 'success',
       text: t('portal.plans.orderPaid', { id: order.id }),
     })
+    invalidatePortalProvisioningQueries(queryClient)
     void profileQuery.refetch()
     window.setTimeout(() => {
       setAlipayOrder(null)
-      navigate('/portal/orders')
+      navigate('/portal/subscription')
     }, 1000)
   }
 

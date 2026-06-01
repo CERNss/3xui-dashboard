@@ -5,7 +5,7 @@ import {
 } from '@ant-design/icons'
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfigListPage, RefreshButton } from '@/components/common'
 import type { AdminPlan, CreatePlanInput } from '@/api/admin/plans'
@@ -84,7 +84,7 @@ function poolName(pools: ProvisioningPool[], fallback: string, id?: number | nul
 export default function Plans() {
   const { t } = useTranslation()
   const [form] = Form.useForm<PlanFormValues>()
-  const [modalOpen, setModalOpen] = useState(false)
+  const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<AdminPlan | null>(null)
 
   const plansQuery = usePlansList()
@@ -101,18 +101,16 @@ export default function Plans() {
 
   const openCreate = () => {
     setEditing(null)
-    form.setFieldsValue(blankForm())
-    setModalOpen(true)
+    setFormOpen(true)
   }
 
   const openEdit = (plan: AdminPlan) => {
     setEditing(plan)
-    form.setFieldsValue(planToForm(plan))
-    setModalOpen(true)
+    setFormOpen(true)
   }
 
-  const closeModal = () => {
-    setModalOpen(false)
+  const closeForm = () => {
+    setFormOpen(false)
     setEditing(null)
     form.resetFields()
   }
@@ -121,6 +119,12 @@ export default function Plans() {
     plansQuery.refetch()
     poolsQuery.refetch()
   }
+
+  useLayoutEffect(() => {
+    if (!formOpen) return
+    form.resetFields()
+    form.setFieldsValue(editing ? planToForm(editing) : blankForm())
+  }, [editing, form, formOpen])
 
   const submit = async () => {
     const values = await form.validateFields().catch(() => null)
@@ -131,7 +135,7 @@ export default function Plans() {
     } else {
       await createPlan.mutateAsync(payload)
     }
-    closeModal()
+    closeForm()
   }
 
   const togglePlan = async (plan: AdminPlan) => {
@@ -284,21 +288,33 @@ export default function Plans() {
 
       <Modal
         title={editing ? t('admin.plans.editTitle', { id: editing.id }) : t('admin.plans.createTitle')}
-        open={modalOpen}
-        onCancel={closeModal}
+        open={formOpen}
+        onCancel={closeForm}
         onOk={submit}
-        okText={saving ? t('admin.plans.saving') : t('admin.plans.submit')}
         confirmLoading={saving}
+        okText={saving ? t('admin.plans.saving') : t('admin.plans.submit')}
+        cancelText={t('common.cancel')}
         destroyOnHidden
+        width={860}
       >
-        <Form form={form} layout="vertical" initialValues={blankForm()} preserve={false}>
-          <Form.Item name="name" label={t('admin.plans.name')} rules={[{ required: true, whitespace: true, message: t('admin.plans.nameRequired') }]}>
-            <Input placeholder={t('admin.plans.namePlaceholder')} />
-          </Form.Item>
-          <Form.Item name="description" label={t('admin.plans.description')}>
-            <Input placeholder={t('admin.plans.descriptionPlaceholder')} />
-          </Form.Item>
-          <Space align="start" style={{ width: '100%' }} wrap>
+        <Form
+          key={editing ? `edit-plan-${editing.id}` : 'create-plan'}
+          className="plans-editor-form"
+          form={form}
+          initialValues={editing ? planToForm(editing) : blankForm()}
+          layout="vertical"
+          preserve={false}
+          onFinish={() => void submit()}
+        >
+          <div className="plans-editor-form-grid plans-editor-form-grid--main">
+            <Form.Item name="name" label={t('admin.plans.name')} rules={[{ required: true, whitespace: true, message: t('admin.plans.nameRequired') }]}>
+              <Input placeholder={t('admin.plans.namePlaceholder')} />
+            </Form.Item>
+            <Form.Item name="description" label={t('admin.plans.description')}>
+              <Input placeholder={t('admin.plans.descriptionPlaceholder')} />
+            </Form.Item>
+          </div>
+          <div className="plans-editor-form-grid plans-editor-form-grid--metrics">
             <Form.Item
               name="price_yuan"
               label={t('admin.plans.price')}
@@ -329,21 +345,23 @@ export default function Plans() {
             >
               <InputNumber min={0} precision={0} />
             </Form.Item>
-          </Space>
-          <Form.Item name="provisioning_pool_id" label={t('admin.plans.provisioningPool')}>
-            <Select
-              options={[
-                { label: t('admin.plans.provisioningPoolNone'), value: 0 },
-                ...pools.map((pool) => ({
-                  label: `${pool.name}${pool.enabled ? '' : ' (disabled)'}`,
-                  value: pool.id,
-                })),
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="enabled" label={t('admin.provisioningPools.enabled')} valuePropName="checked">
-            <Switch />
-          </Form.Item>
+          </div>
+          <div className="plans-editor-form-grid plans-editor-form-grid--binding">
+            <Form.Item name="provisioning_pool_id" label={t('admin.plans.provisioningPool')}>
+              <Select
+                options={[
+                  { label: t('admin.plans.provisioningPoolNone'), value: 0 },
+                  ...pools.map((pool) => ({
+                    label: `${pool.name}${pool.enabled ? '' : ' (disabled)'}`,
+                    value: pool.id,
+                  })),
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="enabled" label={t('admin.provisioningPools.enabled')} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
     </div>

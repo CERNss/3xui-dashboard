@@ -15,6 +15,7 @@ const refetch = vi.fn()
 let settings: SettingItem[] = []
 
 vi.mock('@/hooks/queries/admin/settings', () => ({
+  DASHBOARD_AUTO_REFRESH_INTERVAL_KEY: 'dashboard_auto_refresh_interval_seconds',
   useSettingsList: () => ({
     data: settings,
     error: null,
@@ -58,6 +59,7 @@ beforeEach(() => {
     item({ key: 'site_name', label: 'Site name', group: 'other', type: 'string', value: 'Acme' }),
     item({ key: 'subscription_remark_model', label: 'Subscription remark model', group: 'subscription', type: 'string', value: '-ieo', has_override: true }),
     item({ key: 'traffic_warn_pct', label: 'Traffic warning percent', group: 'traffic', type: 'int', value: '80' }),
+    item({ key: 'dashboard_auto_refresh_interval_seconds', label: 'Dashboard auto refresh interval', group: 'data_collection', type: 'int', value: '0' }),
     item({ key: 'ops_collect_enabled', label: 'Node health collection', group: 'data_collection', type: 'bool', value: 'true', has_override: true }),
     item({ key: 'ops_collect_interval_seconds', label: 'Health collection interval', group: 'data_collection', type: 'int', value: '60' }),
     item({ key: 'ops_collect_timeout_seconds', label: 'Health request timeout', group: 'data_collection', type: 'int', value: '12' }),
@@ -191,6 +193,8 @@ describe('Settings', () => {
     expect(screen.getByRole('heading', { name: 'Data collection' })).toBeInTheDocument()
     expect(screen.getByLabelText('Node health collection')).toBeInTheDocument()
     expect(screen.getByLabelText('Max jitter seconds')).toBeInTheDocument()
+    expect(screen.getByLabelText('Dashboard auto refresh interval')).toHaveAttribute('min', '0')
+    expect(screen.getByLabelText('Dashboard auto refresh interval')).toHaveAttribute('max', '3600')
     expect(screen.getByLabelText('Health collection interval')).toHaveAttribute('min', '5')
     expect(screen.getByLabelText('Health request timeout')).toHaveAttribute('min', '1')
     expect(screen.getByLabelText('Health request timeout')).toHaveAttribute('max', '60')

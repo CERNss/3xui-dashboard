@@ -1,11 +1,15 @@
 import {
+  BarsOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  FilterOutlined,
   MinusOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  ReloadOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -18,6 +22,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popover,
   Segmented,
   Select,
   Space,
@@ -29,10 +34,10 @@ import type { ColumnsType } from 'antd/es/table'
 import type { MenuProps } from 'antd'
 import type { CheckboxProps } from 'antd/es/checkbox'
 import type { Key } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { adminUsersApi, type AdminUser, type BalanceLog, type UserStatus } from '@/api/admin/users'
-import { ConfigListPage, RefreshButton } from '@/components/common'
+import { ConfigListPage } from '@/components/common'
 import {
   useAdjustUserBalance,
   useCreateUser,
@@ -49,6 +54,7 @@ type VerifiedFilter = 'all' | 'verified' | 'unverified'
 type RegisterFilter = 'all' | 'email' | 'oidc'
 type BalanceLogFilter = 'all' | 'credit' | 'debit'
 type SortKey = 'created_at:desc' | 'created_at:asc' | 'balance:desc' | 'balance:asc' | 'id:desc' | 'email:asc' | 'email:desc'
+type UserColumnKey = 'user' | 'id' | 'status' | 'balance' | 'registered' | 'lastActive'
 
 interface CreateFormValues {
   email: string
@@ -68,10 +74,10 @@ interface BalanceFormValues {
   note?: string
 }
 
-const AUTO_REFRESH_MS = 15_000
 const PAGE_SIZE = 20
 const userKeys = queryKeys('admin', 'users')
 const listParams = { limit: 200 }
+const USER_COLUMN_KEYS: UserColumnKey[] = ['user', 'id', 'status', 'balance', 'registered', 'lastActive']
 
 function formatYuan(cents: number) {
   return `¥${(cents / 100).toFixed(2)}`
@@ -96,6 +102,14 @@ function verifiedTag(user: AdminUser, verified: string, unverified: string) {
 
 function userInitial(user: AdminUser) {
   return (user.email || `#${user.id}`).trim().charAt(0).toUpperCase()
+}
+
+function editFormValues(user: AdminUser): EditFormValues {
+  return {
+    email: user.email || '',
+    email_verified: user.email_verified,
+    password: '',
+  }
 }
 
 function balanceLogTitle(log: BalanceLog, t: ReturnType<typeof useTranslation>['t']) {
@@ -136,7 +150,9 @@ export default function Users() {
   const [registerFilter, setRegisterFilter] = useState<RegisterFilter>('all')
   const [sort, setSort] = useState<SortKey>('created_at:desc')
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
-  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [columnOpen, setColumnOpen] = useState(false)
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<UserColumnKey[]>(USER_COLUMN_KEYS)
   const [flash, setFlash] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<AdminUser | null>(null)
@@ -147,7 +163,6 @@ export default function Users() {
   const usersQuery = useQuery({
     queryKey: userKeys.list(listParams),
     queryFn: () => adminUsersApi.list(listParams),
-    refetchInterval: autoRefresh ? AUTO_REFRESH_MS : false,
     refetchOnWindowFocus: true,
   })
   useQueryErrorReporter(usersQuery.error, usersQuery.isError)
@@ -216,10 +231,33 @@ export default function Users() {
     })
   }, [filteredUsers])
 
+  useLayoutEffect(() => {
+    if (!editing) return
+    editForm.resetFields()
+    editForm.setFieldsValue(editFormValues(editing))
+  }, [editForm, editing])
+
   const selectedIds = selectedRowKeys.map(Number)
   const userStatusLabel = (status: UserStatus) => t(`admin.users.status.${status}`)
   const userStatusTag = (status: UserStatus) => statusTag(status, userStatusLabel(status))
   const userVerifiedTag = (user: AdminUser) => verifiedTag(user, t('admin.users.verified'), t('admin.users.unverified'))
+  const activeFilterCount = [statusFilter !== 'all', verifiedFilter !== 'all', registerFilter !== 'all'].filter(Boolean).length
+
+  const columnLabels: Record<UserColumnKey, string> = {
+    user: t('admin.users.column.user'),
+    id: t('admin.users.column.id'),
+    status: t('admin.users.column.status'),
+    balance: t('admin.users.column.balance'),
+    registered: t('admin.users.column.registered'),
+    lastActive: t('admin.users.column.lastActive'),
+  }
+
+  const toggleColumn = (key: UserColumnKey, checked: boolean) => {
+    setVisibleColumnKeys((current) => {
+      if (checked) return current.includes(key) ? current : [...current, key]
+      return current.length === 1 ? current : current.filter((item) => item !== key)
+    })
+  }
 
   const refresh = () => {
     void usersQuery.refetch()
@@ -232,11 +270,6 @@ export default function Users() {
 
   const openEdit = (user: AdminUser) => {
     setEditing(user)
-    editForm.setFieldsValue({
-      email: user.email || '',
-      email_verified: user.email_verified,
-      password: '',
-    })
   }
 
   const openBalance = (user: AdminUser) => {
@@ -380,6 +413,7 @@ export default function Users() {
 
   const columns: ColumnsType<AdminUser> = [
     {
+      key: 'user',
       title: t('admin.users.column.user'),
       dataIndex: 'email',
       sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
@@ -395,6 +429,7 @@ export default function Users() {
       ),
     },
     {
+      key: 'id',
       title: 'ID',
       dataIndex: 'id',
       align: 'center',
@@ -402,6 +437,7 @@ export default function Users() {
       render: (id: number) => <Typography.Text code>#{id}</Typography.Text>,
     },
     {
+      key: 'status',
       title: t('admin.users.column.status'),
       dataIndex: 'status',
       align: 'center',
@@ -414,6 +450,7 @@ export default function Users() {
       render: userStatusTag,
     },
     {
+      key: 'balance',
       title: t('admin.users.column.balance'),
       dataIndex: 'balance_cents',
       align: 'right',
@@ -430,6 +467,7 @@ export default function Users() {
       ),
     },
     {
+      key: 'registered',
       title: t('admin.users.column.registered'),
       dataIndex: 'created_at',
       align: 'center',
@@ -439,6 +477,7 @@ export default function Users() {
       render: formatDate,
     },
     {
+      key: 'lastActive',
       title: t('admin.users.column.lastActive'),
       dataIndex: 'last_active_at',
       align: 'center',
@@ -470,85 +509,140 @@ export default function Users() {
       ),
     },
   ]
+  const visibleColumns = columns.filter((column) => column.key === 'actions' || visibleColumnKeys.includes(column.key as UserColumnKey))
+  const filterPanel = (
+    <div className="users-toolbar-popover-panel">
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.filterStatus')}</Typography.Text>
+        <Segmented
+          aria-label={t('admin.users.filterStatus')}
+          value={statusFilter}
+          onChange={(value) => setStatusFilter(value as StatusFilter)}
+          options={[
+            { label: t('admin.users.filterAll'), value: 'all' },
+            { label: t('admin.users.status.active'), value: 'active' },
+            { label: t('admin.users.status.suspended'), value: 'suspended' },
+          ]}
+        />
+      </div>
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.filterVerified')}</Typography.Text>
+        <Segmented
+          aria-label={t('admin.users.filterVerified')}
+          value={verifiedFilter}
+          onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
+          options={[
+            { label: t('admin.users.filterVerifiedAll'), value: 'all' },
+            { label: t('admin.users.verified'), value: 'verified' },
+            { label: t('admin.users.unverified'), value: 'unverified' },
+          ]}
+        />
+      </div>
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.filterRegisterMethod')}</Typography.Text>
+        <Segmented
+          aria-label={t('admin.users.filterRegisterMethod')}
+          value={registerFilter}
+          onChange={(value) => setRegisterFilter(value as RegisterFilter)}
+          options={[
+            { label: t('admin.users.filterRegisterAll'), value: 'all' },
+            { label: t('admin.users.filterRegisterEmail'), value: 'email' },
+            { label: 'OIDC', value: 'oidc' },
+          ]}
+        />
+      </div>
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.sortLabel')}</Typography.Text>
+        <Select
+          aria-label={t('admin.users.sortLabel')}
+          value={sort}
+          onChange={(value) => setSort(value)}
+          options={[
+            { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
+            { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
+            { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
+            { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
+            { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
+            { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
+            { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
+          ]}
+        />
+      </div>
+    </div>
+  )
+  const columnPanel = (
+    <div className="users-toolbar-column-panel">
+      {USER_COLUMN_KEYS.map((key) => (
+        <Checkbox
+          checked={visibleColumnKeys.includes(key)}
+          disabled={visibleColumnKeys.length === 1 && visibleColumnKeys.includes(key)}
+          key={key}
+          onChange={(event) => toggleColumn(key, event.target.checked)}
+        >
+          {columnLabels[key]}
+        </Checkbox>
+      ))}
+    </div>
+  )
 
   return (
-    <section>
+    <section className="users-page">
       <ConfigListPage
         title={t('admin.users.title')}
         subtitle={t('admin.users.subtitle')}
         actions={
-          <>
-            <Button type="primary" aria-label={t('admin.users.addUser')} icon={<PlusOutlined />} onClick={openCreate}>
+          <div className="users-toolbar-actions">
+            <Button
+              aria-label={t('admin.users.reload')}
+              className="users-toolbar-icon-button"
+              icon={<ReloadOutlined />}
+              loading={usersQuery.isFetching}
+              onClick={refresh}
+            />
+            <Popover
+              arrow={false}
+              content={filterPanel}
+              open={filterOpen}
+              overlayClassName="users-toolbar-popover"
+              placement="bottomRight"
+              trigger="click"
+              onOpenChange={setFilterOpen}
+            >
+              <Button aria-label={t('admin.users.toolbar.filters')} className="users-toolbar-button" icon={<FilterOutlined />}>
+                {t('admin.users.toolbar.filters')}
+                {activeFilterCount > 0 ? <span className="users-toolbar-count">{activeFilterCount}</span> : null}
+              </Button>
+            </Popover>
+            <Popover
+              arrow={false}
+              content={columnPanel}
+              open={columnOpen}
+              overlayClassName="users-toolbar-popover"
+              placement="bottomRight"
+              trigger="click"
+              onOpenChange={setColumnOpen}
+            >
+              <Button aria-label={t('admin.users.toolbar.columns')} className="users-toolbar-button" icon={<BarsOutlined />}>
+                {t('admin.users.toolbar.columns')}
+              </Button>
+            </Popover>
+            <Dropdown menu={{ items: moreItems }}>
+              <Button aria-label={t('admin.users.more.label')} className="users-toolbar-button" icon={<SettingOutlined />}>{t('admin.users.more.label')}</Button>
+            </Dropdown>
+            <Button className="users-toolbar-primary" type="primary" aria-label={t('admin.users.addUser')} icon={<PlusOutlined />} onClick={openCreate}>
               {t('admin.users.addUser')}
             </Button>
-            <RefreshButton loading={usersQuery.isFetching} onClick={refresh} label={t('admin.users.reload')} />
-          </>
+          </div>
         }
         filters={
-          <Space wrap>
+          <div className="users-toolbar-search">
             <Input.Search
               allowClear
               value={query}
               placeholder={t('admin.users.searchPlaceholder')}
               onChange={(event) => setQuery(event.target.value)}
-              style={{ width: 260 }}
             />
-            <Segmented
-              aria-label={t('admin.users.filterStatus')}
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-              options={[
-                { label: t('admin.users.filterAll'), value: 'all' },
-                { label: t('admin.users.status.active'), value: 'active' },
-                { label: t('admin.users.status.suspended'), value: 'suspended' },
-              ]}
-            />
-            <Segmented
-              aria-label={t('admin.users.filterVerified')}
-              value={verifiedFilter}
-              onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
-              options={[
-                { label: t('admin.users.filterVerifiedAll'), value: 'all' },
-                { label: t('admin.users.verified'), value: 'verified' },
-                { label: t('admin.users.unverified'), value: 'unverified' },
-              ]}
-            />
-            <Segmented
-              aria-label={t('admin.users.filterRegisterMethod')}
-              value={registerFilter}
-              onChange={(value) => setRegisterFilter(value as RegisterFilter)}
-              options={[
-                { label: t('admin.users.filterRegisterAll'), value: 'all' },
-                { label: t('admin.users.filterRegisterEmail'), value: 'email' },
-                { label: 'OIDC', value: 'oidc' },
-              ]}
-            />
-            <Select
-              aria-label={t('admin.users.sortLabel')}
-              value={sort}
-              onChange={(value) => setSort(value)}
-              style={{ minWidth: 190 }}
-              options={[
-                { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
-                { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
-                { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
-                { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
-                { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
-                { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
-                { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
-              ]}
-            />
-            <Switch
-              checked={autoRefresh}
-              aria-label={t('admin.users.autoRefresh')}
-              checkedChildren={t('admin.users.autoRefreshShort')}
-              unCheckedChildren={t('admin.users.manualRefreshShort')}
-              onChange={setAutoRefresh}
-            />
-            <Dropdown menu={{ items: moreItems }}>
-              <Button>{t('admin.users.more.label')}</Button>
-            </Dropdown>
-          </Space>
+          </div>
         }
         alerts={error || flash || selectedRowKeys.length > 0 ? (
           <>
@@ -600,7 +694,7 @@ export default function Users() {
           </>
         ) : null}
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns}
         dataSource={filteredUsers}
         loading={loading}
         pagination={{ pageSize: PAGE_SIZE, showSizeChanger: false }}
@@ -675,8 +769,21 @@ export default function Users() {
         </Form>
       </Modal>
 
-      <Modal title={editing ? `${t('admin.users.edit.title')} #${editing.id}` : t('admin.users.edit.title')} open={Boolean(editing)} onCancel={closeEdit} onOk={saveEdit} confirmLoading={updateUser.isPending} destroyOnHidden>
-        <Form form={editForm} layout="vertical" preserve={false}>
+      <Modal
+        title={editing ? `${t('admin.users.edit.title')} #${editing.id}` : t('admin.users.edit.title')}
+        open={Boolean(editing)}
+        onCancel={closeEdit}
+        onOk={saveEdit}
+        confirmLoading={updateUser.isPending}
+        destroyOnHidden
+      >
+        <Form
+          key={editing ? `edit-user-${editing.id}` : 'edit-user'}
+          form={editForm}
+          initialValues={editing ? editFormValues(editing) : undefined}
+          layout="vertical"
+          preserve={false}
+        >
           <Form.Item name="email" label={t('admin.users.edit.emailLabel')} rules={[{ required: true, type: 'email', message: t('admin.users.edit.emailRequired') }]}>
             <Input autoComplete="off" />
           </Form.Item>

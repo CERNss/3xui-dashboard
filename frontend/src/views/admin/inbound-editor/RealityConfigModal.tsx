@@ -1,18 +1,53 @@
-import { Button, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
+import { Button, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch, message } from 'antd'
 import { useTranslation } from 'react-i18next'
+import { useGenerateRealityMldsa65, useGenerateRealityX25519 } from '@/hooks/queries/admin/nodes'
+import { randomRealityShortIds, randomRealityTarget } from './random'
 
 interface RealityConfigModalProps {
   open: boolean
   onClose: () => void
+  generationEnabled?: boolean
 }
 
 const FINGERPRINTS = ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random', 'randomized']
 
-export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
+export function RealityConfigModal({ open, onClose, generationEnabled = true }: RealityConfigModalProps) {
   const { t } = useTranslation()
   const form = Form.useFormInstance()
-  const generateKeypair = Form.useWatch('realityGenerateKeypair', form)
-  const generateMldsa65 = Form.useWatch('realityGenerateMldsa65', form)
+  const [messageApi, contextHolder] = message.useMessage()
+  const nodeID = Form.useWatch('node_id', form)
+  const generateX25519 = useGenerateRealityX25519()
+  const generateMldsa65 = useGenerateRealityMldsa65()
+  const canGenerateOnNode = generationEnabled && typeof nodeID === 'number'
+
+  const generateRealityKeypair = async () => {
+    if (typeof nodeID !== 'number') {
+      messageApi.warning(t('admin.inboundEditor.stream.selectNodeFirst'))
+      return
+    }
+    const cert = await generateX25519.mutateAsync(nodeID)
+    form.setFieldsValue({
+      realityPrivateKey: cert.privateKey,
+      realityPublicKey: cert.publicKey,
+      realityGenerateKeypair: false,
+    })
+    messageApi.success(t('admin.inboundEditor.stream.generatedKeypair'))
+  }
+
+  const generateMldsa65Seed = async () => {
+    if (typeof nodeID !== 'number') {
+      messageApi.warning(t('admin.inboundEditor.stream.selectNodeFirst'))
+      return
+    }
+    const cert = await generateMldsa65.mutateAsync(nodeID)
+    form.setFieldsValue({
+      realityMldsa65Seed: cert.seed,
+      realityMldsa65Verify: cert.verify,
+      realityGenerateMldsa65: false,
+    })
+    messageApi.success(t('admin.inboundEditor.stream.generatedMldsa65'))
+  }
 
   const clearRealityKeypair = () => {
     form.setFieldsValue({
@@ -30,6 +65,28 @@ export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
     })
   }
 
+  const fillRandomTarget = () => {
+    const next = randomRealityTarget()
+    form.setFieldsValue({
+      realityDest: next.target,
+      realityServerNames: next.sni,
+      realityRandomizeTarget: false,
+      realityRandomizeSNI: false,
+    })
+  }
+
+  const fillRandomSNI = () => {
+    form.setFieldValue('realityServerNames', randomRealityTarget().sni)
+    form.setFieldValue('realityRandomizeSNI', false)
+  }
+
+  const fillRandomShortIds = () => {
+    form.setFieldsValue({
+      realityShortIds: randomRealityShortIds().join(','),
+      realityRandomizeShortIds: false,
+    })
+  }
+
   return (
     <Modal
       title={t('admin.inboundEditor.stream.configureReality')}
@@ -40,6 +97,7 @@ export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
       destroyOnClose={false}
       maskClosable
     >
+      {contextHolder}
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <Space align="start" wrap size={[12, 0]}>
           <Form.Item name="realityShow" label="Show" valuePropName="checked">
@@ -65,9 +123,13 @@ export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
             label={
               <Space size={4}>
                 <span>Target</span>
-                <Form.Item name="realityRandomizeTarget" valuePropName="checked" noStyle>
-                  <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
-                </Form.Item>
+                <Button
+                  aria-label={t('admin.inboundEditor.stream.randomizeTarget')}
+                  size="small"
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  onClick={fillRandomTarget}
+                />
               </Space>
             }
             tooltip={t('admin.inboundEditor.stream.realityRandomizeHint')}
@@ -79,9 +141,13 @@ export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
             label={
               <Space size={4}>
                 <span>SNI</span>
-                <Form.Item name="realityRandomizeSNI" valuePropName="checked" noStyle>
-                  <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
-                </Form.Item>
+                <Button
+                  aria-label={t('admin.inboundEditor.stream.randomizeSNI')}
+                  size="small"
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  onClick={fillRandomSNI}
+                />
               </Space>
             }
           >
@@ -104,9 +170,13 @@ export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
             label={
               <Space size={4}>
                 <span>Short IDs</span>
-                <Form.Item name="realityRandomizeShortIds" valuePropName="checked" noStyle>
-                  <Switch size="small" checkedChildren="↻" unCheckedChildren="↻" />
-                </Form.Item>
+                <Button
+                  aria-label={t('admin.inboundEditor.stream.randomizeShortIds')}
+                  size="small"
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  onClick={fillRandomShortIds}
+                />
               </Space>
             }
             style={{ flex: 1, minWidth: 320 }}
@@ -118,34 +188,74 @@ export function RealityConfigModal({ open, onClose }: RealityConfigModalProps) {
         <Divider orientation="left" plain style={{ margin: '4px 0' }}>X25519 keypair</Divider>
         <Space align="start" wrap size={[12, 0]}>
           <Form.Item name="realityPublicKey" label={t('admin.inboundEditor.stream.publicKey')}>
-            <Input style={{ width: 320 }} disabled={generateKeypair} />
+            <Input style={{ width: 320 }} />
           </Form.Item>
-          <Form.Item name="realityPrivateKey" label={t('admin.inboundEditor.stream.privateKey')}>
-            <Input style={{ width: 320 }} disabled={generateKeypair} />
+          <Form.Item
+            name="realityPrivateKey"
+            label={t('admin.inboundEditor.stream.privateKey')}
+            dependencies={['realityPublicKey']}
+            rules={[
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  const publicKey = String(getFieldValue('realityPublicKey') ?? '').trim()
+                  const privateKey = String(value ?? '').trim()
+                  if (!publicKey && privateKey) {
+                    return Promise.reject(new Error(t('admin.inboundEditor.stream.publicKeyRequired')))
+                  }
+                  return Promise.resolve()
+                },
+              }),
+            ]}
+          >
+            <Input style={{ width: 320 }} />
           </Form.Item>
         </Space>
         <Space size={12} align="center">
-          <Form.Item name="realityGenerateKeypair" valuePropName="checked" noStyle>
-            <Switch />
-          </Form.Item>
-          <span style={{ color: '#888' }}>{t('admin.inboundEditor.stream.getNewCert')}</span>
+          {generationEnabled ? (
+            <Button
+              onClick={generateRealityKeypair}
+              loading={generateX25519.isPending}
+              disabled={!canGenerateOnNode}
+            >
+              {t('admin.inboundEditor.stream.getNewCert')}
+            </Button>
+          ) : (
+            <>
+              <Form.Item name="realityGenerateKeypair" valuePropName="checked" noStyle>
+                <Switch />
+              </Form.Item>
+              <span style={{ color: '#888' }}>{t('admin.inboundEditor.stream.willGenerateKeypair')}</span>
+            </>
+          )}
           <Button size="small" onClick={clearRealityKeypair}>{t('admin.inboundEditor.stream.clear')}</Button>
         </Space>
 
         <Divider orientation="left" plain style={{ margin: '4px 0' }}>ML-DSA-65 seed</Divider>
         <Space align="start" wrap size={[12, 0]}>
           <Form.Item name="realityMldsa65Seed" label="Seed">
-            <Input.TextArea rows={2} style={{ width: 320 }} disabled={generateMldsa65} />
+            <Input.TextArea rows={2} style={{ width: 320 }} />
           </Form.Item>
           <Form.Item name="realityMldsa65Verify" label="Verify">
-            <Input.TextArea rows={2} style={{ width: 320 }} disabled={generateMldsa65} />
+            <Input.TextArea rows={2} style={{ width: 320 }} />
           </Form.Item>
         </Space>
         <Space size={12} align="center">
-          <Form.Item name="realityGenerateMldsa65" valuePropName="checked" noStyle>
-            <Switch />
-          </Form.Item>
-          <span style={{ color: '#888' }}>{t('admin.inboundEditor.stream.getNewSeed')}</span>
+          {generationEnabled ? (
+            <Button
+              onClick={generateMldsa65Seed}
+              loading={generateMldsa65.isPending}
+              disabled={!canGenerateOnNode}
+            >
+              {t('admin.inboundEditor.stream.getNewSeed')}
+            </Button>
+          ) : (
+            <>
+              <Form.Item name="realityGenerateMldsa65" valuePropName="checked" noStyle>
+                <Switch />
+              </Form.Item>
+              <span style={{ color: '#888' }}>{t('admin.inboundEditor.stream.willGenerateMldsa65')}</span>
+            </>
+          )}
           <Button size="small" onClick={clearMldsa65}>{t('admin.inboundEditor.stream.clear')}</Button>
         </Space>
       </Space>

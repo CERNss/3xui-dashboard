@@ -96,3 +96,19 @@ export function useProbeNode() {
     onError: (error) => handleError(error),
   })
 }
+
+export function useGenerateRealityX25519() {
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (id: number) => nodesApi.generateRealityX25519(id),
+    onError: (error) => handleError(error),
+  })
+}
+
+export function useGenerateRealityMldsa65() {
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (id: number) => nodesApi.generateRealityMldsa65(id),
+    onError: (error) => handleError(error),
+  })
+}

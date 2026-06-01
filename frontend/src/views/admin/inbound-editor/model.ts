@@ -30,6 +30,31 @@ function inputToMs(value?: string) {
   return value ? new Date(value).getTime() : 0
 }
 
+function firstNonBlank(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  return ''
+}
+
+function csvFromStringOrArray(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean).join(',')
+  }
+  if (typeof value === 'string') return value
+  return ''
+}
+
+function realityClientSettings(value: LooseJson) {
+  return value.settings && typeof value.settings === 'object' ? value.settings as LooseJson : {}
+}
+
+function firstRealityServerName(value: string) {
+  return value.split(',').map((item) => item.trim()).find(Boolean) ?? ''
+}
+
 export function blankInboundValues(nodeID: number | null): InboundEditorValues {
   return {
     node_id: nodeID,
@@ -146,11 +171,11 @@ export function blankInboundValues(nodeID: number | null): InboundEditorValues {
     realityRandomizeSNI: false,
     realityRandomizeShortIds: false,
 
-    sniffEnabled: true,
+    sniffEnabled: false,
     sniffHttp: true,
     sniffTls: true,
-    sniffQuic: false,
-    sniffFakedns: false,
+    sniffQuic: true,
+    sniffFakedns: true,
     sniffMetadataOnly: false,
     sniffRouteOnly: false,
     sniffExcludedIPs: [],
@@ -323,20 +348,21 @@ export function inboundToValues(inbound: Inbound, nodeID: number | null): Inboun
   }
   if (stream.realitySettings) {
     const r = stream.realitySettings
-    values.realityDest = r.dest ?? r.target ?? ''
-    values.realityServerNames = (r.serverNames ?? []).join(',')
-    values.realityPublicKey = r.publicKey ?? ''
+    const rs = realityClientSettings(r)
+    values.realityDest = firstNonBlank(r.target, r.dest)
+    values.realityServerNames = csvFromStringOrArray(r.serverNames) || firstNonBlank(rs.serverName)
+    values.realityPublicKey = firstNonBlank(rs.publicKey, r.publicKey)
     values.realityPrivateKey = r.privateKey ?? ''
-    values.realityShortIds = (r.shortIds ?? []).join(',')
-    values.realityFingerprint = r.fingerprint ?? 'chrome'
+    values.realityShortIds = csvFromStringOrArray(r.shortIds)
+    values.realityFingerprint = rs.fingerprint ?? r.fingerprint ?? 'chrome'
     values.realityShow = Boolean(r.show)
     values.realityXver = Number(r.xver) || 0
-    values.realityMaxTimeDiff = Number(r.maxTimeDiff) || 0
+    values.realityMaxTimeDiff = Number(r.maxTimediff ?? r.maxTimeDiff) || 0
     values.realityMinClientVer = r.minClientVer ?? ''
     values.realityMaxClientVer = r.maxClientVer ?? ''
-    values.realitySpiderX = r.spiderX ?? '/'
+    values.realitySpiderX = rs.spiderX ?? r.spiderX ?? '/'
     values.realityMldsa65Seed = r.mldsa65Seed ?? ''
-    values.realityMldsa65Verify = r.mldsa65Verify ?? r.settings?.mldsa65Verify ?? ''
+    values.realityMldsa65Verify = firstNonBlank(rs.mldsa65Verify, r.mldsa65Verify)
   }
   // Reality intent flags live in streamSettings._intent so the resolver
   // can decide what to (re)generate at create time without re-parsing
@@ -571,21 +597,27 @@ function streamFromValues(values: InboundEditorValues) {
           : [],
     }
   } else if (values.security === 'reality') {
+    const target = values.realityDest.trim()
+    const serverNames = values.realityServerNames.split(',').map((item) => item.trim()).filter(Boolean)
     out.realitySettings = {
       show: values.realityShow,
       xver: values.realityXver,
-      dest: values.realityDest,
-      serverNames: values.realityServerNames.split(',').map((item) => item.trim()).filter(Boolean),
-      publicKey: values.realityPublicKey,
+      target,
+      dest: target,
+      serverNames,
       privateKey: values.realityPrivateKey,
       shortIds: values.realityShortIds.split(',').map((item) => item.trim()).filter(Boolean),
-      fingerprint: values.realityFingerprint,
-      maxTimeDiff: values.realityMaxTimeDiff,
+      maxTimediff: values.realityMaxTimeDiff,
       minClientVer: values.realityMinClientVer,
       maxClientVer: values.realityMaxClientVer,
-      spiderX: values.realitySpiderX,
       mldsa65Seed: values.realityMldsa65Seed,
-      mldsa65Verify: values.realityMldsa65Verify,
+      settings: {
+        publicKey: values.realityPublicKey,
+        fingerprint: values.realityFingerprint,
+        serverName: firstRealityServerName(values.realityServerNames),
+        spiderX: values.realitySpiderX,
+        mldsa65Verify: values.realityMldsa65Verify,
+      },
     }
     const intent: Record<string, boolean> = {}
     if (values.realityGenerateKeypair) intent.realityKeypair = true

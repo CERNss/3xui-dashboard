@@ -31,6 +31,8 @@ func (h *NodeHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("/:id/enable", h.Enable)
 	g.POST("/:id/disable", h.Disable)
 	g.POST("/:id/probe", h.Probe)
+	g.POST("/:id/reality/x25519", h.GenerateX25519Cert)
+	g.POST("/:id/reality/mldsa65", h.GenerateMldsa65)
 	g.GET("/:id/metrics", h.Metrics)
 }
 
@@ -145,6 +147,32 @@ func (h *NodeHandler) Probe(c *gin.Context) {
 	})
 }
 
+func (h *NodeHandler) GenerateX25519Cert(c *gin.Context) {
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	cert, err := h.svc.GenerateX25519Cert(c.Request.Context(), id)
+	if err != nil {
+		h.runtimeError(c, id, err)
+		return
+	}
+	c.JSON(http.StatusOK, cert)
+}
+
+func (h *NodeHandler) GenerateMldsa65(c *gin.Context) {
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	cert, err := h.svc.GenerateMldsa65(c.Request.Context(), id)
+	if err != nil {
+		h.runtimeError(c, id, err)
+		return
+	}
+	c.JSON(http.StatusOK, cert)
+}
+
 func (h *NodeHandler) Metrics(c *gin.Context) {
 	id, ok := h.parseID(c)
 	if !ok {
@@ -191,6 +219,17 @@ func (h *NodeHandler) serviceError(c *gin.Context, err error) {
 	default:
 		h.serverError(c, err)
 	}
+}
+
+func (h *NodeHandler) runtimeError(c *gin.Context, id int64, err error) {
+	if errors.Is(err, node.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+	c.JSON(http.StatusBadGateway, gin.H{
+		"id":    id,
+		"error": err.Error(),
+	})
 }
 
 func (h *NodeHandler) serverError(c *gin.Context, err error) {

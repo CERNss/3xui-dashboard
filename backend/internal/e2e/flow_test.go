@@ -97,6 +97,42 @@ func TestFullFlow(t *testing.T) {
 		t.Error("probe didn't reach mock panel")
 	}
 
+	var realityCert struct {
+		PrivateKey string `json:"privateKey"`
+		PublicKey  string `json:"publicKey"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/nodes/" + itoa(node.ID) + "/reality/x25519",
+		token:  adminTok,
+	}, &realityCert); got != http.StatusOK {
+		t.Fatalf("generate x25519 cert: status=%d", got)
+	}
+	if realityCert.PrivateKey != "MOCK_REALITY_PRIVATE" || realityCert.PublicKey != "MOCK_REALITY_PUBLIC" {
+		t.Fatalf("generated x25519 cert = %+v", realityCert)
+	}
+	if h.panel.Calls("/panel/api/server/getNewX25519Cert") == 0 {
+		t.Error("x25519 generation didn't reach mock panel")
+	}
+
+	var mldsa65Cert struct {
+		Seed   string `json:"seed"`
+		Verify string `json:"verify"`
+	}
+	if got := h.do(t, req{
+		method: http.MethodPost,
+		path:   "/api/admin/nodes/" + itoa(node.ID) + "/reality/mldsa65",
+		token:  adminTok,
+	}, &mldsa65Cert); got != http.StatusOK {
+		t.Fatalf("generate mldsa65 cert: status=%d", got)
+	}
+	if mldsa65Cert.Seed != "MOCK_MLDSA65_SEED" || mldsa65Cert.Verify != "MOCK_MLDSA65_VERIFY" {
+		t.Fatalf("generated mldsa65 cert = %+v", mldsa65Cert)
+	}
+	if h.panel.Calls("/panel/api/server/getNewmldsa65") == 0 {
+		t.Error("mldsa65 generation didn't reach mock panel")
+	}
+
 	var filteredNodes struct {
 		Nodes []struct {
 			ID   int64  `json:"id"`

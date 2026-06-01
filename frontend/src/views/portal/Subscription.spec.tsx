@@ -4,6 +4,7 @@ import QRCode from 'qrcode'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { portalProfileApi } from '@/api/portal/profile'
 import { portalTrafficApi } from '@/api/portal/traffic'
+import { portalBillingApi } from '@/api/portal/billing'
 import '@/i18n'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Subscription from './Subscription'
@@ -27,8 +28,15 @@ vi.mock('@/api/portal/traffic', () => ({
   },
 }))
 
+vi.mock('@/api/portal/billing', () => ({
+  portalBillingApi: {
+    listOrders: vi.fn(),
+  },
+}))
+
 const profileGetMock = vi.mocked(portalProfileApi.get)
 const trafficOwnMock = vi.mocked(portalTrafficApi.own)
+const ordersListMock = vi.mocked(portalBillingApi.listOrders)
 const qrMock = QRCode.toDataURL as unknown as Mock<(value: string) => Promise<string>>
 
 function renderSubscription() {
@@ -67,6 +75,8 @@ beforeEach(() => {
       expires_at: '2026-06-01T00:00:00Z',
     },
   ])
+  ordersListMock.mockReset()
+  ordersListMock.mockResolvedValue([])
   qrMock.mockReset()
   qrMock.mockImplementation((value: string) => Promise.resolve(`data:image/png;base64,${value}`))
   Object.assign(navigator, {
@@ -147,5 +157,28 @@ describe('Subscription', () => {
     const qrRegion = screen.getByLabelText('subscription QR')
     await waitFor(() => expect(within(qrRegion).getByRole('img', { name: /subscription QR/i })).toHaveAttribute('src', 'data:image/png;base64,current-clash'))
     expect(within(qrRegion).getByRole('img', { name: /subscription QR/i })).not.toHaveAttribute('src', 'data:image/png;base64,stale-base64')
+  })
+
+  it('shows a provisioning state while a recent completed order has no client yet', async () => {
+    trafficOwnMock.mockResolvedValue([])
+    ordersListMock.mockResolvedValue([
+      {
+        id: 88,
+        user_id: 1,
+        plan_id: 3,
+        idempotency_key: 'purchase-88',
+        price_cents: 500,
+        status: 'completed',
+        created_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        payment_method: 'balance',
+      },
+    ])
+
+    renderSubscription()
+
+    expect(await screen.findByText('Subscription is provisioning')).toBeInTheDocument()
+    expect(screen.getByText(/node client is being created/i)).toBeInTheDocument()
+    expect(screen.queryByText('No active clients yet')).not.toBeInTheDocument()
   })
 })

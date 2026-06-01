@@ -46,6 +46,7 @@ const (
 	SettingOIDCTokenURL                = "oidc_token_url"
 	SettingOIDCJWKSURL                 = "oidc_jwks_url"
 	SettingOIDCUserInfoURL             = "oidc_userinfo_url"
+	SettingDashboardAutoRefreshSecs    = "dashboard_auto_refresh_interval_seconds"
 	SettingOpsCollectEnabled           = "ops_collect_enabled"
 	SettingOpsCollectIntervalSeconds   = "ops_collect_interval_seconds"
 	SettingOpsCollectConcurrency       = "ops_collect_concurrency"

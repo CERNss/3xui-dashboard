@@ -6,10 +6,12 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { ClientUsage } from '@/api/portal/traffic'
 import { EmptyState, PageHeader, RefreshButton } from '@/components/common'
+import { usePortalOrdersList } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
 import { formatError } from '@/utils/format'
 import { formatBytes, formatDateTime, formatYuan, trafficPercent } from './_shared/format'
+import { useProvisioningStatus } from './_shared/provisioning'
 
 function daysToExpiry(clients: ClientUsage[]): number | null {
   const now = Date.now()
@@ -26,6 +28,7 @@ export function Usage() {
   const { t } = useTranslation()
   const profile = useProfile()
   const traffic = useOwnTraffic()
+  const orders = usePortalOrdersList()
   const clients = useMemo(() => traffic.data ?? [], [traffic.data])
   const totalUp = clients.reduce((sum, client) => sum + (client.up || 0), 0)
   const totalDown = clients.reduce((sum, client) => sum + (client.down || 0), 0)
@@ -33,11 +36,19 @@ export function Usage() {
   const totalLimit = clients.reduce((sum, client) => sum + (client.limit || 0), 0)
   const percent = trafficPercent(totalUsed, totalLimit)
   const expiryDays = daysToExpiry(clients)
-  const loading = profile.isLoading || traffic.isLoading
-  const refreshing = profile.isFetching || traffic.isFetching
-  const error = profile.error ?? traffic.error
+  const loading = profile.isLoading || traffic.isLoading || orders.isLoading
+  const refreshing = profile.isFetching || traffic.isFetching || orders.isFetching
+  const error = profile.error ?? traffic.error ?? orders.error
   const nodeCount = useMemo(() => new Set(clients.map((client) => client.node_id)).size, [clients])
   const subUrl = profile.data ? `${window.location.origin}/sub/${profile.data.sub_id}` : ''
+  const provisioning = useProvisioningStatus({
+    clients,
+    orders: orders.data,
+    ordersFetching: orders.isFetching,
+    trafficFetching: traffic.isFetching,
+    refetchOrders: orders.refetch,
+    refetchTraffic: traffic.refetch,
+  })
 
   const columns: ColumnsType<ClientUsage> = [
     {
@@ -91,7 +102,7 @@ export function Usage() {
   ]
 
   function reload() {
-    void Promise.all([profile.refetch(), traffic.refetch()])
+    void Promise.all([profile.refetch(), traffic.refetch(), orders.refetch()])
   }
 
   return (
@@ -223,7 +234,14 @@ export function Usage() {
               {t('portal.dashboard.tableHeader')}
             </Typography.Title>
             <Typography.Paragraph type="secondary">{t('portal.dashboard.tableHeaderHint')}</Typography.Paragraph>
-            {clients.length > 0 ? (
+            {provisioning.isProvisioning ? (
+              <EmptyState
+                title={t('portal.dashboard.provisioningTitle')}
+                description={t('portal.dashboard.provisioningDescription')}
+                actionLabel={provisioning.isRefreshingProvisioning ? t('portal.dashboard.provisioningRefreshing') : t('portal.dashboard.refresh')}
+                onAction={reload}
+              />
+            ) : clients.length > 0 ? (
               <Table
                 rowKey={(client) => `${client.node_id}:${client.inbound_tag}:${client.client_email}`}
                 columns={columns}

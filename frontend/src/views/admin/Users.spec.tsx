@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -120,6 +120,9 @@ describe('Users', () => {
 
     expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New User' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Columns' })).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Auto refresh' })).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search email, id, or subscription id')).toBeInTheDocument()
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
     expect(await screen.findByRole('row', { name: /alice@example.com/i })).toBeInTheDocument()
@@ -138,6 +141,7 @@ describe('Users', () => {
     expect(screen.queryByRole('row', { name: /bob@example.com/i })).not.toBeInTheDocument()
 
     await user.clear(screen.getByPlaceholderText('Search email, id, or subscription id'))
+    await user.click(screen.getByRole('button', { name: 'Filters' }))
     await user.click(within(screen.getByRole('radiogroup', { name: 'Status filter' })).getByText('Suspended'))
     expect(screen.queryByRole('row', { name: /alice@example.com/i })).not.toBeInTheDocument()
     expect(screen.getByRole('row', { name: /bob@example.com/i })).toBeInTheDocument()
@@ -145,6 +149,19 @@ describe('Users', () => {
     await user.click(within(screen.getByRole('radiogroup', { name: 'Register method filter' })).getByText('Any method'))
     await user.click(within(screen.getByRole('radiogroup', { name: 'Register method filter' })).getByText('OIDC'))
     expect(screen.getByRole('row', { name: /bob@example.com/i })).toBeInTheDocument()
+  })
+
+  it('toggles optional columns from the toolbar column menu', async () => {
+    const user = userEvent.setup()
+    renderUsers()
+    await screen.findByRole('row', { name: /alice@example.com/i })
+
+    expect(screen.getByRole('columnheader', { name: 'Balance' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Balance' }))
+
+    expect(screen.queryByRole('columnheader', { name: 'Balance' })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument()
   })
 
   it('creates users and converts initial balance yuan to cents', async () => {
@@ -177,6 +194,8 @@ describe('Users', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit alice@example.com' }))
     const dialog = screen.getByRole('dialog', { name: 'Edit user #1' })
+    expect(within(dialog).getByLabelText('Email')).toHaveValue('alice@example.com')
+    expect(within(dialog).getByLabelText('Email verified')).toBeChecked()
     await user.clear(within(dialog).getByLabelText('Email'))
     await user.type(within(dialog).getByLabelText('Email'), 'alice2@example.com')
     await user.click(within(dialog).getByLabelText('Email verified'))
@@ -281,20 +300,5 @@ describe('Users', () => {
     expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ title: 'Delete selected users' }))
     await waitFor(() => expect(mocks.removeMutateAsync).toHaveBeenCalledWith(1))
     expect(mocks.removeMutateAsync).not.toHaveBeenCalledWith(2)
-  })
-
-  it('uses TanStack Query refetchInterval when auto refresh is enabled', async () => {
-    renderUsers()
-    await screen.findByRole('row', { name: /alice@example.com/i })
-    expect(mocks.listUsers).toHaveBeenCalledTimes(1)
-
-    vi.useFakeTimers()
-    fireEvent.click(screen.getByRole('switch', { name: 'Auto refresh' }))
-    act(() => {
-      vi.advanceTimersByTime(15_000)
-    })
-
-    expect(mocks.listUsers).toHaveBeenCalledTimes(2)
-    vi.useRealTimers()
   })
 })

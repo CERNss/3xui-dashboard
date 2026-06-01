@@ -437,6 +437,16 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "可选 userinfo 端点覆盖。留空使用 discovery 或 OIDC_USERINFO_URL。",
 	},
 	{
+		Key:           model.SettingDashboardAutoRefreshSecs,
+		Label:         "Dashboard auto refresh interval",
+		LabelZh:       "后台自动刷新间隔",
+		Type:          "int",
+		Group:         "data_collection",
+		Default:       "0",
+		Description:   "Seconds between automatic refreshes for active admin dashboard pages. Set 0 to disable.",
+		DescriptionZh: "后台管理页面活跃数据的自动刷新间隔，单位秒；设为 0 则关闭。",
+	},
+	{
 		Key:           model.SettingOpsCollectEnabled,
 		Label:         "Node health collection",
 		LabelZh:       "节点健康采集",
@@ -909,6 +919,10 @@ func validate(key, value string) error {
 			return fmt.Errorf("value %d cannot be negative for %q", n, key)
 		}
 		switch key {
+		case model.SettingDashboardAutoRefreshSecs:
+			if n != 0 && (n < 5 || n > 3600) {
+				return fmt.Errorf("%s must be 0 or between 5 and 3600 seconds", key)
+			}
 		case model.SettingOpsCollectIntervalSeconds, model.SettingTrafficCollectIntervalSecs:
 			if n < 5 {
 				return fmt.Errorf("%s must be at least 5 seconds", key)

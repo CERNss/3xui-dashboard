@@ -50,6 +50,16 @@ export interface NodeMetricsResult {
   points: NodeMetricPoint[]
 }
 
+export interface RealityX25519Cert {
+  privateKey: string
+  publicKey: string
+}
+
+export interface RealityMldsa65Cert {
+  seed: string
+  verify: string
+}
+
 export interface NodeInput {
   name: string
   area: string
@@ -74,6 +84,10 @@ export const nodesApi = {
   disable: (id: number) => adminClient.post<void>(`/nodes/${id}/disable`).then((r) => r.data),
   probe: (id: number) =>
     adminClient.post<{ id: number; prior_status: string; status: unknown }>(`/nodes/${id}/probe`).then((r) => r.data),
+  generateRealityX25519: (id: number) =>
+    adminClient.post<RealityX25519Cert>(`/nodes/${id}/reality/x25519`).then((r) => r.data),
+  generateRealityMldsa65: (id: number) =>
+    adminClient.post<RealityMldsa65Cert>(`/nodes/${id}/reality/mldsa65`).then((r) => r.data),
   metrics: (id: number, params?: { from?: number; to?: number; bucket?: string }) =>
     adminClient
       .get<NodeMetricsResult>(`/nodes/${id}/metrics`, { params })

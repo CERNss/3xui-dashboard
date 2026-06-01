@@ -1,32 +1,27 @@
 import {
+  CalendarOutlined,
   CheckCircleOutlined,
+  CreditCardOutlined,
   GlobalOutlined,
   LinkOutlined,
-  LockOutlined,
   MailOutlined,
-  UserOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
   Avatar,
   Button,
-  Card,
-  Col,
   Form,
   Input,
-  List,
-  Row,
   Skeleton,
   Space,
   Tag,
   Typography,
   message,
 } from 'antd'
-import { useEffect, useMemo } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { portalProfileApi } from '@/api/portal/profile'
 import type { LoginMethodsResponse, OIDCProviderLink, UserProfile } from '@/api/portal/profile'
-import { PageHeader, RefreshButton } from '@/components/common'
 import {
   useChangeEmail,
   useChangePassword,
@@ -36,7 +31,9 @@ import {
   useStartOidcLink,
   useUpdateProfile,
 } from '@/hooks/queries/portal/profile'
+import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
 import { formatError } from '@/utils/format'
+import { formatYuan } from './_shared/format'
 
 interface DisplayNameFormValues {
   display_name?: string
@@ -80,9 +77,11 @@ export function Profile() {
   const [displayForm] = Form.useForm<DisplayNameFormValues>()
   const [emailForm] = Form.useForm<EmailFormValues>()
   const [passwordForm] = Form.useForm<PasswordFormValues>()
+  const [emailPanelOpen, setEmailPanelOpen] = useState(false)
 
   const profile = useProfile()
   const methods = useLoginMethods()
+  const traffic = useOwnTraffic()
   const updateProfile = useUpdateProfile()
   const startEmailVerification = useStartEmailVerification()
   const changeEmail = useChangeEmail()
@@ -90,19 +89,19 @@ export function Profile() {
   const startOidcLink = useStartOidcLink()
 
   const loading = profile.isLoading || methods.isLoading
-  const refreshing = profile.isFetching || methods.isFetching
-  const error = profile.error ?? methods.error
+  const error = profile.error ?? methods.error ?? traffic.error
   const providers = useMemo(() => visibleOidcProviders(methods.data), [methods.data])
+  const activeClientCount = traffic.data?.length ?? 0
 
   useEffect(() => {
     if (!profile.data) return
     displayForm.setFieldsValue({ display_name: profile.data.display_name ?? '' })
-    emailForm.setFieldsValue({ email: profile.data.email ?? '' })
-  }, [displayForm, emailForm, profile.data])
+  }, [displayForm, profile.data])
 
-  async function reload() {
-    await Promise.all([profile.refetch(), methods.refetch()])
-  }
+  useEffect(() => {
+    if (!profile.data || !emailPanelOpen) return
+    emailForm.setFieldsValue({ email: profile.data.email ?? '' })
+  }, [emailForm, emailPanelOpen, profile.data])
 
   async function saveDisplayName(values: DisplayNameFormValues) {
     await updateProfile.mutateAsync({ display_name: values.display_name?.trim() || null })
@@ -147,11 +146,6 @@ export function Profile() {
   return (
     <>
       {contextHolder}
-      <PageHeader
-        title={t('portal.profile.title')}
-        subtitle={t('portal.profile.subtitle')}
-        actions={<RefreshButton loading={refreshing} onClick={() => void reload()} label={t('portal.dashboard.refresh')} />}
-      />
 
       {error ? (
         <Alert showIcon type="error" style={{ marginBottom: 16 }} message={formatError(error, t('portal.profile.loadFailed'))} />
@@ -159,166 +153,201 @@ export function Profile() {
 
       {loading ? (
         <Skeleton active />
-      ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {profile.data ? <AccountSummary profile={profile.data} /> : null}
+      ) : profile.data ? (
+        <div className="portal-profile-page">
+          <AccountSummary
+            activeClientCount={activeClientCount}
+            activeClientLoading={traffic.isLoading}
+            profile={profile.data}
+          />
 
-          <Card
-            title={
-              <Space>
-                <UserOutlined />
-                {t('portal.profile.displayName')}
-              </Space>
-            }
-          >
-            <Form<DisplayNameFormValues>
-              form={displayForm}
-              layout="vertical"
-              requiredMark={false}
-              onFinish={(values) => void saveDisplayName(values)}
-            >
-              <Form.Item
-                name="display_name"
-                label={t('portal.profile.displayName')}
-              >
-                <Input autoComplete="nickname" maxLength={80} />
-              </Form.Item>
-              <Button type="primary" htmlType="submit" loading={updateProfile.isPending}>
-                {t('common.save')}
-              </Button>
-            </Form>
-          </Card>
+          <section className="portal-profile-section">
+            <div className="portal-profile-section-heading">
+              <Typography.Title level={3}>{t('portal.profile.profileSectionTitle')}</Typography.Title>
+              <Typography.Text type="secondary">{t('portal.profile.profileSectionSubtitle')}</Typography.Text>
+            </div>
 
-          <Card
-            title={
-              <Space>
-                <MailOutlined />
-                {t('portal.profile.verifiedEmail')}
-              </Space>
-            }
-          >
-            <Form<EmailFormValues>
-              form={emailForm}
-              layout="vertical"
-              requiredMark={false}
-              onFinish={(values) => void submitEmail(values)}
-            >
-              <Row gutter={12}>
-                <Col xs={24} md={14}>
+            <div className="portal-profile-grid">
+              <div className="portal-profile-panel portal-profile-avatar-panel">
+                <ProfileAvatar profile={profile.data} size="large" />
+                <div className="portal-profile-panel-copy">
+                  <Typography.Title level={4}>{t('portal.profile.avatarTitle')}</Typography.Title>
+                  <Typography.Text type="secondary">{t('portal.profile.avatarHint')}</Typography.Text>
+                </div>
+              </div>
+
+              <div className="portal-profile-panel">
+                <Typography.Title level={4}>{t('portal.profile.editProfile')}</Typography.Title>
+                <Form<DisplayNameFormValues>
+                  form={displayForm}
+                  layout="vertical"
+                  requiredMark={false}
+                  onFinish={(values) => void saveDisplayName(values)}
+                >
                   <Form.Item
-                    name="email"
-                    label={t('portal.profile.column.email')}
-                    rules={[
-                      { required: true, message: t('auth.enterValidEmail') },
-                      { type: 'email', message: t('auth.enterValidEmail') },
-                    ]}
+                    name="display_name"
+                    label={t('portal.profile.username')}
                   >
-                    <Input autoComplete="email" />
+                    <Input autoComplete="nickname" maxLength={80} />
                   </Form.Item>
-                </Col>
-                <Col xs={24} md={10}>
-                  <Form.Item
-                    name="code"
-                    label={t('auth.verificationCode')}
-                    rules={[{ required: true, message: t('auth.codeMustBe6') }]}
-                  >
-                    <Input maxLength={6} autoComplete="one-time-code" />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Space wrap>
-                <Button loading={startEmailVerification.isPending} onClick={() => void sendEmailCode()}>
-                  {t('portal.profile.sendVerificationCode')}
-                </Button>
-                <Button type="primary" htmlType="submit" loading={changeEmail.isPending}>
-                  {t('portal.profile.updateEmail')}
-                </Button>
-              </Space>
-            </Form>
-          </Card>
+                  <div className="portal-profile-form-actions">
+                    <Button type="primary" htmlType="submit" loading={updateProfile.isPending}>
+                      {t('portal.profile.updateProfile')}
+                    </Button>
+                  </div>
+                </Form>
+              </div>
+            </div>
+          </section>
 
-          <Card
-            title={
-              <Space>
-                <LockOutlined />
-                {t('portal.profile.changePw')}
-              </Space>
-            }
-          >
+          <section className="portal-profile-section portal-profile-password-section">
+            <div className="portal-profile-section-heading portal-profile-password-heading">
+              <Typography.Title level={3}>{t('portal.profile.changePw')}</Typography.Title>
+            </div>
+
             <Form<PasswordFormValues>
+              className="portal-profile-password-form"
               form={passwordForm}
               layout="vertical"
               requiredMark={false}
               onFinish={(values) => void submitPassword(values)}
             >
-              <Row gutter={12}>
-                <Col xs={24} md={8}>
-                  <Form.Item
-                    name="old_password"
-                    label={t('portal.profile.currentPw')}
-                    rules={[{ required: true, message: t('portal.profile.currentPw') }]}
-                  >
-                    <Input.Password autoComplete="current-password" />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={8}>
-                  <Form.Item
-                    name="new_password"
-                    label={t('portal.profile.newPw')}
-                    rules={[
-                      { required: true, message: t('portal.profile.newPw') },
-                      { min: 8, message: t('portal.profile.newPwMin8') },
-                    ]}
-                  >
-                    <Input.Password autoComplete="new-password" />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={8}>
-                  <Form.Item
-                    name="confirm_password"
-                    label={t('portal.profile.confirmPw')}
-                    dependencies={['new_password']}
-                    rules={[
-                      { required: true, message: t('portal.profile.confirmPw') },
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
-                          if (!value || getFieldValue('new_password') === value) return Promise.resolve()
-                          return Promise.reject(new Error(t('portal.profile.pwsMustMatch')))
-                        },
-                      }),
-                    ]}
-                  >
-                    <Input.Password autoComplete="new-password" />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Button type="primary" htmlType="submit" loading={changePassword.isPending}>
-                {t('portal.profile.updatePw')}
-              </Button>
+              <Form.Item
+                name="old_password"
+                label={t('portal.profile.currentPw')}
+                rules={[{ required: true, message: t('portal.profile.currentPw') }]}
+              >
+                <Input.Password autoComplete="current-password" />
+              </Form.Item>
+              <Form.Item
+                name="new_password"
+                label={t('portal.profile.newPw')}
+                extra={t('portal.profile.pwMin8')}
+                rules={[
+                  { required: true, message: t('portal.profile.newPw') },
+                  { min: 8, message: t('portal.profile.newPwMin8') },
+                ]}
+              >
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Form.Item
+                name="confirm_password"
+                label={t('portal.profile.confirmPw')}
+                dependencies={['new_password']}
+                rules={[
+                  { required: true, message: t('portal.profile.confirmPw') },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || getFieldValue('new_password') === value) return Promise.resolve()
+                      return Promise.reject(new Error(t('portal.profile.pwsMustMatch')))
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <div className="portal-profile-form-actions">
+                <Button type="primary" htmlType="submit" loading={changePassword.isPending}>
+                  {t('portal.profile.updatePw')}
+                </Button>
+              </div>
             </Form>
-          </Card>
+          </section>
 
-          <Card
-            title={
-              <Space>
-                <LinkOutlined />
-                {t('portal.profile.loginMethods.title')}
-              </Space>
-            }
-          >
-            <List
-              dataSource={providers}
-              locale={{ emptyText: t('portal.profile.loginMethods.oidcUnavailableHint') }}
-              renderItem={(provider) => (
-                <List.Item
-                  actions={[
-                    provider.linked ? (
-                      <Tag key="connected" color="success" icon={<CheckCircleOutlined />}>
+          <section className="portal-profile-section">
+            <div className="portal-profile-section-heading">
+              <Typography.Title level={3}>{t('portal.profile.loginMethods.title')}</Typography.Title>
+              <Typography.Text type="secondary">{t('portal.profile.loginMethods.subtitle')}</Typography.Text>
+            </div>
+
+            <div className="portal-profile-method-list">
+              <div className="portal-profile-method-row">
+                <div className="portal-profile-method-icon">
+                  <MailOutlined />
+                </div>
+                <div className="portal-profile-method-main">
+                  <div className="portal-profile-method-title">
+                    <Typography.Text strong>{t('portal.profile.loginMethods.emailTitle')}</Typography.Text>
+                    <Tag color={profile.data.email_verified ? 'green' : 'gold'}>
+                      {profile.data.email_verified ? t('portal.profile.verified') : t('portal.profile.unverified')}
+                    </Tag>
+                  </div>
+                  <Typography.Text>{profile.data.email || t('portal.profile.noEmail')}</Typography.Text>
+                  <Typography.Text type="secondary">{t('portal.profile.loginMethods.emailHint')}</Typography.Text>
+                </div>
+                <Button onClick={() => setEmailPanelOpen((value) => !value)}>
+                  {t('portal.profile.loginMethods.manageEmail')}
+                </Button>
+              </div>
+
+              {emailPanelOpen ? (
+                <div className="portal-profile-inline-form">
+                  <Form<EmailFormValues>
+                    form={emailForm}
+                    layout="vertical"
+                    requiredMark={false}
+                    onFinish={(values) => void submitEmail(values)}
+                  >
+                    <div className="portal-profile-form-grid">
+                      <Form.Item
+                        name="email"
+                        label={t('portal.profile.column.email')}
+                        rules={[
+                          { required: true, message: t('auth.enterValidEmail') },
+                          { type: 'email', message: t('auth.enterValidEmail') },
+                        ]}
+                      >
+                        <Input autoComplete="email" />
+                      </Form.Item>
+                      <Form.Item
+                        name="code"
+                        label={t('auth.verificationCode')}
+                        rules={[{ required: true, message: t('auth.codeMustBe6') }]}
+                      >
+                        <Input maxLength={6} autoComplete="one-time-code" />
+                      </Form.Item>
+                    </div>
+                    <Space wrap>
+                      <Button loading={startEmailVerification.isPending} onClick={() => void sendEmailCode()}>
+                        {t('portal.profile.sendVerificationCode')}
+                      </Button>
+                      <Button type="primary" htmlType="submit" loading={changeEmail.isPending}>
+                        {t('portal.profile.updateEmail')}
+                      </Button>
+                    </Space>
+                  </Form>
+                </div>
+              ) : null}
+
+              {providers.length > 0 ? (
+                providers.map((provider) => (
+                  <div
+                    className="portal-profile-method-row"
+                    data-testid={`oidc-provider-${oidcProviderKey(provider)}`}
+                    key={oidcProviderKey(provider)}
+                  >
+                    <div className="portal-profile-method-icon">
+                      <ProviderAvatar provider={provider} />
+                    </div>
+                    <div className="portal-profile-method-main">
+                      <div className="portal-profile-method-title">
+                        <Typography.Text strong>{oidcProviderName(provider)}</Typography.Text>
+                        <Tag color={provider.linked ? 'green' : 'default'}>
+                          {provider.linked ? t('portal.profile.loginMethods.bound') : t('portal.profile.loginMethods.unbound')}
+                        </Tag>
+                      </div>
+                      <Typography.Text type="secondary">
+                        {provider.linked
+                          ? provider.provider_email || t('portal.profile.loginMethods.oidcBoundText', { provider: oidcProviderName(provider) })
+                          : t('portal.profile.loginMethods.oidcUnboundText', { provider: oidcProviderName(provider) })}
+                      </Typography.Text>
+                    </div>
+                    {provider.linked ? (
+                      <Tag color="success" icon={<CheckCircleOutlined />}>
                         {t('portal.profile.loginMethods.bound')}
                       </Tag>
                     ) : (
                       <Button
-                        key="connect"
                         type="primary"
                         icon={<LinkOutlined />}
                         loading={startOidcLink.isPending}
@@ -326,80 +355,115 @@ export function Profile() {
                       >
                         {t('portal.profile.loginMethods.linkProvider', { provider: oidcProviderName(provider) })}
                       </Button>
-                    ),
-                  ]}
-                >
-                  <List.Item.Meta
-                    avatar={<ProviderAvatar provider={provider} />}
-                    title={
-                      <Space wrap>
-                        <span>{oidcProviderName(provider)}</span>
-                        <Tag color={provider.linked ? 'green' : 'default'}>
-                          {provider.linked ? t('portal.profile.loginMethods.bound') : t('portal.profile.loginMethods.unbound')}
-                        </Tag>
-                      </Space>
-                    }
-                    description={
-                      provider.linked
-                        ? provider.provider_email || t('portal.profile.loginMethods.oidcBoundText', { provider: oidcProviderName(provider) })
-                        : t('portal.profile.loginMethods.oidcUnboundText', { provider: oidcProviderName(provider) })
-                    }
-                  />
-                </List.Item>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="portal-profile-method-empty">
+                  {t('portal.profile.loginMethods.oidcUnavailableHint')}
+                </div>
               )}
-            />
-          </Card>
-        </Space>
-      )}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   )
 }
 
-function AccountSummary({ profile }: { profile: UserProfile }) {
+function AccountSummary({
+  activeClientCount,
+  activeClientLoading,
+  profile,
+}: {
+  activeClientCount: number
+  activeClientLoading: boolean
+  profile: UserProfile
+}) {
   const { t } = useTranslation()
+  const displayName = displayNameForProfile(profile)
   return (
-    <Card title={t('portal.profile.accountInfo')}>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} md={12}>
-          <Typography.Text type="secondary">{t('portal.profile.column.userId')}</Typography.Text>
-          <div>
-            <Typography.Text code>#{profile.id}</Typography.Text>
-          </div>
-        </Col>
-        <Col xs={24} md={12}>
-          <Typography.Text type="secondary">{t('portal.profile.column.email')}</Typography.Text>
-          <div>
-            <Space wrap>
-              <span>{profile.email || t('portal.profile.noEmail')}</span>
-              {profile.email ? (
-                <Tag color={profile.email_verified ? 'green' : 'gold'}>
-                  {profile.email_verified ? t('portal.profile.verified') : t('portal.profile.unverified')}
-                </Tag>
-              ) : null}
-            </Space>
-          </div>
-        </Col>
-        <Col xs={24} md={12}>
-          <Typography.Text type="secondary">{t('portal.profile.column.status')}</Typography.Text>
-          <div>
-            <Tag color={profile.status === 'active' ? 'green' : 'red'}>
-              {profile.status === 'active' ? t('portal.profile.status.active') : t('portal.profile.status.suspended')}
-            </Tag>
-          </div>
-        </Col>
-        <Col xs={24} md={12}>
-          <Typography.Text type="secondary">{t('portal.profile.column.createdAt')}</Typography.Text>
-          <div>{new Date(profile.created_at).toLocaleDateString()}</div>
-        </Col>
-      </Row>
-    </Card>
+    <section className="portal-profile-hero">
+      <ProfileAvatar profile={profile} size="hero" />
+      <div className="portal-profile-hero-main">
+        <div className="portal-profile-identity">
+          <Typography.Title level={2}>{displayName}</Typography.Title>
+          <Tag>{t('account.userRole')}</Tag>
+          <Tag color={profile.status === 'active' ? 'green' : 'red'}>
+            {profile.status === 'active' ? t('portal.profile.status.active') : t('portal.profile.status.suspended')}
+          </Tag>
+        </div>
+        <Typography.Text className="portal-profile-email">{profile.email || t('portal.profile.noEmail')}</Typography.Text>
+        <div className="portal-profile-stat-grid">
+          <ProfileStat
+            icon={<CreditCardOutlined />}
+            label={t('portal.profile.summary.balance')}
+            value={formatYuan(profile.balance_cents)}
+          />
+          <ProfileStat
+            icon={<GlobalOutlined />}
+            label={t('portal.profile.summary.accessLimit')}
+            loading={activeClientLoading}
+            value={String(activeClientCount)}
+          />
+          <ProfileStat
+            icon={<CalendarOutlined />}
+            label={t('portal.profile.summary.registeredAt')}
+            value={formatProfileMonth(profile.created_at)}
+          />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ProfileStat({
+  icon,
+  label,
+  loading = false,
+  value,
+}: {
+  icon: ReactNode
+  label: string
+  loading?: boolean
+  value: string
+}) {
+  return (
+    <div className="portal-profile-stat">
+      <span className="portal-profile-stat-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="portal-profile-stat-label">{label}</span>
+      {loading ? <Skeleton.Input active size="small" /> : <span className="portal-profile-stat-value">{value}</span>}
+    </div>
   )
 }
 
 function ProviderAvatar({ provider }: { provider: OIDCProviderLink }) {
   const icon = safeIconUrl(oidcProviderIcon(provider))
-  if (icon) return <Avatar src={icon} />
-  return <Avatar icon={<GlobalOutlined />} />
+  if (icon) return <Avatar className="portal-provider-avatar" src={icon} />
+  return <Avatar className="portal-provider-avatar" icon={<GlobalOutlined />} />
+}
+
+function ProfileAvatar({ profile, size }: { profile: UserProfile; size: 'hero' | 'large' }) {
+  return (
+    <span className={`portal-profile-avatar portal-profile-avatar--${size}`} aria-hidden="true">
+      {initialsForProfile(profile)}
+    </span>
+  )
+}
+
+function displayNameForProfile(profile: UserProfile) {
+  return profile.display_name?.trim() || profile.email?.split('@')[0] || `User #${profile.id}`
+}
+
+function initialsForProfile(profile: UserProfile) {
+  const source = displayNameForProfile(profile).replace(/[^\p{L}\p{N}]/gu, '')
+  return (Array.from(source).slice(0, 2).join('') || 'U').toUpperCase()
+}
+
+function formatProfileMonth(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' }).format(new Date(value))
 }
 
 export default Profile

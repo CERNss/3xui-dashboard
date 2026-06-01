@@ -361,6 +361,65 @@ func TestUpdateInboundByID_PostsFormToUpdatePath(t *testing.T) {
 	}
 }
 
+func TestUpdateInboundByID_BackfillsRealityTargetInPostedStreamSettings(t *testing.T) {
+	var capturedStream string
+	r, _ := newTestRemote(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/panel/api/inbounds/update/7" {
+			t.Errorf("unexpected path %s", req.URL.Path)
+			return
+		}
+		body, _ := io.ReadAll(req.Body)
+		vals, _ := url.ParseQuery(string(body))
+		capturedStream = vals.Get("streamSettings")
+		okEnvelope(w, Inbound{ID: 7, Tag: "reality-1", Protocol: "vless"})
+	}))
+
+	in := &Inbound{
+		ID:             7,
+		Tag:            "reality-1",
+		Protocol:       "vless",
+		Port:           443,
+		Settings:       `{"clients":[],"decryption":"none"}`,
+		StreamSettings: `{"network":"tcp","security":"reality","realitySettings":{"dest":"www.cloudflare.com:443","publicKey":"PUB_KEY_HERE","privateKey":"PRIV_KEY_HERE","mldsa65Verify":"VERIFY_HERE","serverNames":["www.cloudflare.com"]}}`,
+		Sniffing:       `{"enabled":true}`,
+	}
+	if _, err := r.UpdateInboundByID(context.Background(), 7, in); err != nil {
+		t.Fatalf("UpdateInboundByID: %v", err)
+	}
+
+	var stream map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(capturedStream), &stream); err != nil {
+		t.Fatalf("posted streamSettings is not JSON: %v (stream=%q)", err, capturedStream)
+	}
+	var reality map[string]any
+	_ = json.Unmarshal(stream["realitySettings"], &reality)
+	if reality["target"] != "www.cloudflare.com:443" {
+		t.Errorf("target = %v, want copied from dest", reality["target"])
+	}
+	if reality["dest"] != "www.cloudflare.com:443" {
+		t.Errorf("dest = %v, want preserved", reality["dest"])
+	}
+	if reality["privateKey"] != "PRIV_KEY_HERE" {
+		t.Errorf("privateKey = %v, want preserved", reality["privateKey"])
+	}
+	settings, _ := reality["settings"].(map[string]any)
+	if settings["publicKey"] != "PUB_KEY_HERE" {
+		t.Errorf("settings.publicKey = %v, want preserved", settings["publicKey"])
+	}
+	if settings["mldsa65Verify"] != "VERIFY_HERE" {
+		t.Errorf("settings.mldsa65Verify = %v, want preserved", settings["mldsa65Verify"])
+	}
+	if settings["serverName"] != "www.cloudflare.com" {
+		t.Errorf("settings.serverName = %v, want first serverNames entry", settings["serverName"])
+	}
+	if _, ok := reality["publicKey"]; ok {
+		t.Errorf("publicKey should be nested under settings: %+v", reality)
+	}
+	if _, ok := reality["mldsa65Verify"]; ok {
+		t.Errorf("mldsa65Verify should be nested under settings: %+v", reality)
+	}
+}
+
 // TestInbound_IsWireguard guards against accidental case-changes
 // to the fork's protocol string.
 func TestInbound_IsWireguard(t *testing.T) {
@@ -501,5 +560,82 @@ func TestSanitizeStreamSettings_MalformedIsPassThrough(t *testing.T) {
 	in := `{not valid json`
 	if got := sanitizeStreamSettingsForRemote(in); got != in {
 		t.Errorf("malformed input was modified: got %q want %q", got, in)
+	}
+}
+
+func TestSanitizeStreamSettings_BackfillsRealityTarget(t *testing.T) {
+	cases := []struct {
+		name   string
+		stream string
+	}{
+		{
+			name:   "dest only",
+			stream: `{"network":"tcp","security":"reality","realitySettings":{"dest":"www.cloudflare.com:443"}}`,
+		},
+		{
+			name:   "target only",
+			stream: `{"network":"tcp","security":"reality","realitySettings":{"target":"www.cloudflare.com:443"}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := sanitizeStreamSettingsForRemote(tc.stream)
+
+			var parsed map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+				t.Fatalf("sanitized output is not JSON: %v", err)
+			}
+			var reality map[string]any
+			_ = json.Unmarshal(parsed["realitySettings"], &reality)
+			if reality["target"] != "www.cloudflare.com:443" {
+				t.Errorf("target = %v, want www.cloudflare.com:443", reality["target"])
+			}
+			if reality["dest"] != "www.cloudflare.com:443" {
+				t.Errorf("dest = %v, want www.cloudflare.com:443", reality["dest"])
+			}
+		})
+	}
+}
+
+func TestSanitizeStreamSettings_NormalizesRealityClientSettings(t *testing.T) {
+	stream := `{"network":"tcp","security":"reality","realitySettings":{"target":"www.cloudflare.com:443","serverNames":["www.cloudflare.com","example.com"],"publicKey":"PUB_KEY_HERE","privateKey":"PRIV_KEY_HERE","fingerprint":"chrome","spiderX":"/","mldsa65Seed":"SEED_HERE","mldsa65Verify":"VERIFY_HERE","maxTimeDiff":1200}}`
+
+	out := sanitizeStreamSettingsForRemote(stream)
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("sanitized output is not JSON: %v", err)
+	}
+	var reality map[string]any
+	_ = json.Unmarshal(parsed["realitySettings"], &reality)
+	if reality["privateKey"] != "PRIV_KEY_HERE" {
+		t.Errorf("privateKey = %v, want top-level server key", reality["privateKey"])
+	}
+	if reality["mldsa65Seed"] != "SEED_HERE" {
+		t.Errorf("mldsa65Seed = %v, want top-level server seed", reality["mldsa65Seed"])
+	}
+	if reality["maxTimediff"] != float64(1200) {
+		t.Errorf("maxTimediff = %v, want migrated maxTimeDiff", reality["maxTimediff"])
+	}
+	settings, _ := reality["settings"].(map[string]any)
+	if settings["publicKey"] != "PUB_KEY_HERE" {
+		t.Errorf("settings.publicKey = %v, want nested client public key", settings["publicKey"])
+	}
+	if settings["fingerprint"] != "chrome" {
+		t.Errorf("settings.fingerprint = %v, want nested fingerprint", settings["fingerprint"])
+	}
+	if settings["spiderX"] != "/" {
+		t.Errorf("settings.spiderX = %v, want nested spiderX", settings["spiderX"])
+	}
+	if settings["mldsa65Verify"] != "VERIFY_HERE" {
+		t.Errorf("settings.mldsa65Verify = %v, want nested verify", settings["mldsa65Verify"])
+	}
+	if settings["serverName"] != "www.cloudflare.com" {
+		t.Errorf("settings.serverName = %v, want first serverNames entry", settings["serverName"])
+	}
+	for _, key := range []string{"publicKey", "fingerprint", "spiderX", "mldsa65Verify", "maxTimeDiff"} {
+		if _, ok := reality[key]; ok {
+			t.Errorf("%s should not remain at realitySettings top level: %+v", key, reality)
+		}
 	}
 }

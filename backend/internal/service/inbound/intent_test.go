@@ -156,8 +156,12 @@ func TestResolveIntent_RealityKeypair(t *testing.T) {
 	var stream map[string]any
 	_ = json.Unmarshal([]byte(in.StreamSettings), &stream)
 	reality, _ := stream["realitySettings"].(map[string]any)
-	if reality["privateKey"] != "FAKE_PRIV_X25519" || reality["publicKey"] != "FAKE_PUB_X25519" {
+	settings, _ := reality["settings"].(map[string]any)
+	if reality["privateKey"] != "FAKE_PRIV_X25519" || settings["publicKey"] != "FAKE_PUB_X25519" {
 		t.Errorf("reality keypair not filled: %+v", reality)
+	}
+	if _, ok := reality["publicKey"]; ok {
+		t.Errorf("publicKey should be nested under realitySettings.settings: %+v", reality)
 	}
 	if m.callCount["/panel/api/server/getNewX25519Cert"] != 1 {
 		t.Errorf("getNewX25519Cert call count = %d, want 1", m.callCount["/panel/api/server/getNewX25519Cert"])
@@ -177,8 +181,12 @@ func TestResolveIntent_Mldsa65(t *testing.T) {
 	var stream map[string]any
 	_ = json.Unmarshal([]byte(in.StreamSettings), &stream)
 	reality, _ := stream["realitySettings"].(map[string]any)
-	if reality["mldsa65Seed"] != "FAKE_MLDSA65_SEED" || reality["mldsa65Verify"] != "FAKE_MLDSA65_VERIFY" {
+	settings, _ := reality["settings"].(map[string]any)
+	if reality["mldsa65Seed"] != "FAKE_MLDSA65_SEED" || settings["mldsa65Verify"] != "FAKE_MLDSA65_VERIFY" {
 		t.Errorf("mldsa65 not filled: %+v", reality)
+	}
+	if _, ok := reality["mldsa65Verify"]; ok {
+		t.Errorf("mldsa65Verify should be nested under realitySettings.settings: %+v", reality)
 	}
 }
 
@@ -208,6 +216,45 @@ func TestResolveIntent_ShortIdsRandom(t *testing.T) {
 	// Short IDs are generated locally — no panel round-trip.
 	if m.callCount["/panel/api/server/getNewX25519Cert"] != 0 {
 		t.Errorf("unexpected X25519 call when only short IDs requested")
+	}
+}
+
+func TestResolveIntent_RandomTargetSNI(t *testing.T) {
+	m := newMockPanelServer(t)
+	r := remoteFromMock(t, m)
+
+	in := &runtime.Inbound{
+		StreamSettings: `{"realitySettings":{"target":"old.example.com:443","dest":"old.example.com:443","serverNames":["old.example.com"]},"_intent":{"realityRandomTarget":true,"realityRandomSNI":true}}`,
+	}
+	if err := resolveIntent(context.Background(), r, in); err != nil {
+		t.Fatalf("resolveIntent: %v", err)
+	}
+	if strings.Contains(in.StreamSettings, "_intent") {
+		t.Errorf("streamSettings still contains _intent: %s", in.StreamSettings)
+	}
+	var stream map[string]any
+	_ = json.Unmarshal([]byte(in.StreamSettings), &stream)
+	reality, _ := stream["realitySettings"].(map[string]any)
+	target, _ := reality["target"].(string)
+	if target == "" || target == "old.example.com:443" {
+		t.Fatalf("target was not randomized: %+v", reality)
+	}
+	if reality["dest"] != target {
+		t.Fatalf("dest = %v, want target %q", reality["dest"], target)
+	}
+	names, _ := reality["serverNames"].([]any)
+	if len(names) != 1 {
+		t.Fatalf("serverNames = %+v, want one SNI", reality["serverNames"])
+	}
+	if got, _ := names[0].(string); got == "" || strings.Contains(got, ":") || got != strings.Split(target, ":")[0] {
+		t.Fatalf("serverNames[0] = %q, target = %q", got, target)
+	}
+	settings, _ := reality["settings"].(map[string]any)
+	if settings["serverName"] != names[0] {
+		t.Fatalf("settings.serverName = %v, want %v", settings["serverName"], names[0])
+	}
+	if total := totalCalls(m.callCount); total != 0 {
+		t.Errorf("random target/SNI generation should not hit panel, got %d calls", total)
 	}
 }
 

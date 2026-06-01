@@ -1,4 +1,5 @@
 import type { SettingItem } from '@/api/admin/settings'
+import { DASHBOARD_AUTO_REFRESH_INTERVAL_KEY } from '@/hooks/queries/admin/settings'
 import type { SettingsTab } from './types'
 
 export const SETTINGS_TABS: SettingsTab[] = [
@@ -95,12 +96,14 @@ export function groupTitleKey(group: string) {
 }
 
 export function inputMin(key: string) {
+  if (key === DASHBOARD_AUTO_REFRESH_INTERVAL_KEY) return 0
   if (key.endsWith('_interval_seconds')) return 5
   if (key.endsWith('_concurrency') || key.endsWith('_timeout_seconds')) return 1
   return 0
 }
 
 export function inputMax(key: string, drafts: Record<string, string>) {
+  if (key === DASHBOARD_AUTO_REFRESH_INTERVAL_KEY) return 3600
   if (key.endsWith('_concurrency')) return 64
   if (key.endsWith('_timeout_seconds')) return Math.min(300, Number(drafts[intervalKeyForTimeout(key)] || 300))
   if (key.endsWith('_retry_attempts')) return 5

@@ -33,6 +33,18 @@ func TestValidateRegistrationSettings(t *testing.T) {
 }
 
 func TestValidateOpsCollectionSettings(t *testing.T) {
+	if err := validate(model.SettingDashboardAutoRefreshSecs, "0"); err != nil {
+		t.Fatalf("disabled dashboard auto refresh rejected: %v", err)
+	}
+	if err := validate(model.SettingDashboardAutoRefreshSecs, "5"); err != nil {
+		t.Fatalf("minimum dashboard auto refresh rejected: %v", err)
+	}
+	if err := validate(model.SettingDashboardAutoRefreshSecs, "4"); err == nil {
+		t.Fatal("dashboard auto refresh below 5 seconds should be rejected")
+	}
+	if err := validate(model.SettingDashboardAutoRefreshSecs, "3601"); err == nil {
+		t.Fatal("dashboard auto refresh above 3600 seconds should be rejected")
+	}
 	if err := validate(model.SettingOpsCollectEnabled, "true"); err != nil {
 		t.Fatalf("ops collection bool rejected: %v", err)
 	}

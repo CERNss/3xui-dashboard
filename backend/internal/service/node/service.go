@@ -359,6 +359,32 @@ func (s *Service) ListEnabled(ctx context.Context) ([]model.Node, error) {
 	return nodes, nil
 }
 
+// GenerateX25519Cert asks the target node's 3x-ui panel for a fresh
+// Reality keypair.
+func (s *Service) GenerateX25519Cert(ctx context.Context, id int64) (*runtime.X25519Cert, error) {
+	r, err := s.rt.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, runtime.ErrNodeNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return r.GetNewX25519Cert(ctx)
+}
+
+// GenerateMldsa65 asks the target node's 3x-ui panel for a fresh
+// Reality ML-DSA-65 seed/verify pair.
+func (s *Service) GenerateMldsa65(ctx context.Context, id int64) (*runtime.Mldsa65Cert, error) {
+	r, err := s.rt.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, runtime.ErrNodeNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return r.GetNewMldsa65(ctx)
+}
+
 // ---- Probe -----------------------------------------------------------------
 
 // ProbeResult captures the outcome of a single Probe call so callers

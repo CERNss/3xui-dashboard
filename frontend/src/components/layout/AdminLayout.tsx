@@ -6,6 +6,7 @@ import { PageHeaderChromeProvider } from '@/components/common'
 import { useMinWidth } from '@/hooks/useBreakpoint'
 import { adminAuthApi } from '@/api/admin/auth'
 import { useBranding } from '@/hooks/queries/branding'
+import { useDashboardAutoRefresh } from '@/hooks/queries/admin/settings'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { useThemeStore } from '@/stores/theme'
 import { MD_BREAKPOINT } from '@/theme'
@@ -27,6 +28,7 @@ export function AdminLayout() {
   const themeMode = useThemeStore((state) => state.resolvedTheme)
   const toggleTheme = useThemeStore((state) => state.toggle)
   const { data: branding } = useBranding()
+  useDashboardAutoRefresh()
   const { token } = theme.useToken()
   const sections = useMemo(() => adminSections(t), [t])
   const links = useMemo(() => flattenSections(sections), [sections])
@@ -112,4 +114,3 @@ export function AdminLayout() {
     </Layout>
   )
 }
-

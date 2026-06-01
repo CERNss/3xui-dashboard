@@ -142,13 +142,11 @@ export default function Nodes() {
 
   const openCreate = () => {
     setEditing(null)
-    form.setFieldsValue(blankNodeForm())
     setDrawerOpen(true)
   }
 
   const openEdit = (node: Node) => {
     setEditing(node)
-    form.setFieldsValue(nodeToForm(node))
     setDrawerOpen(true)
   }
 
@@ -205,6 +203,12 @@ export default function Nodes() {
       },
     })
   }
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    form.resetFields()
+    form.setFieldsValue(editing ? nodeToForm(editing) : blankNodeForm())
+  }, [drawerOpen, editing, form])
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify({ nodes: nodeExportRows(nodes) }, null, 2)], {

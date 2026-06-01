@@ -3,15 +3,22 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
-// sanitizeStreamSettingsForRemote scrubs filesystem cert paths from a
-// stringified streamSettings JSON when inline cert content is also
+// sanitizeStreamSettingsForRemote normalizes streamSettings before it
+// is submitted to a node panel.
+//
+// It scrubs filesystem cert paths when inline cert content is also
 // present. 3x-ui happily echoes back local file paths from the node
 // side; if we pass them on to a different node those paths point at
 // nothing and break TLS. Inline cert content (`certificate`/`key`
 // arrays) is the portable form — strip the path fields when it's
 // there.
+//
+// It also bridges Reality's target field name across panel versions:
+// older saved dashboard payloads may carry `dest`, while current 3x-ui
+// panels render the field as `target`.
 //
 // Returns the (possibly rewritten) string. On parse error the input
 // is returned unchanged so a malformed payload does not block the
@@ -36,12 +43,107 @@ func sanitizeStreamSettingsForRemote(stream string) string {
 			top[key] = rewritten
 		}
 	}
+	if raw, ok := top["realitySettings"]; ok && len(raw) > 0 {
+		rewritten, changed := normalizeRealitySettings(raw)
+		if changed {
+			top["realitySettings"] = rewritten
+		}
+	}
 
 	out, err := json.Marshal(top)
 	if err != nil {
 		return stream
 	}
 	return string(out)
+}
+
+func normalizeRealitySettings(raw json.RawMessage) (json.RawMessage, bool) {
+	var settings map[string]any
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return raw, false
+	}
+	changed := false
+
+	target, _ := settings["target"].(string)
+	dest, _ := settings["dest"].(string)
+	target = strings.TrimSpace(target)
+	dest = strings.TrimSpace(dest)
+
+	if target == "" && dest != "" {
+		settings["target"] = dest
+		changed = true
+	}
+	if dest == "" && target != "" {
+		settings["dest"] = target
+		changed = true
+	}
+
+	if value, ok := settings["maxTimeDiff"]; ok {
+		if _, exists := settings["maxTimediff"]; !exists {
+			settings["maxTimediff"] = value
+		}
+		delete(settings, "maxTimeDiff")
+		changed = true
+	}
+
+	client := ensureNestedMap(settings, "settings")
+	for _, key := range []string{"publicKey", "fingerprint", "spiderX", "mldsa65Verify"} {
+		if value, ok := settings[key]; ok {
+			if _, exists := client[key]; !exists {
+				client[key] = value
+			}
+			delete(settings, key)
+			changed = true
+		}
+	}
+	if _, ok := client["serverName"]; !ok {
+		if serverName := firstString(settings["serverNames"]); serverName != "" {
+			client["serverName"] = serverName
+			changed = true
+		}
+	}
+	if len(client) == 0 {
+		delete(settings, "settings")
+	}
+
+	if !changed {
+		return raw, false
+	}
+	out, err := marshal(settings)
+	if err != nil {
+		return raw, false
+	}
+	return out, true
+}
+
+func ensureNestedMap(parent map[string]any, key string) map[string]any {
+	existing, _ := parent[key].(map[string]any)
+	if existing != nil {
+		return existing
+	}
+	next := make(map[string]any)
+	parent[key] = next
+	return next
+}
+
+func firstString(value any) string {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+	case []string:
+		for _, item := range v {
+			if strings.TrimSpace(item) != "" {
+				return strings.TrimSpace(item)
+			}
+		}
+	case string:
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 // stripCertPaths walks a TLS-settings sub-object and removes file-path

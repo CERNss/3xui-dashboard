@@ -9,6 +9,7 @@ import type {
   ProvisioningPoolTarget,
   ProvisioningPoolTargetInput,
 } from '@/api/admin/provisioningPools'
+import type { FleetInbound } from '@/api/admin/inbounds'
 import { ConfigListPage, EmptyState, RefreshButton, ResponsiveListTable } from '@/components/common'
 import { useInboundsFleet } from '@/hooks/queries/admin/inbounds'
 import { useNodesList } from '@/hooks/queries/admin/nodes'
@@ -89,6 +90,26 @@ function protocolsText(pool: ProvisioningPool, unlimited: string) {
   return pool.allowed_protocols?.length ? pool.allowed_protocols.join(', ') : unlimited
 }
 
+function nodeLabel(name: string | undefined, id: number) {
+  const trimmed = name?.trim()
+  return trimmed || `#${id}`
+}
+
+function inboundName(remark: string | undefined, tag: string) {
+  const trimmed = remark?.trim()
+  return trimmed || tag
+}
+
+function targetTitle(target: ProvisioningPoolTarget, fleetRow?: FleetInbound) {
+  return `${inboundName(fleetRow?.inbound.remark, target.inbound_tag)} · ${nodeLabel(fleetRow?.node_name ?? target.node_name, target.node_id)}`
+}
+
+function targetDetail(target: ProvisioningPoolTarget, fleetRow?: FleetInbound) {
+  const protocol = fleetRow?.inbound.protocol || target.protocol || '-'
+  const port = fleetRow?.inbound.port
+  return port ? `${target.inbound_tag} · ${protocol}:${port}` : `${target.inbound_tag} · ${protocol}`
+}
+
 export default function ProvisioningPools() {
   const { t } = useTranslation()
   const [poolForm] = Form.useForm<PoolFormValues>()
@@ -109,7 +130,7 @@ export default function ProvisioningPools() {
   const removeTarget = useRemoveProvisioningPoolTarget()
 
   const pools = poolsQuery.data ?? []
-  const loading = poolsQuery.isLoading || nodesQuery.isLoading
+  const loading = poolsQuery.isLoading || nodesQuery.isLoading || fleetQuery.isLoading
   const saving = createPool.isPending || updatePool.isPending
   const error =
     poolsQuery.error ??
@@ -125,6 +146,13 @@ export default function ProvisioningPools() {
   // fleet, deduped by (node, tag). The allowed_protocols filter on the
   // pool, if set, gates the dropdown to matching protocols.
   const fleetInbounds = useMemo(() => fleetQuery.data?.inbounds ?? [], [fleetQuery.data])
+  const fleetInboundByTarget = useMemo(() => {
+    const rows = new Map<string, FleetInbound>()
+    for (const row of fleetInbounds) {
+      rows.set(`${row.node_id}|${row.inbound.tag}`, row)
+    }
+    return rows
+  }, [fleetInbounds])
   const allowedSet = useMemo(
     () => new Set(targetPool?.allowed_protocols ?? []),
     [targetPool],
@@ -143,8 +171,15 @@ export default function ProvisioningPools() {
         .map((row) => {
           const k = `${row.node_id}|${row.inbound.tag}`
           const isBound = targetAlreadyBound.has(k)
+          const label = `${inboundName(row.inbound.remark, row.inbound.tag)} · ${nodeLabel(row.node_name, row.node_id)}`
           return {
-            label: `${row.node_name} · ${row.inbound.tag} (${row.inbound.protocol}:${row.inbound.port})${isBound ? ` · ${t('admin.provisioningPools.alreadyBound')}` : ''}`,
+            label: `${label}${isBound ? ` · ${t('admin.provisioningPools.alreadyBound')}` : ''}`,
+            searchText: [
+              label,
+              row.inbound.tag,
+              row.inbound.protocol,
+              row.inbound.port,
+            ].join(' '),
             value: `${k}|${row.inbound.protocol}`,
             disabled: isBound,
           }
@@ -155,6 +190,7 @@ export default function ProvisioningPools() {
   const refresh = () => {
     poolsQuery.refetch()
     nodesQuery.refetch()
+    fleetQuery.refetch()
   }
 
   const poolInitialValues = editingPool ? poolToForm(editingPool) : blankPool()
@@ -255,14 +291,15 @@ export default function ProvisioningPools() {
     {
       title: t('admin.provisioningPools.column.target'),
       dataIndex: 'node_name',
-      render: (_value, target) => (
-        <Space direction="vertical" size={2}>
-          <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
-          <Typography.Text type="secondary">
-            {target.inbound_tag} · {target.protocol || '-'}
-          </Typography.Text>
-        </Space>
-      ),
+      render: (_value, target) => {
+        const fleetRow = fleetInboundByTarget.get(`${target.node_id}|${target.inbound_tag}`)
+        return (
+          <Space direction="vertical" size={2}>
+            <Typography.Text strong>{targetTitle(target, fleetRow)}</Typography.Text>
+            <Typography.Text type="secondary">{targetDetail(target, fleetRow)}</Typography.Text>
+          </Space>
+        )
+      },
     },
     {
       title: t('admin.provisioningPools.column.capacity'),
@@ -323,7 +360,7 @@ export default function ProvisioningPools() {
             <Button type="primary" aria-label={t('admin.provisioningPools.add')} icon={<PlusOutlined />} onClick={openCreatePool}>
               {t('admin.provisioningPools.add')}
             </Button>
-            <RefreshButton loading={poolsQuery.isFetching || nodesQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
+            <RefreshButton loading={poolsQuery.isFetching || nodesQuery.isFetching || fleetQuery.isFetching} onClick={refresh} label={t('admin.nodes.reload')} />
           </>
         }
         alerts={error ? <Alert type="error" showIcon message={t('admin.provisioningPools.saveFailed')} /> : null}
@@ -414,10 +451,8 @@ export default function ProvisioningPools() {
                                 mobileCard={(target) => (
                                   <Card size="small" style={{ width: '100%' }}>
                                     <Space direction="vertical" size={6}>
-                                      <Typography.Text strong>{target.node_name || `#${target.node_id}`}</Typography.Text>
-                                      <Typography.Text type="secondary">
-                                        {target.inbound_tag} · {target.protocol || '-'}
-                                      </Typography.Text>
+                                      <Typography.Text strong>{targetTitle(target, fleetInboundByTarget.get(`${target.node_id}|${target.inbound_tag}`))}</Typography.Text>
+                                      <Typography.Text type="secondary">{targetDetail(target, fleetInboundByTarget.get(`${target.node_id}|${target.inbound_tag}`))}</Typography.Text>
                                       <Typography.Text>{t('admin.provisioningPools.capacity')}: {capacityText(target, t('admin.provisioningPools.unlimited'))}</Typography.Text>
                                       <Typography.Text>{t('admin.provisioningPools.priority')}: {target.priority}</Typography.Text>
                                       <Space>
@@ -515,7 +550,9 @@ export default function ProvisioningPools() {
           >
             <Select
               showSearch
-              optionFilterProp="label"
+              filterOption={(input, option) =>
+                String(option?.searchText ?? option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
               placeholder={t('admin.provisioningPools.field.inboundPlaceholder')}
               options={inboundOptions}
               notFoundContent={
