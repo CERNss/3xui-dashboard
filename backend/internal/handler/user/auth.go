@@ -14,20 +14,28 @@ import (
 	"github.com/cern/3xui-dashboard/internal/session"
 )
 
+// mailStatus reports whether SMTP delivery is currently available.
+// Satisfied by *mailer.Mailer; kept as an interface so the handler
+// doesn't depend on the mailer package and tests can inject a stub.
+type mailStatus interface {
+	Enabled() bool
+}
+
 // AuthHandler serves /api/user/auth/*.
 type AuthHandler struct {
 	users  *usersvc.Service
 	auth   *auth.Service
 	verify *verification.Service
 	sess   *session.Manager
-	smtpOn bool // true when verification mail can actually be sent
+	mailer mailStatus // whether verification mail can actually be sent
 }
 
-// NewAuthHandler wires the handler. `smtpOn` controls whether the
-// register endpoint enforces a verification code: in dev (SMTP off)
-// the code field is optional so testing doesn't require a mail server.
-func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, smtpOn bool, sess *session.Manager) *AuthHandler {
-	return &AuthHandler{users: users, auth: a, verify: v, sess: sess, smtpOn: smtpOn}
+// NewAuthHandler wires the handler. `mailer` decides whether the register
+// endpoint enforces a verification code: when SMTP is off (dev) the code
+// field is optional so testing doesn't require a mail server. Read live,
+// so toggling SMTP in the panel takes effect without a restart.
+func NewAuthHandler(users *usersvc.Service, a *auth.Service, v *verification.Service, mailer mailStatus, sess *session.Manager) *AuthHandler {
+	return &AuthHandler{users: users, auth: a, verify: v, sess: sess, mailer: mailer}
 }
 
 // startSession sets the httpOnly user session cookie + the readable
@@ -181,7 +189,7 @@ type emailVerificationConfirmRequest struct {
 // login page can hide the verification-code UI when the operator has
 // disabled that requirement.
 func (h *AuthHandler) RegistrationPolicy(c *gin.Context) {
-	required, err := h.users.EmailVerificationRequired(c.Request.Context(), h.smtpOn)
+	required, err := h.users.EmailVerificationRequired(c.Request.Context(), h.mailer.Enabled())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -250,7 +258,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	emailVerificationRequired, err := h.users.EmailVerificationRequired(c.Request.Context(), h.smtpOn)
+	emailVerificationRequired, err := h.users.EmailVerificationRequired(c.Request.Context(), h.mailer.Enabled())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -766,12 +766,16 @@ export const zh = {
     settings: {
       generalTab: '通用',
       subscriptionTab: '订阅配置',
+      paymentTab: '支付',
       alertsTab: '告警配置',
       dataCollectionTab: '数据收集',
       securityAuthTab: '安全与认证',
       userDefaultsTab: '用户默认值',
       groupOther: '其他',
+      groupNotify: '通知渠道',
+      groupPayment: '支付网关',
       groupRegistration: '注册',
+      groupSmtp: 'SMTP 邮件发送',
       groupSubscription: '订阅',
       groupTraffic: '流量阈值',
       groupDataCollection: '节点数据收集',
@@ -816,6 +820,7 @@ export const zh = {
       fallback: '回退值：{value}',
       loadFailed: '加载设置失败',
       operationFailed: '操作失败',
+      secretsUnavailable: '在服务器环境中配置 SECRET_ENCRYPTION_KEY 之前，无法保存密钥类设置（SMTP 密码、OIDC Client Secret、支付密钥、通知 Token）。',
       messagesTab: '消息',
       oidc: {
         advancedTitle: '高级端点',
@@ -891,8 +896,9 @@ export const zh = {
         verifyTitle: '邮箱验证',
       },
       notifications: {
-        desc: '把订单、节点和客户端事件推送到外部系统。',
+        desc: '把运维事件（节点、订单）分发到聊天渠道，并通过 Webhook 转发到外部系统。',
         title: '运营通知',
+        webhooksTitle: 'Webhook',
       },
       notificationsTab: '通知',
       refresh: '刷新',
@@ -924,6 +930,10 @@ export const zh = {
       messages: {
         desc: '注册验证码、密码重置、余额提醒等用户向邮件。',
         title: '用户消息',
+      },
+      payment: {
+        desc: '支付宝与 Stripe 凭证。密钥加密存储；提交空密钥表示不修改。',
+        title: '支付网关',
       },
       generalDesc: '调整用户端展示和运营提醒阈值。',
       settingHelp: {

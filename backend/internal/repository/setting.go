@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -13,18 +14,40 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 )
 
+// Cipher seals/opens secret setting values at rest. Satisfied by
+// wgcrypto.Cipher; injected via SetCipher so the repository layer
+// doesn't depend on a service package. Nil = encryption unavailable.
+type Cipher interface {
+	Seal(plaintext []byte) ([]byte, error)
+	Open(sealed []byte) ([]byte, error)
+}
+
+// secretPrefix marks a stored value as encrypted so GetSecret knows to
+// decrypt it (and a plaintext value is never mistaken for ciphertext).
+const secretPrefix = "enc:v1:"
+
 // SettingRepo persists admin-controlled runtime toggles in the
 // `settings` key/value table. Reads are point lookups by key; writes
 // are upserts on the primary key. All values are stored as TEXT —
 // typed coercion happens via the helper methods below.
 type SettingRepo struct {
-	db *gorm.DB
+	db     *gorm.DB
+	cipher Cipher // optional; set via SetCipher to enable GetSecret/SetSecret
 }
 
 // NewSettingRepo returns a repository bound to db.
 func NewSettingRepo(db *gorm.DB) *SettingRepo {
 	return &SettingRepo{db: db}
 }
+
+// SetCipher wires the at-rest cipher used by GetSecret/SetSecret. When
+// unset, SetSecret errors and GetSecret can only return plaintext rows.
+func (r *SettingRepo) SetCipher(c Cipher) { r.cipher = c }
+
+// HasCipher reports whether an at-rest cipher is configured — i.e.
+// whether secret settings can be stored. The admin UI uses this to warn
+// when SECRET_ENCRYPTION_KEY is unset before a save fails.
+func (r *SettingRepo) HasCipher() bool { return r.cipher != nil }
 
 // Get returns the value for key. Returns ("", false, nil) if the key
 // is not present. A storage error is returned as a non-nil error.
@@ -51,6 +74,71 @@ func (r *SettingRepo) Set(ctx context.Context, key, value string) error {
 		return fmt.Errorf("setting.Set %q: %w", key, res.Error)
 	}
 	return nil
+}
+
+// SetSecret encrypts plaintext with the configured cipher and upserts it.
+// Errors if no cipher is configured (set SECRET_ENCRYPTION_KEY).
+func (r *SettingRepo) SetSecret(ctx context.Context, key, plaintext string) error {
+	if r.cipher == nil {
+		return errors.New("setting.SetSecret: no cipher configured (set SECRET_ENCRYPTION_KEY)")
+	}
+	stored, err := sealSecret(r.cipher, plaintext)
+	if err != nil {
+		return fmt.Errorf("setting.SetSecret %q: %w", key, err)
+	}
+	return r.Set(ctx, key, stored)
+}
+
+// GetSecret reads + decrypts a secret value, returning fallback when the
+// key is absent. A value stored without the encrypted prefix (e.g. set
+// via plain Set) is returned as-is. Returns an error if an encrypted
+// value is found but no cipher is configured.
+func (r *SettingRepo) GetSecret(ctx context.Context, key, fallback string) (string, error) {
+	stored, ok, err := r.Get(ctx, key)
+	if err != nil {
+		return fallback, err
+	}
+	if !ok || stored == "" {
+		return fallback, nil
+	}
+	if !strings.HasPrefix(stored, secretPrefix) {
+		return stored, nil // plaintext row
+	}
+	if r.cipher == nil {
+		return fallback, errors.New("setting.GetSecret: encrypted value but no cipher configured")
+	}
+	pt, err := openSecret(r.cipher, stored)
+	if err != nil {
+		return fallback, fmt.Errorf("setting.GetSecret %q: %w", key, err)
+	}
+	return pt, nil
+}
+
+// sealSecret encrypts plaintext and returns the prefixed, base64-encoded
+// storage form.
+func sealSecret(c Cipher, plaintext string) (string, error) {
+	sealed, err := c.Seal([]byte(plaintext))
+	if err != nil {
+		return "", err
+	}
+	return secretPrefix + base64.StdEncoding.EncodeToString(sealed), nil
+}
+
+// openSecret reverses sealSecret. A value without secretPrefix is
+// returned unchanged (treated as plaintext).
+func openSecret(c Cipher, stored string) (string, error) {
+	if !strings.HasPrefix(stored, secretPrefix) {
+		return stored, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, secretPrefix))
+	if err != nil {
+		return "", fmt.Errorf("decode secret: %w", err)
+	}
+	pt, err := c.Open(raw)
+	if err != nil {
+		return "", fmt.Errorf("open secret: %w", err)
+	}
+	return string(pt), nil
 }
 
 // Delete removes a row. Missing keys are not an error.

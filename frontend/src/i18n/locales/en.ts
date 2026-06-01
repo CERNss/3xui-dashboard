@@ -766,12 +766,16 @@ export const en = {
     settings: {
       generalTab: 'General',
       subscriptionTab: 'Subscription',
+      paymentTab: 'Payment',
       alertsTab: 'Alerts',
       dataCollectionTab: 'Data collection',
       securityAuthTab: 'Security & auth',
       userDefaultsTab: 'User defaults',
       groupOther: 'Other',
+      groupNotify: 'Notify channels',
+      groupPayment: 'Payment gateways',
       groupRegistration: 'Registration',
+      groupSmtp: 'SMTP delivery',
       groupSubscription: 'Subscription',
       groupTraffic: 'Traffic thresholds',
       groupDataCollection: 'Node data collection',
@@ -816,6 +820,7 @@ export const en = {
       fallback: 'Fallback: {value}',
       loadFailed: 'Failed to load settings',
       operationFailed: 'Operation failed',
+      secretsUnavailable: 'Secret settings (SMTP password, OIDC client secret, payment keys, notify tokens) cannot be saved until SECRET_ENCRYPTION_KEY is configured in the server environment.',
       messagesTab: 'Messages',
       oidc: {
         advancedTitle: 'Advanced endpoints',
@@ -891,8 +896,9 @@ export const en = {
         verifyTitle: 'Email verification',
       },
       notifications: {
-        desc: 'Send order, node, and client events to external systems.',
+        desc: 'Fan out ops events (node, order) to chat channels, and forward events to external systems via webhooks.',
         title: 'Ops notifications',
+        webhooksTitle: 'Webhooks',
       },
       notificationsTab: 'Notifications',
       refresh: 'Refresh',
@@ -924,6 +930,10 @@ export const en = {
       messages: {
         desc: 'User-facing email such as registration codes, password resets, and balance reminders.',
         title: 'User messages',
+      },
+      payment: {
+        desc: 'Alipay and Stripe credentials. Secrets are encrypted at rest; submitting a blank secret leaves it unchanged.',
+        title: 'Payment gateways',
       },
       generalDesc: 'Adjust portal presentation and operational reminder thresholds.',
       settingHelp: {

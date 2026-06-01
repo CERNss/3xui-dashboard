@@ -32,7 +32,7 @@ dev-frontend:
 
 dev-backend:
 	@echo "==> Starting backend (http://localhost:8080)..."
-	cd $(BACKEND) && go run ./cmd/dashboard -env $(ROOT)/deploy/.env
+	cd $(BACKEND) && go run ./cmd/dashboard -env $(ROOT)/deploy/.env -config $(ROOT)/deploy/config.yaml
 
 # Run both concurrently (requires make -j2).
 dev:
@@ -87,7 +87,7 @@ lint-frontend:
 # pipelines that want migrations applied as a separate step.
 migrate:
 	@echo "==> Running migrations (binary boot path, will exit after migrate)..."
-	cd $(BACKEND) && DB_MIGRATE_ON_BOOT=true go run ./cmd/dashboard -env $(ROOT)/deploy/.env || true
+	cd $(BACKEND) && DB_MIGRATE_ON_BOOT=true go run ./cmd/dashboard -env $(ROOT)/deploy/.env -config $(ROOT)/deploy/config.yaml || true
 
 # ============================================================================
 # Docker

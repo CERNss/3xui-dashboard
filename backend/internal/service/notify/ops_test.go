@@ -108,7 +108,7 @@ func newOpsService(channels []Channel, routerRaw string) (*Service, *stubLogStor
 	bus := event.New()
 	router, _ := ParseRoutes(routerRaw)
 	logs := newStubLogStore()
-	svc := New(bus, router, channels, logs, logger)
+	svc := New(bus, NewStaticProvider(router, channels), logs, logger)
 	svc.Start()
 	return svc, logs
 }

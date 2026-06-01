@@ -22,6 +22,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/mailer"
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
+	"github.com/cern/3xui-dashboard/internal/service/notify"
 )
 
 // SettingHandler serves /api/admin/settings/*.
@@ -152,7 +153,7 @@ func (h *SettingHandler) SMTPTest(c *gin.Context) {
 	}
 	subject := "3xui-dashboard SMTP test"
 	body := "If you received this, the dashboard's SMTP config is working.\n\nSent at " + time.Now().UTC().Format(time.RFC3339)
-	if err := h.mailer.Send(req.To, subject, body); err != nil {
+	if err := h.mailer.Send(c.Request.Context(), req.To, subject, body); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -276,6 +277,7 @@ type settingDescriptor struct {
 	Default       string `json:"default"`
 	Description   string `json:"description"`
 	DescriptionZh string `json:"description_zh,omitempty"`
+	Secret        bool   `json:"secret,omitempty"` // sensitive: masked in List, encrypted on Put
 }
 
 var knownSettings = []settingDescriptor{
@@ -360,6 +362,7 @@ var knownSettings = []settingDescriptor{
 		LabelZh:       "OIDC Client Secret",
 		Type:          "string",
 		Group:         "other",
+		Secret:        true,
 		Description:   "OIDC OAuth client secret. Empty falls back to OIDC_CLIENT_SECRET.",
 		DescriptionZh: "OIDC OAuth Client Secret。留空回退 OIDC_CLIENT_SECRET。",
 	},
@@ -445,6 +448,223 @@ var knownSettings = []settingDescriptor{
 		Default:       "0",
 		Description:   "Seconds between automatic refreshes for active admin dashboard pages. Set 0 to disable.",
 		DescriptionZh: "后台管理页面活跃数据的自动刷新间隔，单位秒；设为 0 则关闭。",
+	},
+	{
+		Key:           model.SettingSMTPHost,
+		Label:         "SMTP host",
+		LabelZh:       "SMTP 主机",
+		Type:          "string",
+		Group:         "smtp",
+		Description:   "SMTP server hostname. With host + from set, email delivery (verification codes, ops alerts) turns on. Empty falls back to SMTP_HOST.",
+		DescriptionZh: "SMTP 服务器主机名。配置主机 + 发件人后即开启邮件发送（验证码、运维告警）。留空回退 SMTP_HOST。",
+	},
+	{
+		Key:           model.SettingSMTPPort,
+		Label:         "SMTP port",
+		LabelZh:       "SMTP 端口",
+		Type:          "int",
+		Group:         "smtp",
+		Default:       "587",
+		Description:   "SMTP port. 465 uses implicit TLS; anything else uses STARTTLS. Empty falls back to SMTP_PORT.",
+		DescriptionZh: "SMTP 端口。465 使用隐式 TLS，其余使用 STARTTLS。留空回退 SMTP_PORT。",
+	},
+	{
+		Key:           model.SettingSMTPFrom,
+		Label:         "SMTP from address",
+		LabelZh:       "发件人地址",
+		Type:          "string",
+		Group:         "smtp",
+		Description:   "Envelope + header From address. Empty falls back to SMTP_FROM.",
+		DescriptionZh: "信封与邮件头的发件人地址。留空回退 SMTP_FROM。",
+	},
+	{
+		Key:           model.SettingSMTPUsername,
+		Label:         "SMTP username",
+		LabelZh:       "SMTP 用户名",
+		Type:          "string",
+		Group:         "smtp",
+		Description:   "SMTP auth username. Empty = unauthenticated, or falls back to SMTP_USERNAME.",
+		DescriptionZh: "SMTP 认证用户名。留空 = 不认证，或回退 SMTP_USERNAME。",
+	},
+	{
+		Key:           model.SettingSMTPPassword,
+		Label:         "SMTP password",
+		LabelZh:       "SMTP 密码",
+		Type:          "string",
+		Group:         "smtp",
+		Secret:        true,
+		Description:   "SMTP auth password, stored encrypted. Submitting blank leaves the stored value unchanged; delete the setting to clear it (then falls back to SMTP_PASSWORD).",
+		DescriptionZh: "SMTP 认证密码，加密存储。提交空值不会修改已存密码；删除该项即可清除（之后回退 SMTP_PASSWORD）。",
+	},
+	{
+		Key:           model.SettingNotifyRoutes,
+		Label:         "Notify routes",
+		LabelZh:       "通知路由",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Ops event fan-out rules: `event_type:channel1,channel2;event2:channel3`. Channels: email, telegram, discord, feishu. Empty = no ops fan-out. Overrides NOTIFY_ROUTES.",
+		DescriptionZh: "运维事件分发规则：`事件类型:渠道1,渠道2;事件类型2:渠道3`。渠道可选 email、telegram、discord、feishu。留空 = 不分发。覆盖 NOTIFY_ROUTES。",
+	},
+	{
+		Key:           model.SettingNotifyOpsRecipient,
+		Label:         "Ops email recipient",
+		LabelZh:       "运维邮件收件人",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Destination address for ops alerts routed to the email channel. Empty falls back to NOTIFY_OPS_RECIPIENT.",
+		DescriptionZh: "运维告警走 email 渠道时的收件地址。留空回退 NOTIFY_OPS_RECIPIENT。",
+	},
+	{
+		Key:           model.SettingNotifyTelegramBotToken,
+		Label:         "Telegram bot token",
+		LabelZh:       "Telegram Bot Token",
+		Type:          "string",
+		Group:         "notify",
+		Secret:        true,
+		Description:   "Telegram Bot API token, stored encrypted. Needs a chat ID too. Empty falls back to TELEGRAM_BOT_TOKEN.",
+		DescriptionZh: "Telegram Bot API Token，加密存储。还需配置 Chat ID。留空回退 TELEGRAM_BOT_TOKEN。",
+	},
+	{
+		Key:           model.SettingNotifyTelegramChatID,
+		Label:         "Telegram chat ID",
+		LabelZh:       "Telegram Chat ID",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Target chat ID for the Telegram channel. Empty falls back to TELEGRAM_CHAT_ID.",
+		DescriptionZh: "Telegram 渠道的目标 Chat ID。留空回退 TELEGRAM_CHAT_ID。",
+	},
+	{
+		Key:           model.SettingNotifyDiscordWebhookURL,
+		Label:         "Discord webhook URL",
+		LabelZh:       "Discord Webhook URL",
+		Type:          "string",
+		Group:         "notify",
+		Secret:        true,
+		Description:   "Discord channel webhook URL (the URL alone is the credential), stored encrypted. Empty falls back to DISCORD_WEBHOOK_URL.",
+		DescriptionZh: "Discord 频道 Webhook URL（该 URL 本身即凭证），加密存储。留空回退 DISCORD_WEBHOOK_URL。",
+	},
+	{
+		Key:           model.SettingNotifyFeishuWebhookURL,
+		Label:         "Feishu webhook URL",
+		LabelZh:       "飞书 Webhook URL",
+		Type:          "string",
+		Group:         "notify",
+		Secret:        true,
+		Description:   "Feishu (Lark) custom-bot webhook URL, stored encrypted. Empty falls back to FEISHU_WEBHOOK_URL.",
+		DescriptionZh: "飞书自定义机器人 Webhook URL，加密存储。留空回退 FEISHU_WEBHOOK_URL。",
+	},
+	{
+		Key:           model.SettingNotifyFeishuCardTemplate,
+		Label:         "Feishu card template",
+		LabelZh:       "飞书卡片模板",
+		Type:          "string",
+		Group:         "notify",
+		Description:   "Optional Go text/template producing the full Feishu webhook JSON payload. Empty uses the default rich card. Overrides FEISHU_CARD_TEMPLATE.",
+		DescriptionZh: "可选的 Go text/template，生成完整的飞书 Webhook JSON 负载。留空使用默认富文本卡片。覆盖 FEISHU_CARD_TEMPLATE。",
+	},
+	{
+		Key:           model.SettingAlipayAppID,
+		Label:         "Alipay app ID",
+		LabelZh:       "支付宝 App ID",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Alipay open-platform application ID. Needs the private key + Alipay public key to enable the gateway. Empty falls back to ALIPAY_APP_ID.",
+		DescriptionZh: "支付宝开放平台应用 ID。还需配置应用私钥 + 支付宝公钥才能启用网关。留空回退 ALIPAY_APP_ID。",
+	},
+	{
+		Key:           model.SettingAlipayPrivateKey,
+		Label:         "Alipay private key",
+		LabelZh:       "支付宝应用私钥",
+		Type:          "string",
+		Group:         "payment",
+		Secret:        true,
+		Description:   "Our RSA2 application private key (PEM), stored encrypted. Submitting blank leaves it unchanged; delete to clear. Empty falls back to ALIPAY_PRIVATE_KEY.",
+		DescriptionZh: "应用 RSA2 私钥（PEM），加密存储。提交空值不修改；删除即清除。留空回退 ALIPAY_PRIVATE_KEY。",
+	},
+	{
+		Key:           model.SettingAlipayPublicKey,
+		Label:         "Alipay public key",
+		LabelZh:       "支付宝公钥",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Alipay's platform RSA2 public key (PEM), used to verify their signatures. Not secret. Empty falls back to ALIPAY_PUBLIC_KEY.",
+		DescriptionZh: "支付宝平台 RSA2 公钥（PEM），用于验签。非机密。留空回退 ALIPAY_PUBLIC_KEY。",
+	},
+	{
+		Key:           model.SettingAlipayGateway,
+		Label:         "Alipay gateway URL",
+		LabelZh:       "支付宝网关地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Alipay OpenAPI gateway URL. Empty defaults to https://openapi.alipay.com/gateway.do (or ALIPAY_GATEWAY).",
+		DescriptionZh: "支付宝 OpenAPI 网关地址。留空默认 https://openapi.alipay.com/gateway.do（或 ALIPAY_GATEWAY）。",
+	},
+	{
+		Key:           model.SettingAlipayNotifyURL,
+		Label:         "Alipay notify URL",
+		LabelZh:       "支付宝异步通知地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Public URL Alipay POSTs payment results to, e.g. https://panel.example.com/api/public/payment/alipay/notify. Empty falls back to ALIPAY_NOTIFY_URL.",
+		DescriptionZh: "支付宝异步通知回调的公网地址，如 https://panel.example.com/api/public/payment/alipay/notify。留空回退 ALIPAY_NOTIFY_URL。",
+	},
+	{
+		Key:           model.SettingStripeSecretKey,
+		Label:         "Stripe secret key",
+		LabelZh:       "Stripe Secret Key",
+		Type:          "string",
+		Group:         "payment",
+		Secret:        true,
+		Description:   "Stripe API secret key (sk_live_… / sk_test_…), stored encrypted. Needs the webhook secret too. Empty falls back to STRIPE_SECRET_KEY.",
+		DescriptionZh: "Stripe API Secret Key（sk_live_… / sk_test_…），加密存储。还需配置 Webhook Secret。留空回退 STRIPE_SECRET_KEY。",
+	},
+	{
+		Key:           model.SettingStripeWebhookSecret,
+		Label:         "Stripe webhook secret",
+		LabelZh:       "Stripe Webhook Secret",
+		Type:          "string",
+		Group:         "payment",
+		Secret:        true,
+		Description:   "Stripe webhook signing secret (whsec_…), stored encrypted. Empty falls back to STRIPE_WEBHOOK_SECRET.",
+		DescriptionZh: "Stripe Webhook 签名密钥（whsec_…），加密存储。留空回退 STRIPE_WEBHOOK_SECRET。",
+	},
+	{
+		Key:           model.SettingStripeCurrency,
+		Label:         "Stripe currency",
+		LabelZh:       "Stripe 货币",
+		Type:          "string",
+		Group:         "payment",
+		Default:       "usd",
+		Description:   "ISO 4217 currency code (lowercase) for Stripe checkout. Empty defaults to usd (or STRIPE_CURRENCY).",
+		DescriptionZh: "Stripe 结账使用的 ISO 4217 货币代码（小写）。留空默认 usd（或 STRIPE_CURRENCY）。",
+	},
+	{
+		Key:           model.SettingStripeSuccessURL,
+		Label:         "Stripe success URL",
+		LabelZh:       "Stripe 成功跳转地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Where Stripe redirects after a successful checkout. Empty falls back to STRIPE_SUCCESS_URL.",
+		DescriptionZh: "Stripe 结账成功后的跳转地址。留空回退 STRIPE_SUCCESS_URL。",
+	},
+	{
+		Key:           model.SettingStripeCancelURL,
+		Label:         "Stripe cancel URL",
+		LabelZh:       "Stripe 取消跳转地址",
+		Type:          "string",
+		Group:         "payment",
+		Description:   "Where Stripe redirects on a cancelled checkout. Empty falls back to STRIPE_CANCEL_URL.",
+		DescriptionZh: "Stripe 结账取消后的跳转地址。留空回退 STRIPE_CANCEL_URL。",
+	},
+	{
+		Key:           model.SettingStripeSessionExpiryMinutes,
+		Label:         "Stripe session expiry (minutes)",
+		LabelZh:       "Stripe 会话过期（分钟）",
+		Type:          "int",
+		Group:         "payment",
+		Default:       "30",
+		Description:   "Checkout session lifetime in minutes. 0 uses 30. Empty falls back to STRIPE_SESSION_EXPIRY_MINUTES.",
+		DescriptionZh: "结账会话有效期（分钟）。0 表示 30。留空回退 STRIPE_SESSION_EXPIRY_MINUTES。",
 	},
 	{
 		Key:           model.SettingOpsCollectEnabled,
@@ -716,12 +936,21 @@ func (h *SettingHandler) List(c *gin.Context) {
 	out := make([]settingItem, 0, len(knownSettings))
 	for _, d := range knownSettings {
 		v, ok := persisted[d.Key]
-		out = append(out, settingItem{
+		item := settingItem{
 			settingDescriptor: d,
 			Value:             v,
 			HasOverride:       ok,
 			EnvFallback:       h.envFallback(d.Key),
-		})
+		}
+		if d.Secret {
+			// Never echo secret material (the stored value is ciphertext
+			// anyway). HasOverride still signals a value is set; the env
+			// fallback is reduced to a "configured" marker.
+			item.Value = ""
+			item.HasOverride = ok && v != ""
+			item.EnvFallback = maskSet(item.EnvFallback)
+		}
+		out = append(out, item)
 	}
 	// Bring along any unknown persisted rows so admins see them.
 	for k, v := range persisted {
@@ -736,7 +965,7 @@ func (h *SettingHandler) List(c *gin.Context) {
 			HasOverride: true,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"settings": out})
+	c.JSON(http.StatusOK, gin.H{"settings": out, "secrets_available": h.repo.HasCipher()})
 }
 
 // putRequest binds the body for PUT /:key.
@@ -762,6 +991,27 @@ func (h *SettingHandler) Put(c *gin.Context) {
 	}
 	if err := h.validateSettingState(c.Request.Context(), key, body.Value); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Secret settings are encrypted at rest and never echoed back. A
+	// blank submit is a no-op so saving a masked form doesn't wipe the
+	// stored value — clearing is done via DELETE.
+	if d, ok := descriptorFor(key); ok && d.Secret {
+		if strings.TrimSpace(body.Value) == "" {
+			c.JSON(http.StatusOK, gin.H{"key": key, "unchanged": true})
+			return
+		}
+		if !h.repo.HasCipher() {
+			// Precondition, not a server error: the operator must set the
+			// KEK before secrets can be encrypted at rest.
+			c.JSON(http.StatusBadRequest, gin.H{"error": "secret settings require SECRET_ENCRYPTION_KEY to be configured"})
+			return
+		}
+		if err := h.repo.SetSecret(c.Request.Context(), key, body.Value); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"key": key, "saved": true})
 		return
 	}
 	if err := h.repo.Set(c.Request.Context(), key, body.Value); err != nil {
@@ -819,6 +1069,52 @@ func (h *SettingHandler) envFallback(key string) string {
 		return h.cfg.OIDC.JWKSURL
 	case model.SettingOIDCUserInfoURL:
 		return h.cfg.OIDC.UserURL
+	case model.SettingSMTPHost:
+		return h.cfg.SMTP.Host
+	case model.SettingSMTPPort:
+		return strconv.Itoa(h.cfg.SMTP.Port)
+	case model.SettingSMTPFrom:
+		return h.cfg.SMTP.From
+	case model.SettingSMTPUsername:
+		return h.cfg.SMTP.Username
+	case model.SettingSMTPPassword:
+		return h.cfg.SMTP.Password // masked by maskSet in List
+	case model.SettingNotifyRoutes:
+		return h.cfg.Notify.Routes
+	case model.SettingNotifyOpsRecipient:
+		return h.cfg.Notify.OpsRecipient
+	case model.SettingNotifyTelegramBotToken:
+		return h.cfg.Notify.Telegram.BotToken // masked
+	case model.SettingNotifyTelegramChatID:
+		return h.cfg.Notify.Telegram.ChatID
+	case model.SettingNotifyDiscordWebhookURL:
+		return h.cfg.Notify.Discord.WebhookURL // masked
+	case model.SettingNotifyFeishuWebhookURL:
+		return h.cfg.Notify.Feishu.WebhookURL // masked
+	case model.SettingNotifyFeishuCardTemplate:
+		return h.cfg.Notify.Feishu.CardTemplate
+	case model.SettingAlipayAppID:
+		return h.cfg.Alipay.AppID
+	case model.SettingAlipayPrivateKey:
+		return h.cfg.Alipay.PrivateKey // masked
+	case model.SettingAlipayPublicKey:
+		return h.cfg.Alipay.AlipayPublicKey
+	case model.SettingAlipayGateway:
+		return h.cfg.Alipay.Gateway
+	case model.SettingAlipayNotifyURL:
+		return h.cfg.Alipay.NotifyURL
+	case model.SettingStripeSecretKey:
+		return h.cfg.Stripe.SecretKey // masked
+	case model.SettingStripeWebhookSecret:
+		return h.cfg.Stripe.WebhookSecret // masked
+	case model.SettingStripeCurrency:
+		return h.cfg.Stripe.Currency
+	case model.SettingStripeSuccessURL:
+		return h.cfg.Stripe.SuccessURL
+	case model.SettingStripeCancelURL:
+		return h.cfg.Stripe.CancelURL
+	case model.SettingStripeSessionExpiryMinutes:
+		return strconv.Itoa(h.cfg.Stripe.SessionExpiryMinutes)
 	default:
 		// no env equivalent
 		return ""
@@ -832,6 +1128,25 @@ func isKnown(key string) bool {
 		}
 	}
 	return false
+}
+
+// descriptorFor returns the known descriptor for key, if any.
+func descriptorFor(key string) (settingDescriptor, bool) {
+	for _, d := range knownSettings {
+		if d.Key == key {
+			return d, true
+		}
+	}
+	return settingDescriptor{}, false
+}
+
+// maskSet collapses a non-empty secret to a fixed marker so the UI can
+// show "configured" without ever receiving the secret material.
+func maskSet(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "********"
 }
 
 func (h *SettingHandler) validateSettingState(ctx context.Context, key, value string) error {
@@ -980,6 +1295,13 @@ func validate(key, value string) error {
 			}
 			if !strings.Contains(value, templateProxiesPlaceholder) {
 				return errors.New("singbox_template_json: must contain the " + templateProxiesPlaceholder + " placeholder")
+			}
+		case model.SettingNotifyRoutes:
+			if strings.TrimSpace(value) == "" {
+				return nil // empty = no ops fan-out
+			}
+			if _, err := notify.ParseRoutes(value); err != nil {
+				return fmt.Errorf("notify_routes: %w", err)
 			}
 		case model.SettingBrandIconURL:
 			v := strings.TrimSpace(value)

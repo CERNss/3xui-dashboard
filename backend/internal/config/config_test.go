@@ -38,7 +38,7 @@ func TestLoad_FailsOnMissingRequired(t *testing.T) {
 		os.Unsetenv(k)
 	}
 	os.Unsetenv("ADMIN_PASSWORD")
-	_, err := Load("")
+	_, err := Load("", "")
 	if err == nil {
 		t.Fatal("expected error on missing required keys, got nil")
 	}
@@ -53,6 +53,49 @@ func TestLoad_FailsOnMissingRequired(t *testing.T) {
 	}
 }
 
+func TestLoad_ConfigYAMLBaseEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	yamlPath := dir + "/config.yaml"
+	// read_timeout proves the yaml layer is read; listen_addr is set in
+	// yaml too but a real env var below must override it.
+	if err := os.WriteFile(yamlPath, []byte("read_timeout: 5s\nlisten_addr: \":9090\"\n"), 0o600); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	withEnv(t, map[string]string{
+		"DATABASE_URL":   "postgres://x@x/x",
+		"JWT_SECRET":     "secret",
+		"ADMIN_USERNAME": "admin@example.com",
+		"ADMIN_PASSWORD": "pw",
+		"ENV":            "dev",
+		"LISTEN_ADDR":    ":7000", // real env overrides yaml's :9090
+	}, func() {
+		cfg, err := Load("", yamlPath)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Server.ReadTimeout.String() != "5s" {
+			t.Errorf("read_timeout from yaml = %v, want 5s", cfg.Server.ReadTimeout)
+		}
+		if cfg.Server.ListenAddr != ":7000" {
+			t.Errorf("listen_addr = %q, want :7000 (real env must override yaml)", cfg.Server.ListenAddr)
+		}
+	})
+}
+
+func TestLoad_MissingConfigYAMLIsNotFatal(t *testing.T) {
+	withEnv(t, map[string]string{
+		"DATABASE_URL":   "postgres://x@x/x",
+		"JWT_SECRET":     "secret",
+		"ADMIN_USERNAME": "admin@example.com",
+		"ADMIN_PASSWORD": "pw",
+		"ENV":            "dev",
+	}, func() {
+		if _, err := Load("", "/nonexistent/path/config.yaml"); err != nil {
+			t.Fatalf("missing config.yaml should not be fatal: %v", err)
+		}
+	})
+}
+
 func TestLoad_GeneratesAdminPasswordWhenBlank(t *testing.T) {
 	withEnv(t, map[string]string{
 		"DATABASE_URL":   "postgres://x@x/x",
@@ -62,7 +105,7 @@ func TestLoad_GeneratesAdminPasswordWhenBlank(t *testing.T) {
 		"ENV": "dev",
 	}, func() {
 		os.Unsetenv("ADMIN_PASSWORD")
-		cfg, err := Load("")
+		cfg, err := Load("", "")
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
@@ -84,7 +127,7 @@ func TestLoad_FullEnvLoadsCleanly(t *testing.T) {
 		"ENV":            "dev",
 		"LOG_FORMAT":     "",
 	}, func() {
-		cfg, err := Load("")
+		cfg, err := Load("", "")
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
@@ -108,7 +151,7 @@ func TestLoad_BootstrapNodesJSON(t *testing.T) {
 		"ADMIN_PASSWORD":       "pw",
 		"BOOTSTRAP_NODES_JSON": `[{"name":"edge","access_url":"https://node.example.com/panel","api_token":"tok"}]`,
 	}, func() {
-		cfg, err := Load("")
+		cfg, err := Load("", "")
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
@@ -118,7 +161,7 @@ func TestLoad_BootstrapNodesJSON(t *testing.T) {
 	})
 }
 
-func TestLoad_PublicRegistrationDefaultsEnabled(t *testing.T) {
+func TestLoad_PublicRegistrationDefaultsDisabled(t *testing.T) {
 	prev, hadPrev := os.LookupEnv("PUBLIC_REGISTRATION")
 	os.Unsetenv("PUBLIC_REGISTRATION")
 	defer func() {
@@ -135,12 +178,12 @@ func TestLoad_PublicRegistrationDefaultsEnabled(t *testing.T) {
 		"ADMIN_USERNAME": "admin",
 		"ADMIN_PASSWORD": "pw",
 	}, func() {
-		cfg, err := Load("")
+		cfg, err := Load("", "")
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if !cfg.PublicRegistration {
-			t.Fatal("PUBLIC_REGISTRATION should default to true")
+		if cfg.PublicRegistration {
+			t.Fatal("PUBLIC_REGISTRATION should default to false (safer; admin enables it in the panel)")
 		}
 	})
 }
@@ -154,7 +197,7 @@ func TestLoad_PartialOIDCIsAnError(t *testing.T) {
 		"OIDC_ISSUER":    "https://idp.example.com",
 		// CLIENT_ID, CLIENT_SECRET, REDIRECT_URL intentionally absent.
 	}, func() {
-		_, err := Load("")
+		_, err := Load("", "")
 		if err == nil {
 			t.Fatal("partial OIDC config should fail; got nil")
 		}

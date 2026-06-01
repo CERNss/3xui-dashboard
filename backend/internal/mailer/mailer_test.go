@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-
-	"github.com/cern/3xui-dashboard/internal/config"
 )
 
 // capturingHandler is a minimal slog.Handler that records every Record into a
@@ -35,13 +33,13 @@ func newCapturingLogger() (*slog.Logger, *capturingHandler) {
 func TestSend_DisabledSMTP_LogsInsteadOfDelivering(t *testing.T) {
 	logger, captured := newCapturingLogger()
 	// Empty SMTP config — Enabled() reports false.
-	m := New(config.SMTP{}, logger)
+	m := New(NewStaticSource(SMTPConfig{}), logger)
 
 	if m.Enabled() {
 		t.Fatalf("mailer with zero cfg should report Enabled()==false")
 	}
 
-	err := m.Send("alice@example.com", "Test subject", "Plain body")
+	err := m.Send(context.Background(), "alice@example.com", "Test subject", "Plain body")
 	if err != nil {
 		t.Fatalf("Send with disabled SMTP should not error, got %v", err)
 	}
@@ -79,17 +77,17 @@ func TestSend_DisabledSMTP_LogsInsteadOfDelivering(t *testing.T) {
 func TestEnabled_RequiresBothHostAndFrom(t *testing.T) {
 	cases := []struct {
 		name string
-		cfg  config.SMTP
+		cfg  SMTPConfig
 		want bool
 	}{
-		{"zero", config.SMTP{}, false},
-		{"host only", config.SMTP{Host: "smtp.example.com"}, false},
-		{"from only", config.SMTP{From: "noreply@example.com"}, false},
-		{"both", config.SMTP{Host: "smtp.example.com", From: "noreply@example.com"}, true},
+		{"zero", SMTPConfig{}, false},
+		{"host only", SMTPConfig{Host: "smtp.example.com"}, false},
+		{"from only", SMTPConfig{From: "noreply@example.com"}, false},
+		{"both", SMTPConfig{Host: "smtp.example.com", From: "noreply@example.com"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := New(tc.cfg, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+			m := New(NewStaticSource(tc.cfg), slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 			if got := m.Enabled(); got != tc.want {
 				t.Errorf("Enabled() = %v, want %v (cfg=%+v)", got, tc.want, tc.cfg)
 			}

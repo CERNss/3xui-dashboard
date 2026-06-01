@@ -1,18 +1,22 @@
-import { Card, Typography } from 'antd'
+import { Card } from 'antd'
 import { useTranslation } from 'react-i18next'
 import Webhooks from '../Webhooks'
+import { SettingsSection } from './SettingsSection'
+import type { SettingsSectionProps } from './types'
 
-export function NotificationsSettings() {
+export function NotificationsSettings(props: SettingsSectionProps) {
   const { t } = useTranslation()
   return (
-    <Card>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        {t('admin.settings.notifications.title')}
-      </Typography.Title>
-      <Typography.Text type="secondary">{t('admin.settings.notifications.desc')}</Typography.Text>
-      <div style={{ marginTop: 16 }}>
-        <Webhooks embedded />
-      </div>
-    </Card>
+    <SettingsSection
+      {...props}
+      title={t('admin.settings.notifications.title')}
+      description={t('admin.settings.notifications.desc')}
+      extraPosition="bottom"
+      extra={
+        <Card title={t('admin.settings.notifications.webhooksTitle')}>
+          <Webhooks embedded />
+        </Card>
+      }
+    />
   )
 }

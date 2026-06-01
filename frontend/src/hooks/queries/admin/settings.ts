@@ -68,7 +68,7 @@ export function useUploadBrandIcon() {
 export function useDashboardAutoRefresh() {
   const queryClient = useQueryClient()
   const settingsQuery = useSettingsList()
-  const intervalMs = useMemo(() => dashboardAutoRefreshIntervalMs(settingsQuery.data), [settingsQuery.data])
+  const intervalMs = useMemo(() => dashboardAutoRefreshIntervalMs(settingsQuery.data?.settings), [settingsQuery.data])
 
   useEffect(() => {
     if (!intervalMs) return undefined
