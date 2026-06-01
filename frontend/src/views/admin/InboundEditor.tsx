@@ -234,7 +234,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
       open={open}
       width={920}
       onCancel={onClose}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
       footer={
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>

@@ -16,7 +16,7 @@ export function FallbacksConfigModal({ open, onClose }: FallbacksConfigModalProp
       onCancel={onClose}
       footer={<Button type="primary" onClick={onClose}>{t('admin.inboundEditor.stream.done')}</Button>}
       width={720}
-      destroyOnClose={false}
+      destroyOnHidden={false}
       maskClosable
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>

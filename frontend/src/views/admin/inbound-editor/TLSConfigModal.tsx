@@ -17,7 +17,7 @@ export function TLSConfigModal({ open, onClose }: TLSConfigModalProps) {
       onCancel={onClose}
       footer={<Button type="primary" onClick={onClose}>{t('admin.inboundEditor.stream.done')}</Button>}
       width={620}
-      destroyOnClose={false}
+      destroyOnHidden={false}
       maskClosable
     >
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
