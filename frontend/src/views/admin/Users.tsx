@@ -1,10 +1,15 @@
 import {
+  BarsOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  FilterOutlined,
+  MinusOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  ReloadOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -17,6 +22,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popover,
   Segmented,
   Select,
   Space,
@@ -28,10 +34,10 @@ import type { ColumnsType } from 'antd/es/table'
 import type { MenuProps } from 'antd'
 import type { CheckboxProps } from 'antd/es/checkbox'
 import type { Key } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { adminUsersApi, type AdminUser, type UserStatus } from '@/api/admin/users'
-import { ConfigListPage, RefreshButton } from '@/components/common'
+import { adminUsersApi, type AdminUser, type BalanceLog, type UserStatus } from '@/api/admin/users'
+import { ConfigListPage } from '@/components/common'
 import {
   useAdjustUserBalance,
   useCreateUser,
@@ -46,7 +52,9 @@ import { queryKeys } from '@/hooks/queries/keys'
 type StatusFilter = 'all' | UserStatus
 type VerifiedFilter = 'all' | 'verified' | 'unverified'
 type RegisterFilter = 'all' | 'email' | 'oidc'
+type BalanceLogFilter = 'all' | 'credit' | 'debit'
 type SortKey = 'created_at:desc' | 'created_at:asc' | 'balance:desc' | 'balance:asc' | 'id:desc' | 'email:asc' | 'email:desc'
+type UserColumnKey = 'user' | 'id' | 'status' | 'balance' | 'registered' | 'lastActive'
 
 interface CreateFormValues {
   email: string
@@ -58,18 +66,18 @@ interface EditFormValues {
   email: string
   email_verified: boolean
   password?: string
-  balance_yuan: number
 }
 
 interface BalanceFormValues {
-  delta_yuan: number
+  amount_yuan: number
   reason: string
+  note?: string
 }
 
-const AUTO_REFRESH_MS = 15_000
 const PAGE_SIZE = 20
 const userKeys = queryKeys('admin', 'users')
 const listParams = { limit: 200 }
+const USER_COLUMN_KEYS: UserColumnKey[] = ['user', 'id', 'status', 'balance', 'registered', 'lastActive']
 
 function formatYuan(cents: number) {
   return `¥${(cents / 100).toFixed(2)}`
@@ -90,6 +98,25 @@ function statusTag(status: UserStatus, label: string) {
 function verifiedTag(user: AdminUser, verified: string, unverified: string) {
   if (!user.email) return null
   return <Tag color={user.email_verified ? 'green' : 'gold'}>{user.email_verified ? verified : unverified}</Tag>
+}
+
+function userInitial(user: AdminUser) {
+  return (user.email || `#${user.id}`).trim().charAt(0).toUpperCase()
+}
+
+function editFormValues(user: AdminUser): EditFormValues {
+  return {
+    email: user.email || '',
+    email_verified: user.email_verified,
+    password: '',
+  }
+}
+
+function balanceLogTitle(log: BalanceLog, t: ReturnType<typeof useTranslation>['t']) {
+  if (log.reason === 'order_refund') return t('admin.users.balance.log.orderRefund')
+  if (log.reason === 'order_charge') return t('admin.users.balance.log.orderCharge')
+  if (log.reason === 'bonus') return t('admin.users.balance.log.bonus')
+  return log.delta_cents >= 0 ? t('admin.users.balance.log.deposit') : t('admin.users.balance.log.refund')
 }
 
 function sortUsers(users: AdminUser[], sort: SortKey) {
@@ -123,19 +150,29 @@ export default function Users() {
   const [registerFilter, setRegisterFilter] = useState<RegisterFilter>('all')
   const [sort, setSort] = useState<SortKey>('created_at:desc')
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
-  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [columnOpen, setColumnOpen] = useState(false)
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<UserColumnKey[]>(USER_COLUMN_KEYS)
   const [flash, setFlash] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<AdminUser | null>(null)
   const [balanceUser, setBalanceUser] = useState<AdminUser | null>(null)
+  const [balanceMode, setBalanceMode] = useState<'deposit' | 'refund'>('deposit')
+  const [balanceLogFilter, setBalanceLogFilter] = useState<BalanceLogFilter>('all')
 
   const usersQuery = useQuery({
     queryKey: userKeys.list(listParams),
     queryFn: () => adminUsersApi.list(listParams),
-    refetchInterval: autoRefresh ? AUTO_REFRESH_MS : false,
     refetchOnWindowFocus: true,
   })
   useQueryErrorReporter(usersQuery.error, usersQuery.isError)
+
+  const balanceLogsQuery = useQuery({
+    queryKey: userKeys.op('balanceLogs', balanceUser?.id ?? 0),
+    queryFn: () => adminUsersApi.balanceLogs(balanceUser!.id, { limit: 80 }),
+    enabled: Boolean(balanceUser),
+  })
+  useQueryErrorReporter(balanceLogsQuery.error, balanceLogsQuery.isError)
 
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -179,6 +216,13 @@ export default function Users() {
     return sortUsers(visible, sort)
   }, [query, registerFilter, sort, statusFilter, users, verifiedFilter])
 
+  const balanceLogs = useMemo(() => balanceLogsQuery.data?.logs ?? [], [balanceLogsQuery.data])
+  const filteredBalanceLogs = useMemo(() => {
+    if (balanceLogFilter === 'credit') return balanceLogs.filter((log) => log.delta_cents > 0)
+    if (balanceLogFilter === 'debit') return balanceLogs.filter((log) => log.delta_cents < 0)
+    return balanceLogs
+  }, [balanceLogFilter, balanceLogs])
+
   useEffect(() => {
     const visibleIds = new Set(filteredUsers.map((user) => user.id))
     setSelectedRowKeys((current) => {
@@ -187,10 +231,33 @@ export default function Users() {
     })
   }, [filteredUsers])
 
+  useLayoutEffect(() => {
+    if (!editing) return
+    editForm.resetFields()
+    editForm.setFieldsValue(editFormValues(editing))
+  }, [editForm, editing])
+
   const selectedIds = selectedRowKeys.map(Number)
   const userStatusLabel = (status: UserStatus) => t(`admin.users.status.${status}`)
   const userStatusTag = (status: UserStatus) => statusTag(status, userStatusLabel(status))
   const userVerifiedTag = (user: AdminUser) => verifiedTag(user, t('admin.users.verified'), t('admin.users.unverified'))
+  const activeFilterCount = [statusFilter !== 'all', verifiedFilter !== 'all', registerFilter !== 'all'].filter(Boolean).length
+
+  const columnLabels: Record<UserColumnKey, string> = {
+    user: t('admin.users.column.user'),
+    id: t('admin.users.column.id'),
+    status: t('admin.users.column.status'),
+    balance: t('admin.users.column.balance'),
+    registered: t('admin.users.column.registered'),
+    lastActive: t('admin.users.column.lastActive'),
+  }
+
+  const toggleColumn = (key: UserColumnKey, checked: boolean) => {
+    setVisibleColumnKeys((current) => {
+      if (checked) return current.includes(key) ? current : [...current, key]
+      return current.length === 1 ? current : current.filter((item) => item !== key)
+    })
+  }
 
   const refresh = () => {
     void usersQuery.refetch()
@@ -203,17 +270,13 @@ export default function Users() {
 
   const openEdit = (user: AdminUser) => {
     setEditing(user)
-    editForm.setFieldsValue({
-      email: user.email || '',
-      email_verified: user.email_verified,
-      password: '',
-      balance_yuan: user.balance_cents / 100,
-    })
   }
 
   const openBalance = (user: AdminUser) => {
     setBalanceUser(user)
-    balanceForm.setFieldsValue({ delta_yuan: 0, reason: '' })
+    setBalanceMode('deposit')
+    setBalanceLogFilter('all')
+    balanceForm.setFieldsValue({ amount_yuan: 0, reason: '', note: '' })
   }
 
   const closeCreate = () => {
@@ -228,6 +291,8 @@ export default function Users() {
 
   const closeBalance = () => {
     setBalanceUser(null)
+    setBalanceMode('deposit')
+    setBalanceLogFilter('all')
     balanceForm.resetFields()
   }
 
@@ -250,7 +315,6 @@ export default function Users() {
     const fields: Parameters<typeof updateUser.mutateAsync>[0]['fields'] = {
       email: values.email.trim(),
       email_verified: values.email_verified,
-      balance_cents: Math.round(values.balance_yuan * 100),
     }
     if (values.password) fields.password = values.password
     const updated = await updateUser.mutateAsync({ id: editing.id, fields })
@@ -262,18 +326,16 @@ export default function Users() {
     if (!balanceUser) return
     const values = await balanceForm.validateFields().catch(() => null)
     if (!values) return
+    const amountCents = Math.round(Math.abs(values.amount_yuan) * 100)
     await adjustBalance.mutateAsync({
       id: balanceUser.id,
-      deltaCents: Math.round(values.delta_yuan * 100),
+      deltaCents: balanceMode === 'deposit' ? amountCents : -amountCents,
       reason: values.reason.trim(),
+      note: values.note?.trim() ?? '',
     })
-    closeBalance()
+    balanceForm.setFieldsValue({ amount_yuan: 0, reason: '', note: '' })
+    await Promise.all([usersQuery.refetch(), balanceLogsQuery.refetch()])
     setFlash({ type: 'success', text: t('admin.users.balance.success', { email: userLabel(balanceUser) }) })
-  }
-
-  const toggleAutoRenew = async (user: AdminUser) => {
-    await updateUser.mutateAsync({ id: user.id, fields: { auto_renew: !user.auto_renew } })
-    setFlash({ type: 'success', text: t(user.auto_renew ? 'admin.users.autoRenewOff' : 'admin.users.autoRenewOn') })
   }
 
   const toggleSuspend = async (user: AdminUser) => {
@@ -351,6 +413,7 @@ export default function Users() {
 
   const columns: ColumnsType<AdminUser> = [
     {
+      key: 'user',
       title: t('admin.users.column.user'),
       dataIndex: 'email',
       sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
@@ -366,6 +429,7 @@ export default function Users() {
       ),
     },
     {
+      key: 'id',
       title: 'ID',
       dataIndex: 'id',
       align: 'center',
@@ -373,6 +437,7 @@ export default function Users() {
       render: (id: number) => <Typography.Text code>#{id}</Typography.Text>,
     },
     {
+      key: 'status',
       title: t('admin.users.column.status'),
       dataIndex: 'status',
       align: 'center',
@@ -385,6 +450,7 @@ export default function Users() {
       render: userStatusTag,
     },
     {
+      key: 'balance',
       title: t('admin.users.column.balance'),
       dataIndex: 'balance_cents',
       align: 'right',
@@ -392,29 +458,16 @@ export default function Users() {
       width: 150,
       sorter: (a, b) => a.balance_cents - b.balance_cents,
       render: (_value, user) => (
-        <Space>
+        <Space className="user-balance-cell">
           <Typography.Text strong>{formatYuan(user.balance_cents)}</Typography.Text>
-          <Button size="small" onClick={() => openBalance(user)}>
-            {t('admin.users.balance.adjustShort')}
+          <Button type="link" onClick={() => openBalance(user)}>
+            {t('admin.users.balance.deposit')}
           </Button>
         </Space>
       ),
     },
     {
-      title: t('admin.users.column.autoRenew'),
-      dataIndex: 'auto_renew',
-      align: 'center',
-      width: 120,
-      render: (_value, user) => (
-        <Switch
-          checked={user.auto_renew}
-          aria-label={`${user.auto_renew ? t('admin.users.autoRenewOff') : t('admin.users.autoRenewOn')} ${userLabel(user)}`}
-          loading={updateUser.isPending}
-          onChange={() => toggleAutoRenew(user)}
-        />
-      ),
-    },
-    {
+      key: 'registered',
       title: t('admin.users.column.registered'),
       dataIndex: 'created_at',
       align: 'center',
@@ -424,6 +477,7 @@ export default function Users() {
       render: formatDate,
     },
     {
+      key: 'lastActive',
       title: t('admin.users.column.lastActive'),
       dataIndex: 'last_active_at',
       align: 'center',
@@ -455,85 +509,140 @@ export default function Users() {
       ),
     },
   ]
+  const visibleColumns = columns.filter((column) => column.key === 'actions' || visibleColumnKeys.includes(column.key as UserColumnKey))
+  const filterPanel = (
+    <div className="users-toolbar-popover-panel">
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.filterStatus')}</Typography.Text>
+        <Segmented
+          aria-label={t('admin.users.filterStatus')}
+          value={statusFilter}
+          onChange={(value) => setStatusFilter(value as StatusFilter)}
+          options={[
+            { label: t('admin.users.filterAll'), value: 'all' },
+            { label: t('admin.users.status.active'), value: 'active' },
+            { label: t('admin.users.status.suspended'), value: 'suspended' },
+          ]}
+        />
+      </div>
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.filterVerified')}</Typography.Text>
+        <Segmented
+          aria-label={t('admin.users.filterVerified')}
+          value={verifiedFilter}
+          onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
+          options={[
+            { label: t('admin.users.filterVerifiedAll'), value: 'all' },
+            { label: t('admin.users.verified'), value: 'verified' },
+            { label: t('admin.users.unverified'), value: 'unverified' },
+          ]}
+        />
+      </div>
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.filterRegisterMethod')}</Typography.Text>
+        <Segmented
+          aria-label={t('admin.users.filterRegisterMethod')}
+          value={registerFilter}
+          onChange={(value) => setRegisterFilter(value as RegisterFilter)}
+          options={[
+            { label: t('admin.users.filterRegisterAll'), value: 'all' },
+            { label: t('admin.users.filterRegisterEmail'), value: 'email' },
+            { label: 'OIDC', value: 'oidc' },
+          ]}
+        />
+      </div>
+      <div className="users-toolbar-field">
+        <Typography.Text className="users-toolbar-field-label">{t('admin.users.sortLabel')}</Typography.Text>
+        <Select
+          aria-label={t('admin.users.sortLabel')}
+          value={sort}
+          onChange={(value) => setSort(value)}
+          options={[
+            { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
+            { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
+            { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
+            { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
+            { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
+            { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
+            { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
+          ]}
+        />
+      </div>
+    </div>
+  )
+  const columnPanel = (
+    <div className="users-toolbar-column-panel">
+      {USER_COLUMN_KEYS.map((key) => (
+        <Checkbox
+          checked={visibleColumnKeys.includes(key)}
+          disabled={visibleColumnKeys.length === 1 && visibleColumnKeys.includes(key)}
+          key={key}
+          onChange={(event) => toggleColumn(key, event.target.checked)}
+        >
+          {columnLabels[key]}
+        </Checkbox>
+      ))}
+    </div>
+  )
 
   return (
-    <section>
+    <section className="users-page">
       <ConfigListPage
         title={t('admin.users.title')}
         subtitle={t('admin.users.subtitle')}
         actions={
-          <>
-            <Button type="primary" aria-label={t('admin.users.addUser')} icon={<PlusOutlined />} onClick={openCreate}>
+          <div className="users-toolbar-actions">
+            <Button
+              aria-label={t('admin.users.reload')}
+              className="users-toolbar-icon-button"
+              icon={<ReloadOutlined />}
+              loading={usersQuery.isFetching}
+              onClick={refresh}
+            />
+            <Popover
+              arrow={false}
+              content={filterPanel}
+              open={filterOpen}
+              overlayClassName="users-toolbar-popover"
+              placement="bottomRight"
+              trigger="click"
+              onOpenChange={setFilterOpen}
+            >
+              <Button aria-label={t('admin.users.toolbar.filters')} className="users-toolbar-button" icon={<FilterOutlined />}>
+                {t('admin.users.toolbar.filters')}
+                {activeFilterCount > 0 ? <span className="users-toolbar-count">{activeFilterCount}</span> : null}
+              </Button>
+            </Popover>
+            <Popover
+              arrow={false}
+              content={columnPanel}
+              open={columnOpen}
+              overlayClassName="users-toolbar-popover"
+              placement="bottomRight"
+              trigger="click"
+              onOpenChange={setColumnOpen}
+            >
+              <Button aria-label={t('admin.users.toolbar.columns')} className="users-toolbar-button" icon={<BarsOutlined />}>
+                {t('admin.users.toolbar.columns')}
+              </Button>
+            </Popover>
+            <Dropdown menu={{ items: moreItems }}>
+              <Button aria-label={t('admin.users.more.label')} className="users-toolbar-button" icon={<SettingOutlined />}>{t('admin.users.more.label')}</Button>
+            </Dropdown>
+            <Button className="users-toolbar-primary" type="primary" aria-label={t('admin.users.addUser')} icon={<PlusOutlined />} onClick={openCreate}>
               {t('admin.users.addUser')}
             </Button>
-            <RefreshButton loading={usersQuery.isFetching} onClick={refresh} label={t('admin.users.reload')} />
-          </>
+          </div>
         }
         filters={
-          <Space wrap>
+          <div className="users-toolbar-search">
             <Input.Search
               allowClear
               value={query}
               placeholder={t('admin.users.searchPlaceholder')}
               onChange={(event) => setQuery(event.target.value)}
-              style={{ width: 260 }}
             />
-            <Segmented
-              aria-label={t('admin.users.filterStatus')}
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-              options={[
-                { label: t('admin.users.filterAll'), value: 'all' },
-                { label: t('admin.users.status.active'), value: 'active' },
-                { label: t('admin.users.status.suspended'), value: 'suspended' },
-              ]}
-            />
-            <Segmented
-              aria-label={t('admin.users.filterVerified')}
-              value={verifiedFilter}
-              onChange={(value) => setVerifiedFilter(value as VerifiedFilter)}
-              options={[
-                { label: t('admin.users.filterVerifiedAll'), value: 'all' },
-                { label: t('admin.users.verified'), value: 'verified' },
-                { label: t('admin.users.unverified'), value: 'unverified' },
-              ]}
-            />
-            <Segmented
-              aria-label={t('admin.users.filterRegisterMethod')}
-              value={registerFilter}
-              onChange={(value) => setRegisterFilter(value as RegisterFilter)}
-              options={[
-                { label: t('admin.users.filterRegisterAll'), value: 'all' },
-                { label: t('admin.users.filterRegisterEmail'), value: 'email' },
-                { label: 'OIDC', value: 'oidc' },
-              ]}
-            />
-            <Select
-              aria-label={t('admin.users.sortLabel')}
-              value={sort}
-              onChange={(value) => setSort(value)}
-              style={{ minWidth: 190 }}
-              options={[
-                { label: t('admin.users.sort.createdDesc'), value: 'created_at:desc' },
-                { label: t('admin.users.sort.createdAsc'), value: 'created_at:asc' },
-                { label: t('admin.users.sort.balanceDesc'), value: 'balance:desc' },
-                { label: t('admin.users.sort.balanceAsc'), value: 'balance:asc' },
-                { label: t('admin.users.sort.idDesc'), value: 'id:desc' },
-                { label: t('admin.users.sort.emailAsc'), value: 'email:asc' },
-                { label: t('admin.users.sort.emailDesc'), value: 'email:desc' },
-              ]}
-            />
-            <Switch
-              checked={autoRefresh}
-              aria-label={t('admin.users.autoRefresh')}
-              checkedChildren={t('admin.users.autoRefreshShort')}
-              unCheckedChildren={t('admin.users.manualRefreshShort')}
-              onChange={setAutoRefresh}
-            />
-            <Dropdown menu={{ items: moreItems }}>
-              <Button>{t('admin.users.more.label')}</Button>
-            </Dropdown>
-          </Space>
+          </div>
         }
         alerts={error || flash || selectedRowKeys.length > 0 ? (
           <>
@@ -585,7 +694,7 @@ export default function Users() {
           </>
         ) : null}
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns}
         dataSource={filteredUsers}
         loading={loading}
         pagination={{ pageSize: PAGE_SIZE, showSizeChanger: false }}
@@ -625,12 +734,11 @@ export default function Users() {
               </Space>
               <Typography.Text type="secondary">#{user.id} · {user.sub_id.slice(0, 12)}...</Typography.Text>
               <Typography.Text>{t('admin.users.column.balance')}: {formatYuan(user.balance_cents)}</Typography.Text>
-              <Typography.Text>{t('admin.users.column.autoRenew')}: {user.auto_renew ? t('admin.users.on') : t('admin.users.off')}</Typography.Text>
               <Typography.Text>{t('admin.users.column.registered')}: {formatDate(user.created_at)}</Typography.Text>
               <Typography.Text>{t('admin.users.column.lastActive')}: {formatDate(user.last_active_at)}</Typography.Text>
               <Space wrap>
                 <Button size="small" onClick={() => openBalance(user)}>
-                  {t('admin.users.balance.adjustShort')}
+                  {t('admin.users.balance.deposit')}
                 </Button>
                 <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(user)}>
                   {t('admin.users.edit.open')}
@@ -661,8 +769,21 @@ export default function Users() {
         </Form>
       </Modal>
 
-      <Modal title={editing ? `${t('admin.users.edit.title')} #${editing.id}` : t('admin.users.edit.title')} open={Boolean(editing)} onCancel={closeEdit} onOk={saveEdit} confirmLoading={updateUser.isPending} destroyOnHidden>
-        <Form form={editForm} layout="vertical" preserve={false}>
+      <Modal
+        title={editing ? `${t('admin.users.edit.title')} #${editing.id}` : t('admin.users.edit.title')}
+        open={Boolean(editing)}
+        onCancel={closeEdit}
+        onOk={saveEdit}
+        confirmLoading={updateUser.isPending}
+        destroyOnHidden
+      >
+        <Form
+          key={editing ? `edit-user-${editing.id}` : 'edit-user'}
+          form={editForm}
+          initialValues={editing ? editFormValues(editing) : undefined}
+          layout="vertical"
+          preserve={false}
+        >
           <Form.Item name="email" label={t('admin.users.edit.emailLabel')} rules={[{ required: true, type: 'email', message: t('admin.users.edit.emailRequired') }]}>
             <Input autoComplete="off" />
           </Form.Item>
@@ -672,31 +793,121 @@ export default function Users() {
           <Form.Item name="password" label={t('admin.users.edit.passwordLabel')} rules={[{ min: 8, message: t('admin.users.edit.passwordMin') }]}>
             <Input.Password autoComplete="new-password" placeholder={t('admin.users.edit.passwordPlaceholder')} />
           </Form.Item>
-          <Form.Item name="balance_yuan" label={t('admin.users.edit.balanceLabel')} rules={[{ required: true, type: 'number', min: 0, message: t('admin.users.edit.balanceInvalid') }]}>
-            <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
-          </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title={balanceUser ? `${t('admin.users.balance.adjust')} ${userLabel(balanceUser)}` : t('admin.users.balance.title')} open={Boolean(balanceUser)} onCancel={closeBalance} onOk={saveBalance} confirmLoading={adjustBalance.isPending} destroyOnHidden>
-        <Form form={balanceForm} layout="vertical" preserve={false}>
-          <Form.Item
-            name="delta_yuan"
-            label={t('admin.users.balance.amountLabel')}
-            rules={[
-              { required: true, type: 'number', message: t('admin.users.balance.amountRequired') },
-              {
-                validator: (_, value) =>
-                  value === 0 ? Promise.reject(new Error(t('admin.users.balance.deltaMustNonZero'))) : Promise.resolve(),
-              },
-            ]}
-          >
-            <InputNumber step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')} rules={[{ required: true, whitespace: true, message: t('admin.users.balance.reasonRequired') }]}>
-            <Input />
-          </Form.Item>
-        </Form>
+      <Modal
+        className="user-balance-ledger-modal"
+        title={t('admin.users.balance.ledgerTitle')}
+        open={Boolean(balanceUser)}
+        onCancel={closeBalance}
+        footer={null}
+        destroyOnHidden
+        width={880}
+      >
+        {balanceUser ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div className="user-balance-summary-card">
+              <div className="user-balance-avatar" aria-hidden>
+                {userInitial(balanceUser)}
+              </div>
+              <div className="user-balance-summary-main">
+                <Space wrap size={8}>
+                  <Typography.Text strong>{userLabel(balanceUser)}</Typography.Text>
+                  {userVerifiedTag(balanceUser)}
+                </Space>
+                <Typography.Text type="secondary">
+                  {t('admin.users.column.registered')}: {formatDate(balanceUser.created_at)}
+                </Typography.Text>
+              </div>
+              <div className="user-balance-summary-amounts">
+                <Typography.Text type="secondary">{t('admin.users.balance.currentBalance')}</Typography.Text>
+                <Typography.Title level={3}>{formatYuan(balanceUser.balance_cents)}</Typography.Title>
+              </div>
+            </div>
+
+            <div className="user-balance-toolbar">
+              <Segmented
+                aria-label={t('admin.users.balance.filterLabel')}
+                value={balanceLogFilter}
+                onChange={(value) => setBalanceLogFilter(value as BalanceLogFilter)}
+                options={[
+                  { label: t('admin.users.balance.filterAll'), value: 'all' },
+                  { label: t('admin.users.balance.filterCredit'), value: 'credit' },
+                  { label: t('admin.users.balance.filterDebit'), value: 'debit' },
+                ]}
+              />
+              <Segmented
+                aria-label={t('admin.users.balance.modeLabel')}
+                value={balanceMode}
+                onChange={(value) => setBalanceMode(value as 'deposit' | 'refund')}
+                options={[
+                  { label: t('admin.users.balance.deposit'), value: 'deposit', icon: <PlusOutlined /> },
+                  { label: t('admin.users.balance.refund'), value: 'refund', icon: <MinusOutlined /> },
+                ]}
+              />
+            </div>
+
+            <Form form={balanceForm} layout="vertical" preserve={false} className="user-balance-action-form">
+              <Form.Item
+                name="amount_yuan"
+                label={balanceMode === 'deposit' ? t('admin.users.balance.depositAmount') : t('admin.users.balance.refundAmount')}
+                rules={[
+                  { required: true, type: 'number', message: t('admin.users.balance.amountRequired') },
+                  {
+                    validator: (_, value) =>
+                      !value || value <= 0 ? Promise.reject(new Error(t('admin.users.balance.amountMustPositive'))) : Promise.resolve(),
+                  },
+                ]}
+              >
+                <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')} rules={[{ required: true, whitespace: true, message: t('admin.users.balance.reasonRequired') }]}>
+                <Input placeholder={balanceMode === 'deposit' ? t('admin.users.balance.depositReasonPlaceholder') : t('admin.users.balance.refundReasonPlaceholder')} />
+              </Form.Item>
+              <Form.Item name="note" label={t('admin.users.balance.noteLabel')}>
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder={t('admin.users.balance.notePlaceholder')} />
+              </Form.Item>
+              <Button type="primary" loading={adjustBalance.isPending} onClick={saveBalance}>
+                {balanceMode === 'deposit' ? t('admin.users.balance.confirmDeposit') : t('admin.users.balance.confirmRefund')}
+              </Button>
+            </Form>
+
+            <div className="user-balance-ledger-list">
+              {balanceLogsQuery.isLoading ? (
+                <Typography.Text type="secondary">{t('admin.users.balance.loadingLogs')}</Typography.Text>
+              ) : filteredBalanceLogs.length > 0 ? (
+                filteredBalanceLogs.map((log) => (
+                  <div className="user-balance-ledger-item" key={log.id}>
+                    <div className="user-balance-ledger-icon" data-kind={log.delta_cents >= 0 ? 'credit' : 'debit'}>
+                      {log.delta_cents >= 0 ? <PlusOutlined /> : <MinusOutlined />}
+                    </div>
+                    <div className="user-balance-ledger-main">
+                      <Typography.Text strong>{balanceLogTitle(log, t)}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {log.note || log.reason}
+                        {log.order_id ? ` · #${log.order_id}` : ''}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">{formatDate(log.created_at)}</Typography.Text>
+                    </div>
+                    <div className="user-balance-ledger-amount">
+                      <Typography.Text strong type={log.delta_cents >= 0 ? 'success' : 'danger'}>
+                        {log.delta_cents >= 0 ? '+' : '-'}{formatYuan(Math.abs(log.delta_cents))}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t('admin.users.balance.afterBalance')}: {formatYuan(log.balance_after_cents)}
+                      </Typography.Text>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="user-balance-ledger-empty">
+                  <Typography.Text type="secondary">{t('admin.users.balance.noLogs')}</Typography.Text>
+                </div>
+              )}
+            </div>
+          </Space>
+        ) : null}
       </Modal>
     </section>
   )

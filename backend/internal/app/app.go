@@ -36,8 +36,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/notify"
 	"github.com/cern/3xui-dashboard/internal/service/notify/channels"
 	"github.com/cern/3xui-dashboard/internal/service/payment"
-	"github.com/cern/3xui-dashboard/internal/service/payment/alipay"
-	"github.com/cern/3xui-dashboard/internal/service/payment/stripe"
+	"github.com/cern/3xui-dashboard/internal/service/payment/paymentcfg"
 	"github.com/cern/3xui-dashboard/internal/service/traffic"
 	usersvc "github.com/cern/3xui-dashboard/internal/service/user"
 	"github.com/cern/3xui-dashboard/internal/service/verification"
@@ -45,6 +44,8 @@ import (
 	"github.com/cern/3xui-dashboard/internal/service/wgcrypto"
 	"github.com/cern/3xui-dashboard/internal/session"
 	"github.com/cern/3xui-dashboard/internal/sub"
+	"github.com/cern/3xui-dashboard/internal/sub/policy"
+	"github.com/cern/3xui-dashboard/internal/sub/ruleset"
 	"github.com/cern/3xui-dashboard/internal/web"
 )
 
@@ -210,6 +211,15 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Settings repo — also used by the subscription handler so admin
 	// template overrides take effect without a restart.
 	settingRepo := repository.NewSettingRepo(db)
+	// Wire the at-rest cipher so secret settings (SMTP/notify/payment
+	// creds, as they move to panel-managed) can be stored encrypted.
+	if cfg.SecretEncryptionKey != "" {
+		if cipher, err := wgcrypto.NewCipherFromHexKey(cfg.SecretEncryptionKey); err != nil {
+			logger.Error("SECRET_ENCRYPTION_KEY rejected; encrypted settings disabled", slog.String("err", err.Error()))
+		} else {
+			settingRepo.SetCipher(cipher)
+		}
+	}
 	dataCollectionConfig := datacollection.NewConfigService(settingRepo, logger)
 
 	// Subscription.
@@ -218,11 +228,27 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	if wgProvisioner != nil {
 		subAsm.SetWGPeerSource(&subWGAdapter{prov: wgProvisioner})
 	}
-	publichandler.NewSubHandler(subAsm, settingRepo, "", logger).RegisterRoutes(engine, subLimiter)
+	subHandler := publichandler.NewSubHandler(subAsm, settingRepo, "", logger)
+	subProfileRepo := repository.NewSubscriptionProfileRepo(db)
+	subRulesetRepo := repository.NewSubscriptionRulesetRepo(db)
+	subHandler.SetProfileStore(subProfileRepo, subRulesetRepo, ruleset.NewCache(nil))
+	seedSubscriptionDefaults(subProfileRepo, subRulesetRepo, logger)
+	subHandler.RegisterRoutes(engine, subLimiter)
+	adminhandler.NewSubscriptionHandler(subProfileRepo, subRulesetRepo).RegisterRoutes(apiAdminAuthed)
 
 	// User accounts.
 	userService := usersvc.New(userRepo, settingRepo, bus, cfg, logger)
-	mailerSvc := mailer.New(cfg.SMTP, logger)
+	// SMTP config is read from the settings table per send (panel-editable,
+	// password decrypted via the cipher above), falling back to the SMTP_*
+	// env / config.yaml values for any key the admin hasn't overridden.
+	smtpSource := mailer.NewSettingsSource(settingRepo, mailer.SMTPConfig{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		From:     cfg.SMTP.From,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+	})
+	mailerSvc := mailer.New(smtpSource, logger)
 	notifyLogRepo := repository.NewNotificationLogRepo(db)
 	// messages.Service is the user-facing SMTP surface — verification
 	// codes, low-balance alerts to user, client lifecycle (expired /
@@ -231,7 +257,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	messagesSvc := messages.New(mailerSvc, notifyLogRepo, bus, userRepo, ownershipRepo, logger)
 	messagesSvc.Start()
 	verifyService := verification.New(db, messagesSvc, logger)
-	userhandler.NewAuthHandler(userService, authSvc, verifyService, cfg.SMTP.Enabled(), sess).RegisterRoutes(apiUser)
+	userhandler.NewAuthHandler(userService, authSvc, verifyService, mailerSvc, sess).RegisterRoutes(apiUser)
 	userhandler.NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)
@@ -240,9 +266,11 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// Billing + payment gateways. provisioningPoolRepo was created
 	// earlier alongside inbound handler wiring.
 	orderRepo := repository.NewOrderRepo(db)
-	paymentRegistry := payment.NewRegistry()
-	paymentRegistry.Register(alipay.New(cfg.Alipay))
-	paymentRegistry.Register(stripe.New(cfg.Stripe))
+	// Gateways are resolved from the settings table per operation
+	// (panel-editable; private key / secret key / webhook secret
+	// decrypted via the cipher), falling back to the ALIPAY_* / STRIPE_*
+	// env values — so credential edits take effect without a restart.
+	paymentRegistry := payment.NewRegistry(paymentcfg.NewResolver(settingRepo, cfg.Alipay, cfg.Stripe))
 	billingService := billing.New(planRepo, orderRepo, userRepo, clientService, bus, paymentRegistry, logger)
 	billingService.SetOwnershipRepo(ownershipRepo)
 	billingService.SetSettings(settingRepo)
@@ -312,51 +340,26 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// (empty env vars) report Enabled()=false and the dispatch loop
 	// silently skips them. Router parsed from NOTIFY_ROUTES; empty
 	// means no ops fanout.
-	notifyRouter, routerErr := notify.ParseRoutes(cfg.Notify.Routes)
-	if routerErr != nil {
-		// Misconfigured routes are a hard boot error — operator should
-		// see this immediately, not silently.
-		logger.Error("invalid NOTIFY_ROUTES",
-			"error", routerErr.Error(),
-			"value", cfg.Notify.Routes,
-		)
-		panic("invalid NOTIFY_ROUTES: " + routerErr.Error())
+	// Notify routing + channels are read from the settings table per
+	// dispatch (panel-editable; bot tokens / webhook URLs decrypted via
+	// the cipher), falling back to the NOTIFY_* / TELEGRAM_* / ... env
+	// values. Panel-stored routes are validated on write; the env
+	// fallback is validated here so a malformed NOTIFY_ROUTES is a hard
+	// boot error the operator sees immediately, not a silent no-fanout.
+	if _, err := notify.ParseRoutes(cfg.Notify.Routes); err != nil {
+		logger.Error("invalid NOTIFY_ROUTES", "error", err.Error(), "value", cfg.Notify.Routes)
+		panic("invalid NOTIFY_ROUTES: " + err.Error())
 	}
-	notifyChannels := []notify.Channel{
-		channels.NewEmail(mailerSvc, cfg.Notify.OpsRecipient),
-		channels.NewTelegram(cfg.Notify.Telegram.BotToken, cfg.Notify.Telegram.ChatID),
-		channels.NewDiscord(cfg.Notify.Discord.WebhookURL),
-		channels.NewFeishu(cfg.Notify.Feishu.WebhookURL, cfg.Notify.Feishu.CardTemplate),
-	}
-	// Warn for channels referenced in routes but unconfigured — helps
-	// operators catch missing env vars without crashing the app.
-	enabledByName := map[string]bool{}
-	for _, c := range notifyChannels {
-		enabledByName[c.Name()] = c.Enabled()
-	}
-	for _, name := range notifyRouter.ConfiguredChannels() {
-		if !enabledByName[name] {
-			logger.Warn("notify route references unconfigured channel",
-				"channel", name,
-				"hint", "events routed only to this channel will be dropped")
-		}
-	}
-	// Per-event check: if email is routed for ops events (anything
-	// not per-user) but NOTIFY_OPS_RECIPIENT is empty, those events
-	// land in /dev/null. Surface at boot so the operator can fix.
-	if cfg.Notify.OpsRecipient == "" && enabledByName["email"] {
-		for _, eventType := range notify.OpsEventTypes() {
-			for _, c := range notifyRouter.Channels(eventType) {
-				if c == "email" {
-					logger.Warn("notify email routed for ops event but NOTIFY_OPS_RECIPIENT is empty",
-						"event", eventType,
-						"hint", "set NOTIFY_OPS_RECIPIENT or remove email from this route")
-					break
-				}
-			}
-		}
-	}
-	notify.New(bus, notifyRouter, notifyChannels, notifyLogRepo, logger).Start()
+	notifyProvider := channels.NewSettingsProvider(settingRepo, mailerSvc, channels.NotifyDefaults{
+		Routes:             cfg.Notify.Routes,
+		OpsRecipient:       cfg.Notify.OpsRecipient,
+		TelegramBotToken:   cfg.Notify.Telegram.BotToken,
+		TelegramChatID:     cfg.Notify.Telegram.ChatID,
+		DiscordWebhookURL:  cfg.Notify.Discord.WebhookURL,
+		FeishuWebhookURL:   cfg.Notify.Feishu.WebhookURL,
+		FeishuCardTemplate: cfg.Notify.Feishu.CardTemplate,
+	}, logger)
+	notify.New(bus, notifyProvider, notifyLogRepo, logger).Start()
 
 	// Configured payment-provider currencies — surface at INFO so an
 	// operator who forgot STRIPE_CURRENCY=cny sees the active value
@@ -397,6 +400,41 @@ func (a *App) Shutdown(ctx context.Context) {
 		a.log.Warn("scheduler stop deadline exceeded")
 	}
 	a.WebhookService.Drain(ctx)
+}
+
+// seedSubscriptionDefaults inserts the built-in default profile + its
+// rulesets on first boot (when no profiles exist yet) so the admin has
+// something to edit. Idempotent and non-fatal: a failure just leaves the
+// handler falling back to the in-code default profile.
+func seedSubscriptionDefaults(profiles *repository.SubscriptionProfileRepo, rulesets *repository.SubscriptionRulesetRepo, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	existing, err := profiles.List(ctx)
+	if err != nil {
+		logger.Warn("subscription seed: list profiles failed", slog.String("err", err.Error()))
+		return
+	}
+	if len(existing) > 0 {
+		return // already seeded or admin-configured
+	}
+
+	p := policy.DefaultProfile()
+	if err := profiles.Create(ctx, &p); err != nil {
+		logger.Warn("subscription seed: create default profile failed", slog.String("err", err.Error()))
+		return
+	}
+	for _, rs := range policy.DefaultRulesets() {
+		rs := rs
+		if found, _ := rulesets.GetByKey(ctx, rs.Key); found != nil {
+			continue
+		}
+		if err := rulesets.Create(ctx, &rs); err != nil {
+			logger.Warn("subscription seed: create ruleset failed",
+				slog.String("key", rs.Key), slog.String("err", err.Error()))
+		}
+	}
+	logger.Info("seeded default subscription profile + rulesets")
 }
 
 // ---- adapters (kept private — main + tests share them) ---------------------

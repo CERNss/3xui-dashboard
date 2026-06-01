@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { portalProfileApi } from '@/api/portal/profile'
 import { portalTrafficApi } from '@/api/portal/traffic'
+import { portalBillingApi } from '@/api/portal/billing'
 import '@/i18n'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Usage from './Usage'
@@ -18,8 +19,15 @@ vi.mock('@/api/portal/traffic', () => ({
   },
 }))
 
+vi.mock('@/api/portal/billing', () => ({
+  portalBillingApi: {
+    listOrders: vi.fn(),
+  },
+}))
+
 const profileGetMock = vi.mocked(portalProfileApi.get)
 const trafficOwnMock = vi.mocked(portalTrafficApi.own)
+const ordersListMock = vi.mocked(portalBillingApi.listOrders)
 
 function renderUsage() {
   return renderWithProviders(<Usage />)
@@ -59,6 +67,8 @@ beforeEach(() => {
       expires_at: '2026-06-10T00:00:00Z',
     },
   ])
+  ordersListMock.mockReset()
+  ordersListMock.mockResolvedValue([])
 })
 
 describe('Usage', () => {
@@ -87,5 +97,28 @@ describe('Usage', () => {
     expect(within(backupRow).getAllByText('512.00 KiB')).toHaveLength(2)
     expect(within(backupRow).getByText('1.00 MiB')).toBeInTheDocument()
     expect(within(backupRow).getByText('/ 2.00 MiB')).toBeInTheDocument()
+  })
+
+  it('shows provisioning instead of an empty subscription after a recent order', async () => {
+    trafficOwnMock.mockResolvedValue([])
+    ordersListMock.mockResolvedValue([
+      {
+        id: 99,
+        user_id: 1,
+        plan_id: 2,
+        idempotency_key: 'purchase-99',
+        price_cents: 500,
+        status: 'completed',
+        created_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        payment_method: 'balance',
+      },
+    ])
+
+    renderUsage()
+
+    expect(await screen.findByText('Subscription is provisioning')).toBeInTheDocument()
+    expect(screen.getByText(/refreshes automatically/i)).toBeInTheDocument()
+    expect(screen.queryByText('No active clients yet')).not.toBeInTheDocument()
   })
 })

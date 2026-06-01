@@ -389,6 +389,26 @@ func (r *UserRepo) AdjustBalance(ctx context.Context, userID, delta int64, reaso
 	return newBalance, nil
 }
 
+// ListBalanceLogs returns a user's balance mutation ledger, newest first.
+func (r *UserRepo) ListBalanceLogs(ctx context.Context, userID int64, limit, offset int) ([]model.BalanceLog, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var rows []model.BalanceLog
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC, id DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("UserRepo.ListBalanceLogs: %w", err)
+	}
+	return rows, nil
+}
+
 // ChargeBalanceIfEnough debits amountCents while holding the user row
 // lock and writes the matching balance_logs row only if the balance is
 // sufficient. The returned have value is the locked balance before the

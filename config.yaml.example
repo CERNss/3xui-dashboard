@@ -1,0 +1,74 @@
+# =============================================================================
+# config.yaml — non-secret runtime configuration.
+# =============================================================================
+# Copy to config.yaml (gitignored) and pass with `-config config.yaml`
+# (the binary looks for ./config.yaml by default).
+#
+# SECRETS DO NOT GO HERE — DB password, JWT secret, admin password, and all
+# integration keys/tokens live in .env (see .env.example). Real environment
+# variables override both files.
+#
+# Settings that are editable in the admin panel at RUNTIME (registration,
+# email rules, branding, OIDC, traffic thresholds, subscription profiles, …)
+# are NOT here either — configure them in the panel; the database is their
+# source of truth and survives restarts.
+#
+# Source of truth for keys: internal/config/config.go.
+
+# --- Server -------------------------------------------------------------------
+env: prod                 # prod | dev  (dev relaxes Secure cookies so login works over http://localhost)
+listen_addr: ":8080"
+read_timeout: 15s
+write_timeout: 30s
+shutdown_timeout: 20s
+log_level: info           # debug | info | warn | error
+log_format: ""            # json | text  (empty → text in dev, json in prod)
+allowed_origins: ""       # CSV of exact origins for closed-set CORS; empty = permissive (dev)
+
+# --- Database (the connection URL + its password is a SECRET → .env) ----------
+db_max_open_conns: 25
+db_max_idle_conns: 5
+db_migrate_on_boot: true  # apply pending migrations on startup
+
+# --- Auth ---------------------------------------------------------------------
+access_token_ttl: 24h
+
+# =============================================================================
+# Integrations — now managed in the admin panel (Settings → SMTP / Payment /
+# Notifications), stored encrypted in the DB so they change at runtime. The
+# values below — and their SECRETS in .env — are first-boot FALLBACKS: they
+# apply only until an admin sets the matching panel value, which then wins.
+# Configuring them here is optional (handy for IaC / bootstrap).
+# =============================================================================
+
+# --- SMTP (password → .env) — needed for email verification + the email channel
+smtp_host: ""
+smtp_port: 587
+smtp_use_tls: true
+smtp_from: ""             # e.g. no-reply@example.com
+smtp_username: ""
+
+# --- Payment: Alipay 当面付 (private/public keys → .env; currency fixed to CNY) -
+alipay_gateway: "https://openapi.alipay.com/gateway.do"  # sandbox URL for staging
+alipay_app_id: ""
+alipay_notify_url: ""     # e.g. https://panel.example.com/api/public/payment/alipay/notify
+alipay_return_url: ""
+
+# --- Payment: Stripe (secret/webhook keys → .env) -----------------------------
+# CRITICAL: set the currency to your market. Plan price_cents (e.g. 500 for a
+# ¥5 CNY plan) is billed as the smallest unit of THIS currency — leaving the
+# default usd would charge $5.00 for that plan.
+stripe_currency: usd
+stripe_success_url: ""    # e.g. https://panel.example.com/portal/orders?stripe=ok
+stripe_cancel_url: ""
+stripe_endpoint: ""       # empty for production; override for tests
+stripe_session_expiry_minutes: 30
+
+# --- Notify: ops fanout routing (channel tokens/webhooks → .env) --------------
+# Maps event types to channel lists: "event.type:chan1,chan2;event.type2:chan3".
+# Empty = no ops fanout. A malformed value fails fast at boot. (Panel-set
+# routes are validated on save.)
+#   notify_routes: "node.offline:telegram,discord;order.payment_failed:telegram;client.expired:email"
+notify_routes: ""
+notify_ops_recipient: ""  # fallback "to:" for email-routed ops events
+feishu_card_template: ""  # optional custom Feishu card; empty = default rich card

@@ -1,13 +1,16 @@
-import { Drawer, Layout, theme } from 'antd'
+import { CreditCardOutlined } from '@ant-design/icons'
+import { Drawer, Layout, Skeleton, theme } from 'antd'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useMinWidth } from '@/hooks/useBreakpoint'
 import { portalAuthApi } from '@/api/portal/auth'
 import { useBranding } from '@/hooks/queries/branding'
+import { useProfile } from '@/hooks/queries/portal/profile'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import { useThemeStore } from '@/stores/theme'
 import { MD_BREAKPOINT } from '@/theme'
+import { formatYuan } from '@/views/portal/_shared/format'
 import { AppSidebar } from './AppSidebar'
 import { AppTopbar } from './AppTopbar'
 import { portalItems, selectedKey } from './nav'
@@ -26,6 +29,7 @@ export function PortalLayout() {
   const themeMode = useThemeStore((state) => state.resolvedTheme)
   const toggleTheme = useThemeStore((state) => state.toggle)
   const { data: branding } = useBranding()
+  const profileQuery = useProfile()
   const { token } = theme.useToken()
   const items = useMemo(() => portalItems(t), [t])
   // The portal nav is flat (no section grouping). Wrap it in a single
@@ -35,6 +39,7 @@ export function PortalLayout() {
   const selected = selectedKey(location.pathname, items)
   const activeLink = items.find((item) => item.key === selected)
   const accountLabel = user?.email ?? ''
+  const balanceText = formatYuan(profileQuery.data?.balance_cents)
 
   function selectRoute(key: string) {
     navigate(key)
@@ -89,6 +94,18 @@ export function PortalLayout() {
             accountItems={[{ label: t('account.profile'), to: '/portal/profile' }]}
             onLogout={logout}
             onOpenMobileNav={!wide ? () => setDrawerOpen(true) : undefined}
+            showNotifications
+            notificationsLabel={t('portal.shell.notifications')}
+            toolSlot={
+              <div className="portal-topbar-balance" aria-label={t('portal.shell.balanceLabel', { amount: balanceText })}>
+                <CreditCardOutlined aria-hidden="true" />
+                {profileQuery.isLoading ? (
+                  <Skeleton.Input active block className="portal-topbar-balance-skeleton" size="small" />
+                ) : (
+                  <span>{balanceText}</span>
+                )}
+              </div>
+            }
           />
         </Header>
         <Content className="admin-shell-content" style={{ background: token.colorBgLayout }}>

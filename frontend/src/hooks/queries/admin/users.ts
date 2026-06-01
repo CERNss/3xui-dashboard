@@ -6,7 +6,7 @@ import { queryKeys } from '../keys'
 const keys = queryKeys('admin', 'users')
 
 type CreateUserInput = Parameters<typeof adminUsersApi.create>[0]
-type UpdateUserInput = Partial<Pick<AdminUser, 'email' | 'email_verified' | 'status' | 'auto_renew' | 'balance_cents'>> & {
+type UpdateUserInput = Partial<Pick<AdminUser, 'email' | 'email_verified' | 'status' | 'auto_renew'>> & {
   password?: string
 }
 
@@ -76,8 +76,8 @@ export function useAdjustUserBalance() {
   const queryClient = useQueryClient()
   const handleError = useMutationErrorHandler()
   return useMutation({
-    mutationFn: ({ id, deltaCents, reason }: { id: number; deltaCents: number; reason: string }) =>
-      adminUsersApi.adjustBalance(id, deltaCents, reason),
+    mutationFn: ({ id, deltaCents, reason, note }: { id: number; deltaCents: number; reason: string; note?: string }) =>
+      adminUsersApi.adjustBalance(id, deltaCents, reason, note),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
     onError: (error) => handleError(error),
   })

@@ -173,6 +173,9 @@ func (s *Service) Update(ctx context.Context, nodeID int64, tag string, in *runt
 	if err != nil {
 		return nil, err
 	}
+	if err := resolveIntent(ctx, r, in); err != nil {
+		return nil, err
+	}
 	return r.UpdateInbound(ctx, tag, in)
 }
 

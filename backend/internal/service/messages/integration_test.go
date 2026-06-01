@@ -41,7 +41,7 @@ type sentMail struct {
 }
 
 func (m *countingMailer) Enabled() bool { return true }
-func (m *countingMailer) Send(to, subject, body string) error {
+func (m *countingMailer) Send(_ context.Context, to, subject, body string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.err != nil {

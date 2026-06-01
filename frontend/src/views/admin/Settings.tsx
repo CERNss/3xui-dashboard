@@ -1,5 +1,6 @@
 import {
   AlertOutlined,
+  CreditCardOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   HomeOutlined,
@@ -21,6 +22,7 @@ import { DataCollectionSettings } from './settings/DataCollectionSettings'
 import { GeneralSettings } from './settings/GeneralSettings'
 import { MessagesSettings } from './settings/MessagesSettings'
 import { NotificationsSettings } from './settings/NotificationsSettings'
+import { PaymentSettings } from './settings/PaymentSettings'
 import { SecurityAuthSettings } from './settings/SecurityAuthSettings'
 import { SubscriptionSettings } from './settings/SubscriptionSettings'
 import { UserDefaultsSettings } from './settings/UserDefaultsSettings'
@@ -41,6 +43,7 @@ function makeDrafts(items: SettingItem[]) {
 const settingsTabIcons: Record<SettingsTab, ReactNode> = {
   general: <HomeOutlined />,
   subscription: <FileTextOutlined />,
+  payment: <CreditCardOutlined />,
   alerts: <AlertOutlined />,
   dataCollection: <DatabaseOutlined />,
   securityAuth: <SafetyCertificateOutlined />,
@@ -59,7 +62,8 @@ export default function Settings() {
   const settingsQuery = useSettingsList()
   const setSetting = useSetSetting()
   const clearSetting = useClearSetting()
-  const settings = useMemo(() => settingsQuery.data ?? [], [settingsQuery.data])
+  const settings = useMemo(() => settingsQuery.data?.settings ?? [], [settingsQuery.data])
+  const secretsAvailable = settingsQuery.data?.secrets_available ?? true
 
   useEffect(() => {
     setDrafts(makeDrafts(settings))
@@ -122,6 +126,8 @@ export default function Settings() {
         <GeneralSettings {...sectionProps(tab)} />
       ) : tab === 'subscription' ? (
         <SubscriptionSettings {...sectionProps(tab)} />
+      ) : tab === 'payment' ? (
+        <PaymentSettings {...sectionProps(tab)} />
       ) : tab === 'alerts' ? (
         <AlertsSettings {...sectionProps(tab)} />
       ) : tab === 'dataCollection' ? (
@@ -133,7 +139,7 @@ export default function Settings() {
       ) : tab === 'messages' ? (
         <MessagesSettings {...sectionProps(tab)} />
       ) : (
-        <NotificationsSettings />
+        <NotificationsSettings {...sectionProps(tab)} />
       ),
   }))
 
@@ -147,6 +153,9 @@ export default function Settings() {
         actions={<RefreshButton loading={settingsQuery.isFetching} onClick={() => settingsQuery.refetch()} />}
       />
       {error ? <Alert type="error" showIcon message={t('admin.settings.operationFailed')} style={{ marginBottom: 16 }} /> : null}
+      {!secretsAvailable ? (
+        <Alert type="warning" showIcon message={t('admin.settings.secretsUnavailable')} style={{ marginBottom: 16 }} />
+      ) : null}
       {settingsQuery.isLoading ? (
         <Skeleton active />
       ) : (

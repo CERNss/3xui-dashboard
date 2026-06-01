@@ -23,6 +23,7 @@ vi.mock('@/api/admin/plans', () => ({
 vi.mock('@/api/admin/users', () => ({
   adminUsersApi: {
     list: vi.fn(),
+    update: vi.fn(),
   },
 }))
 
@@ -30,6 +31,7 @@ const ordersListMock = vi.mocked(adminOrdersApi.list)
 const refundMock = vi.mocked(adminOrdersApi.refund)
 const plansListMock = vi.mocked(adminPlansApi.list)
 const usersListMock = vi.mocked(adminUsersApi.list)
+const usersUpdateMock = vi.mocked(adminUsersApi.update)
 
 function makeOrder(overrides: Partial<AdminOrder> = {}): AdminOrder {
   return {
@@ -56,6 +58,7 @@ beforeEach(() => {
   refundMock.mockReset()
   plansListMock.mockReset()
   usersListMock.mockReset()
+  usersUpdateMock.mockReset()
 
   ordersListMock.mockResolvedValue({
     orders: [
@@ -78,6 +81,17 @@ beforeEach(() => {
     offset: 0,
   })
   refundMock.mockResolvedValue(makeOrder({ id: 100, status: 'refunded' }))
+  usersUpdateMock.mockResolvedValue({
+    id: 1,
+    email: 'alice@example.com',
+    email_verified: true,
+    status: 'active',
+    balance_cents: 1000,
+    auto_renew: true,
+    sub_id: 's1',
+    created_at: '',
+    updated_at: '',
+  })
 })
 
 describe('Orders', () => {
@@ -143,5 +157,14 @@ describe('Orders', () => {
 
     await waitFor(() => expect(refundMock).toHaveBeenCalledWith(100, 'admin manual refund'))
     await waitFor(() => expect(ordersListMock).toHaveBeenCalledTimes(2))
+  })
+
+  it('moves auto-renew control into the order context', async () => {
+    renderOrders()
+
+    const aliceRow = (await screen.findAllByRole('row', { name: /#100/i }))[0]
+    await userEvent.click(within(aliceRow).getByRole('switch', { name: 'Enable auto renew for alice@example.com' }))
+
+    await waitFor(() => expect(usersUpdateMock).toHaveBeenCalledWith(1, { auto_renew: true }))
   })
 })

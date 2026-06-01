@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InboundEditor from './InboundEditor'
 import type { Inbound } from '@/api/admin/inbounds'
+import { nodesApi } from '@/api/admin/nodes'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createMutateAsync = vi.fn()
 const updateMutateAsync = vi.fn()
+const GB = 1024 * 1024 * 1024
 
 vi.mock('@/hooks/queries/admin/inbounds', () => ({
   useCreateInbound: () => ({ error: null, isPending: false, mutateAsync: createMutateAsync }),
@@ -14,9 +16,56 @@ vi.mock('@/hooks/queries/admin/inbounds', () => ({
 }))
 
 const inboundTemplatesData = [
-  { id: 11, name: 'VLESS TCP plain', enabled: true, protocol: 'vless' },
-  { id: 12, name: 'Trojan WS TLS', enabled: true, protocol: 'trojan' },
-  { id: 13, name: 'Disabled template', enabled: false, protocol: 'vless' },
+  {
+    id: 11,
+    name: 'VLESS TCP plain',
+    description: 'Plain VLESS default',
+    enabled: true,
+    protocol: 'vless',
+    remark: 'tpl-vless',
+    listen: '127.0.0.1',
+    total: 2 * GB,
+    expiryTime: 0,
+    trafficReset: 'monthly',
+    settings: JSON.stringify({ clients: [], decryption: 'none', fallbacks: [] }),
+    streamSettings: JSON.stringify({
+      network: 'ws',
+      security: 'tls',
+      wsSettings: { path: '/tpl-ws', headers: { Host: 'edge.example.com' } },
+      tlsSettings: { serverName: 'edge.example.com' },
+    }),
+    sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic'] }),
+  },
+  {
+    id: 12,
+    name: 'Trojan WS TLS',
+    description: '',
+    enabled: true,
+    protocol: 'trojan',
+    remark: 'tpl-trojan',
+    listen: '',
+    total: 0,
+    expiryTime: 0,
+    trafficReset: 'never',
+    settings: JSON.stringify({ clients: [], fallbacks: [] }),
+    streamSettings: JSON.stringify({ network: 'tcp', security: 'tls', tlsSettings: { serverName: 'trojan.example.com' } }),
+    sniffing: JSON.stringify({ enabled: false, destOverride: [] }),
+  },
+  {
+    id: 13,
+    name: 'Disabled template',
+    description: '',
+    enabled: false,
+    protocol: 'vless',
+    remark: 'disabled',
+    listen: '',
+    total: 0,
+    expiryTime: 0,
+    trafficReset: 'never',
+    settings: JSON.stringify({ clients: [], decryption: 'none', fallbacks: [] }),
+    streamSettings: JSON.stringify({ network: 'tcp', security: 'none' }),
+    sniffing: JSON.stringify({ enabled: true, destOverride: [] }),
+  },
 ]
 vi.mock('@/hooks/queries/admin/inboundTemplates', () => ({
   useInboundTemplatesList: () => ({
@@ -26,6 +75,27 @@ vi.mock('@/hooks/queries/admin/inboundTemplates', () => ({
     error: null,
   }),
 }))
+
+vi.mock('@/api/admin/nodes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/admin/nodes')>()
+  return {
+    ...actual,
+    nodesApi: {
+      ...actual.nodesApi,
+      generateRealityX25519: vi.fn(),
+      generateRealityMldsa65: vi.fn(),
+    },
+  }
+})
+
+const cryptoMock = {
+  getRandomValues: vi.fn((array: Uint8Array | Uint32Array) => {
+    array.fill(0)
+    return array
+  }),
+}
+
+vi.stubGlobal('crypto', cryptoMock)
 
 function renderEditor(
   source?: Inbound | null,
@@ -76,6 +146,10 @@ beforeEach(() => {
   updateMutateAsync.mockClear()
   createMutateAsync.mockResolvedValue(makeInbound())
   updateMutateAsync.mockResolvedValue(makeInbound())
+  vi.mocked(nodesApi.generateRealityX25519).mockReset()
+  vi.mocked(nodesApi.generateRealityMldsa65).mockReset()
+  vi.mocked(nodesApi.generateRealityX25519).mockResolvedValue({ privateKey: 'REALITY_PRIVATE', publicKey: 'REALITY_PUBLIC' })
+  vi.mocked(nodesApi.generateRealityMldsa65).mockResolvedValue({ seed: 'MLDSA_SEED', verify: 'MLDSA_VERIFY' })
 })
 
 describe('InboundEditor', () => {
@@ -166,7 +240,7 @@ describe('InboundEditor', () => {
     await user.clear(screen.getByLabelText('Path'))
     await user.type(screen.getByLabelText('Path'), '/socket')
     await user.click(screen.getByRole('tab', { name: 'Sniffing' }))
-    expect(within(screen.getByRole('tabpanel')).getByText('http')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sniffing Enabled')).not.toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
@@ -174,7 +248,12 @@ describe('InboundEditor', () => {
     expect(payload.nodeID).toBe(1)
     expect(payload.body).toEqual(expect.objectContaining({ remark: 'Create inbound', port: 8443 }))
     expect(JSON.parse(payload.body.streamSettings).wsSettings.path).toBe('/socket')
-    expect(JSON.parse(payload.body.sniffing).destOverride).toContain('http')
+    expect(JSON.parse(payload.body.sniffing)).toEqual({
+      enabled: false,
+      destOverride: ['http', 'tls', 'quic', 'fakedns'],
+      metadataOnly: false,
+      routeOnly: false,
+    })
   })
 
   it('validates required remark and port before creating', async () => {
@@ -260,9 +339,12 @@ describe('InboundEditor', () => {
     expect(screen.queryByText('Disabled template · vless')).not.toBeInTheDocument()
 
     await user.click(screen.getByText('VLESS TCP plain · vless'))
-    await user.type(screen.getByLabelText('Inbound name'), 'tpl-inbound')
-    await user.clear(screen.getByLabelText('Port'))
-    await user.type(screen.getByLabelText('Port'), '18081')
+
+    expect(screen.getByLabelText('Inbound name')).toHaveValue('tpl-vless')
+    expect(screen.getByLabelText('Listen address')).toHaveValue('127.0.0.1')
+    expect(screen.getByLabelText('Total traffic (GB, 0 = unlimited)')).toHaveValue('2.00')
+    expect(screen.getByLabelText('Port')).toHaveValue('44400')
+
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
@@ -271,10 +353,35 @@ describe('InboundEditor', () => {
     expect(payload.body).toEqual(
       expect.objectContaining({
         template_id: 11,
-        port: 18081,
-        remark: 'tpl-inbound',
+        port: 44400,
+        remark: 'tpl-vless',
+        listen: '127.0.0.1',
+        total: 2 * GB,
+        trafficReset: 'monthly',
       }),
     )
+    const stream = JSON.parse(payload.body.streamSettings)
+    expect(stream.network).toBe('ws')
+    expect(stream.security).toBe('tls')
+    expect(stream.wsSettings.path).toBe('/tpl-ws')
+    expect(JSON.parse(payload.body.sniffing).destOverride).toContain('quic')
+  })
+
+  it('drops template_id when a template-owned field is edited after fill', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /Fill from template/ }))
+    await user.click(await screen.findByText('VLESS TCP plain · vless'))
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Protocol' }))
+    await user.click(await screen.findByTitle('trojan'))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
+    const body = createMutateAsync.mock.calls[0][0].body
+    expect(body).not.toHaveProperty('template_id')
+    expect(body.protocol).toBe('trojan')
   })
 
   it('omits template_id when no template is chosen', async () => {
@@ -295,6 +402,87 @@ describe('InboundEditor', () => {
     renderEditor(makeInbound())
 
     expect(screen.queryByRole('combobox', { name: /Fill from template/ })).not.toBeInTheDocument()
+  })
+
+  it('generates Reality keys from the selected node and saves both public and private keys', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByLabelText('Inbound name'), 'Reality inbound')
+    await user.click(screen.getByRole('tab', { name: 'Stream' }))
+    await user.click(screen.getByLabelText('Security'))
+    await user.click(await screen.findByText('reality'))
+    await user.click(screen.getByRole('button', { name: 'Configure Reality' }))
+    await user.click(screen.getByRole('button', { name: 'Get New Cert' }))
+
+    await waitFor(() => expect(nodesApi.generateRealityX25519).toHaveBeenCalledWith(1))
+    expect(screen.getByLabelText('Public key')).toHaveValue('REALITY_PUBLIC')
+    expect(screen.getByLabelText('Private key')).toHaveValue('REALITY_PRIVATE')
+
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
+    const stream = JSON.parse(createMutateAsync.mock.calls[0][0].body.streamSettings)
+    expect(stream.realitySettings.settings.publicKey).toBe('REALITY_PUBLIC')
+    expect(stream.realitySettings.privateKey).toBe('REALITY_PRIVATE')
+    expect(stream.realitySettings.publicKey).toBeUndefined()
+    expect(stream._intent?.realityKeypair).toBeUndefined()
+  })
+
+  it('fills complete Reality random fields immediately', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByLabelText('Inbound name'), 'Reality random inbound')
+    await user.click(screen.getByRole('tab', { name: 'Stream' }))
+    await user.click(screen.getByLabelText('Security'))
+    await user.click(await screen.findByText('reality'))
+    await user.click(screen.getByRole('button', { name: 'Configure Reality' }))
+
+    await user.click(screen.getByRole('button', { name: 'Randomize Target and SNI' }))
+    await user.click(screen.getByRole('button', { name: 'Randomize Short IDs' }))
+
+    expect(screen.getByPlaceholderText('www.amazon.com:443')).toHaveValue('www.cloudflare.com:443')
+    expect(screen.getByPlaceholderText('www.amazon.com')).toHaveValue('www.cloudflare.com')
+    expect(screen.getByPlaceholderText('Comma-separated, e.g. abcd,1234')).toHaveValue('00,0000,000000,00000000,0000000000,000000000000,00000000000000,0000000000000000')
+
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
+    const stream = JSON.parse(createMutateAsync.mock.calls[0][0].body.streamSettings)
+    expect(stream.realitySettings.target).toBe('www.cloudflare.com:443')
+    expect(stream.realitySettings.dest).toBe('www.cloudflare.com:443')
+    expect(stream.realitySettings.serverNames).toEqual(['www.cloudflare.com'])
+    expect(stream.realitySettings.shortIds).toEqual([
+      '00',
+      '0000',
+      '000000',
+      '00000000',
+      '0000000000',
+      '000000000000',
+      '00000000000000',
+      '0000000000000000',
+    ])
+    expect(stream._intent).toBeUndefined()
+  })
+
+  it('blocks saving Reality when only a private key is present', async () => {
+    const user = userEvent.setup()
+    renderEditor(makeInbound({
+      streamSettings: JSON.stringify({
+        network: 'tcp',
+        security: 'reality',
+        realitySettings: { privateKey: 'PRIVATE_ONLY', publicKey: '' },
+      }),
+    }))
+
+    await user.click(screen.getByRole('tab', { name: 'Stream' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findAllByText('Reality public key is required when a private key is set')).not.toHaveLength(0)
+    expect(updateMutateAsync).not.toHaveBeenCalled()
   })
 
   it('closes without running a create mutation', async () => {

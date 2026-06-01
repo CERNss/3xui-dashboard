@@ -46,6 +46,41 @@ const (
 	SettingOIDCTokenURL                = "oidc_token_url"
 	SettingOIDCJWKSURL                 = "oidc_jwks_url"
 	SettingOIDCUserInfoURL             = "oidc_userinfo_url"
+	SettingDashboardAutoRefreshSecs    = "dashboard_auto_refresh_interval_seconds"
+	// SMTP delivery — runtime-editable in the panel; smtp_password is
+	// stored encrypted (SettingRepo.SetSecret). Empty rows fall back to
+	// the SMTP_* env / config.yaml values.
+	SettingSMTPHost     = "smtp_host"
+	SettingSMTPPort     = "smtp_port"
+	SettingSMTPFrom     = "smtp_from"
+	SettingSMTPUsername = "smtp_username"
+	SettingSMTPPassword = "smtp_password"
+	// Notify ops fan-out — runtime-editable in the panel. Bot tokens and
+	// webhook URLs (the URL alone is the credential) are stored encrypted
+	// (SettingRepo.SetSecret). Empty rows fall back to the NOTIFY_* /
+	// TELEGRAM_* / DISCORD_* / FEISHU_* env values.
+	SettingNotifyRoutes             = "notify_routes"
+	SettingNotifyOpsRecipient       = "notify_ops_recipient"
+	SettingNotifyTelegramBotToken   = "notify_telegram_bot_token"
+	SettingNotifyTelegramChatID     = "notify_telegram_chat_id"
+	SettingNotifyDiscordWebhookURL  = "notify_discord_webhook_url"
+	SettingNotifyFeishuWebhookURL   = "notify_feishu_webhook_url"
+	SettingNotifyFeishuCardTemplate = "notify_feishu_card_template"
+	// Payment gateways — runtime-editable in the panel. The Alipay
+	// private key and the Stripe secret key + webhook secret are stored
+	// encrypted (SettingRepo.SetSecret). Empty rows fall back to the
+	// ALIPAY_* / STRIPE_* env values.
+	SettingAlipayAppID                = "alipay_app_id"
+	SettingAlipayPrivateKey           = "alipay_private_key"
+	SettingAlipayPublicKey            = "alipay_public_key"
+	SettingAlipayGateway              = "alipay_gateway"
+	SettingAlipayNotifyURL            = "alipay_notify_url"
+	SettingStripeSecretKey            = "stripe_secret_key"
+	SettingStripeWebhookSecret        = "stripe_webhook_secret"
+	SettingStripeCurrency             = "stripe_currency"
+	SettingStripeSuccessURL           = "stripe_success_url"
+	SettingStripeCancelURL            = "stripe_cancel_url"
+	SettingStripeSessionExpiryMinutes = "stripe_session_expiry_minutes"
 	SettingOpsCollectEnabled           = "ops_collect_enabled"
 	SettingOpsCollectIntervalSeconds   = "ops_collect_interval_seconds"
 	SettingOpsCollectConcurrency       = "ops_collect_concurrency"
@@ -61,14 +96,9 @@ const (
 
 	// Subscription format templates — admins override the embedded
 	// defaults shipped by internal/sub/template/defaults.go.
+	// Operator base-template overrides for the subscription renderers.
+	// Routing policy (groups + rules) is configured via subscription
+	// profiles, not these — these only replace the base skeleton.
 	SettingClashTemplateYAML   = "clash_template_yaml"
 	SettingSingBoxTemplateJSON = "singbox_template_json"
-	// One of "auto-only" / "select-only" / "auto+select". Only affects
-	// the default Clash template; ignored when clash_template_yaml is
-	// non-empty.
-	SettingProxyGroupStrategy = "proxy_group_strategy"
-	// When false, the default Clash template emits no rule-providers /
-	// rules — just proxies + a single MATCH fallback. Ignored when
-	// clash_template_yaml is non-empty.
-	SettingRuleProvidersEnabled = "rule_providers_enabled"
 )

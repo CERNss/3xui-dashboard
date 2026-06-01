@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useCreateInbound, useUpdateInbound } from '@/hooks/queries/admin/inbounds'
 import { useInboundTemplatesList } from '@/hooks/queries/admin/inboundTemplates'
 import { AdvancedJsonForm } from './inbound-editor/AdvancedJsonForm'
-import { blankInboundValues, inboundToValues, valuesToInboundBody } from './inbound-editor/model'
+import { blankInboundValues, inboundToValues, templateToValues, valuesToInboundBody } from './inbound-editor/model'
 import { SniffingForm } from './inbound-editor/SniffingForm'
 import { StreamSettingsForm } from './inbound-editor/StreamSettingsForm'
 import type { InboundEditorProps, InboundEditorValues, ProtocolName } from './inbound-editor/types'
@@ -29,6 +29,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
   const templatesQuery = useInboundTemplatesList()
   const busy = createInbound.isPending || updateInbound.isPending
   const error = createInbound.error ?? updateInbound.error
+  const templateOverrideKeys = new Set(['node_id', 'port', 'remark', 'listen'])
 
   useEffect(() => {
     if (!open) return
@@ -43,6 +44,16 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
     if (typeof validated?.node_id !== 'number') return
     const values = { ...form.getFieldsValue(true), ...validated } as InboundEditorValues
     values.node_id = validated.node_id
+    if (values.security === 'reality' && !values.advStreamOverride) {
+      const hasPublicKey = Boolean(values.realityPublicKey?.trim())
+      const hasPrivateKey = Boolean(values.realityPrivateKey?.trim())
+      if (hasPublicKey !== hasPrivateKey) {
+        const message = t('admin.inboundEditor.stream.publicKeyRequired')
+        form.setFields([{ name: 'realityPrivateKey', errors: [message] }])
+        Modal.error({ title: message })
+        return
+      }
+    }
     const body = valuesToInboundBody(values)
     const result =
       mode === 'create'
@@ -53,6 +64,28 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
         : await updateInbound.mutateAsync({ nodeID: validated.node_id, tag, body })
     onSaved?.(result)
     onClose()
+  }
+
+  const fillFromTemplate = (value: number | null | undefined) => {
+    if (typeof value !== 'number') {
+      setTemplateID(null)
+      return
+    }
+    const template = (templatesQuery.data ?? []).find((item) => item.id === value)
+    setTemplateID(value)
+    if (!template) return
+
+    const current = form.getFieldsValue(true) as InboundEditorValues
+    const defaults = blankInboundValues(nodeID)
+    const templateValues = templateToValues(template)
+    const values = {
+      ...templateValues,
+      node_id: typeof current.node_id === 'number' ? current.node_id : nodeID,
+      port: current.port && current.port > 0 ? current.port : defaults.port,
+      enable: current.enable ?? defaults.enable,
+    }
+    form.setFieldsValue(values as unknown as Parameters<typeof form.setFieldsValue>[0])
+    setProtocol(values.protocol)
   }
 
   // Clients / peers / accounts are managed elsewhere:
@@ -97,7 +130,7 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
                     style={{ minWidth: 240 }}
                     value={templateID ?? undefined}
                     loading={templatesQuery.isLoading}
-                    onChange={(value) => setTemplateID(typeof value === 'number' ? value : null)}
+                    onChange={fillFromTemplate}
                     options={(templatesQuery.data ?? [])
                       .filter((t) => t.enabled)
                       .map((t) => ({ label: `${t.name} · ${t.protocol}`, value: t.id }))}
@@ -229,6 +262,9 @@ export default function InboundEditor({ open, mode, nodeID, tag, source, nodes, 
         initialValues={blankInboundValues(nodeID)}
         onValuesChange={(changed) => {
           if (changed.protocol) setProtocol(changed.protocol)
+          if (templateID && Object.keys(changed).some((key) => !templateOverrideKeys.has(key))) {
+            setTemplateID(null)
+          }
         }}
       >
         <Tabs items={tabs} />

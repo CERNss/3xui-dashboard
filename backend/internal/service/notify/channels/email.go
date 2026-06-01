@@ -29,19 +29,18 @@ func NewEmail(m *mailer.Mailer, opsRecipient string) *Email {
 func (e *Email) Name() string { return "email" }
 
 func (e *Email) Enabled() bool {
-	return e.mailer != nil && e.mailer.Enabled()
+	// Needs a working mailer AND a destination. Without an ops recipient
+	// the channel can't deliver, so report disabled — otherwise the
+	// dispatcher would call Send, silently no-op, and dedup-mark the
+	// event as delivered so it never retries once a recipient is set.
+	return e.mailer != nil && e.mailer.Enabled() && e.opsRecipient != ""
 }
 
-func (e *Email) Send(_ context.Context, msg notify.Message) error {
+func (e *Email) Send(ctx context.Context, msg notify.Message) error {
 	if !e.Enabled() {
 		return nil
 	}
 	to := e.opsRecipient
-	if to == "" {
-		// Routed here but no ops recipient configured. Don't error —
-		// the operator's choice — just skip.
-		return nil
-	}
 
 	// Subject = "[Level] Title" so a quick mailbox scan sorts by
 	// severity. The plain-text body adds fields as "key: value" lines.
@@ -62,5 +61,5 @@ func (e *Email) Send(_ context.Context, msg notify.Message) error {
 		b.WriteString(msg.URL)
 		b.WriteByte('\n')
 	}
-	return e.mailer.Send(to, subject, b.String())
+	return e.mailer.Send(ctx, to, subject, b.String())
 }

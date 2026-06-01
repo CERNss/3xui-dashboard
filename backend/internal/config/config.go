@@ -32,6 +32,12 @@ type Config struct {
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
+
+	// SecretEncryptionKey (hex-encoded 32-byte AES key) encrypts secret
+	// settings stored in the DB (SMTP/notify/payment credentials as those
+	// move to panel-managed). Empty = secret settings can't be stored.
+	// A KEK: keep it in .env, out of the DB it protects.
+	SecretEncryptionKey string
 }
 
 // Bootstrap carries optional startup seed data. These settings are intended
@@ -215,11 +221,12 @@ func (s Stripe) Enabled() bool {
 	return s.SecretKey != "" && s.WebhookSecret != ""
 }
 
-// Load reads configuration. If envFile is non-empty it is loaded as a
-// dotenv-format file; values still get overridden by real environment
-// variables (process env wins). Missing required keys produce a single
-// aggregated error so operators see every problem at once.
-func Load(envFile string) (*Config, error) {
+// Load reads configuration from three layers, lowest precedence first:
+// defaults → config.yaml (non-secret config) → .env (secrets) → real
+// environment variables (always win). Both files are optional. Missing
+// required keys produce a single aggregated error so operators see every
+// problem at once.
+func Load(envFile, configFile string) (*Config, error) {
 	v := viper.New()
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -239,20 +246,32 @@ func Load(envFile string) (*Config, error) {
 	v.SetDefault("OIDC_SCOPES", "openid,profile,email")
 	v.SetDefault("SMTP_PORT", 587)
 	v.SetDefault("SMTP_USE_TLS", true)
-	v.SetDefault("PUBLIC_REGISTRATION", true)
+	v.SetDefault("PUBLIC_REGISTRATION", false) // safer default; admin enables it in the panel
 	v.SetDefault("EMAIL_DOMAIN_ALLOWLIST", "")
 	v.SetDefault("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
 	v.SetDefault("STRIPE_CURRENCY", "usd")
 	v.SetDefault("STRIPE_SESSION_EXPIRY_MINUTES", 30)
 	v.SetDefault("BOOTSTRAP_NODES_JSON", "")
 
+	// config.yaml is the non-secret base layer; the .env secrets file
+	// (merged on top) and real env vars both override it. Both files are
+	// optional — a deployment may rely entirely on real env vars.
+	if configFile != "" {
+		v.SetConfigFile(configFile)
+		v.SetConfigType("yaml")
+		if err := v.ReadInConfig(); err != nil {
+			var notFound viper.ConfigFileNotFoundError
+			if !errors.As(err, &notFound) && !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("read config file %q: %w", configFile, err)
+			}
+		}
+	}
 	if envFile != "" {
 		v.SetConfigFile(envFile)
 		v.SetConfigType("env")
-		// Missing file is not fatal: operators may rely on real env vars.
-		if err := v.ReadInConfig(); err != nil {
+		if err := v.MergeInConfig(); err != nil {
 			var notFound viper.ConfigFileNotFoundError
-			if !errors.As(err, &notFound) {
+			if !errors.As(err, &notFound) && !errors.Is(err, os.ErrNotExist) {
 				return nil, fmt.Errorf("read env file %q: %w", envFile, err)
 			}
 		}
@@ -344,6 +363,7 @@ func Load(envFile string) (*Config, error) {
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),
 		EmailDomainAllowlist: splitCSV(v.GetString("EMAIL_DOMAIN_ALLOWLIST")),
+		SecretEncryptionKey:  v.GetString("SECRET_ENCRYPTION_KEY"),
 	}
 
 	// LOG_FORMAT defaults to text in dev, json in prod.
@@ -400,8 +420,8 @@ func generateAdminPassword() (string, error) {
 
 // MustLoad is a convenience for main(): it Loads and panics on error.
 // The returned config is non-nil.
-func MustLoad(envFile string) *Config {
-	cfg, err := Load(envFile)
+func MustLoad(envFile, configFile string) *Config {
+	cfg, err := Load(envFile, configFile)
 	if err != nil {
 		panic(err)
 	}

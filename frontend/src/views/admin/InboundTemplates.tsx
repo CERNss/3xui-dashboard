@@ -144,6 +144,16 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
     const validated = await form.validateFields().catch(() => null)
     if (!validated) return
     const values = { ...form.getFieldsValue(true), ...validated } as InboundEditorValues
+    if (values.security === 'reality' && !values.advStreamOverride) {
+      const hasPublicKey = Boolean(values.realityPublicKey?.trim())
+      const hasPrivateKey = Boolean(values.realityPrivateKey?.trim())
+      if (hasPublicKey !== hasPrivateKey) {
+        const message = t('admin.inboundEditor.stream.publicKeyRequired')
+        form.setFields([{ name: 'realityPrivateKey', errors: [message] }])
+        Modal.error({ title: message })
+        return
+      }
+    }
     const wire = valuesToTemplateBody(values)
     const payload: InboundTemplateInput = {
       name: meta.name.trim(),
@@ -259,7 +269,7 @@ function TemplateEditor({ open, mode, source, onClose, onSaved }: TemplateEditor
     ...(['wireguard', 'hysteria', 'tunnel', 'tun'].includes(protocol)
       ? []
       : [
-          { key: 'stream', label: t('admin.inboundEditor.tab.stream'), children: <StreamSettingsForm /> },
+          { key: 'stream', label: t('admin.inboundEditor.tab.stream'), children: <StreamSettingsForm generationEnabled={false} /> },
           { key: 'sniffing', label: t('admin.inboundEditor.tab.sniffing'), children: <SniffingForm /> },
         ]),
     { key: 'advanced', label: t('admin.inboundEditor.tab.advanced'), children: <AdvancedJsonForm /> },

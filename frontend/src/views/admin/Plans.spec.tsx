@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -93,15 +93,16 @@ describe('Plans', () => {
     renderPlans()
 
     await user.click(screen.getByRole('button', { name: 'New Plan' }))
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Annual')
-    await user.clear(screen.getByLabelText('Price'))
-    await user.type(screen.getByLabelText('Price'), '12.34')
-    await user.clear(screen.getByLabelText('Duration days'))
-    await user.type(screen.getByLabelText('Duration days'), '365')
-    await user.clear(screen.getByLabelText('Traffic GB'))
-    await user.type(screen.getByLabelText('Traffic GB'), '250')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const dialog = screen.getByRole('dialog', { name: 'New plan' })
+    await user.clear(within(dialog).getByLabelText('Name'))
+    await user.type(within(dialog).getByLabelText('Name'), 'Annual')
+    await user.clear(within(dialog).getByLabelText('Price'))
+    await user.type(within(dialog).getByLabelText('Price'), '12.34')
+    await user.clear(within(dialog).getByLabelText('Duration days'))
+    await user.type(within(dialog).getByLabelText('Duration days'), '365')
+    await user.clear(within(dialog).getByLabelText('Traffic GB'))
+    await user.type(within(dialog).getByLabelText('Traffic GB'), '250')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
       expect(createMutateAsync).toHaveBeenCalledWith(
@@ -121,8 +122,9 @@ describe('Plans', () => {
     renderPlans()
 
     await user.click(screen.getByRole('button', { name: 'New Plan' }))
-    await user.clear(screen.getByLabelText('Name'))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const dialog = screen.getByRole('dialog', { name: 'New plan' })
+    await user.clear(within(dialog).getByLabelText('Name'))
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Name is required')).toBeInTheDocument()
     expect(createMutateAsync).not.toHaveBeenCalled()
@@ -139,9 +141,11 @@ describe('Plans', () => {
     renderPlans()
 
     await user.click(screen.getByRole('button', { name: 'Edit Starter' }))
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Starter Plus')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit plan #7' })
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('Starter')
+    await user.clear(within(dialog).getByLabelText('Name'))
+    await user.type(within(dialog).getByLabelText('Name'), 'Starter Plus')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(updateMutateAsync).toHaveBeenCalledWith({
         id: 7,

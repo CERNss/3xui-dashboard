@@ -14,6 +14,8 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/sub"
+	"github.com/cern/3xui-dashboard/internal/sub/policy"
+	"github.com/cern/3xui-dashboard/internal/sub/ruleset"
 )
 
 // Format names the supported subscription output formats.
@@ -24,6 +26,7 @@ const (
 	FormatJSON      Format = "json"
 	FormatClash     Format = "clash"
 	FormatSingBox   Format = "singbox"
+	FormatSurge     Format = "surge"
 	FormatSIP008    Format = "sip008"
 	FormatWireGuard Format = "wireguard"
 	FormatWGZip     Format = "wireguard-zip"
@@ -33,8 +36,11 @@ const (
 type SubHandler struct {
 	asm       *sub.Assembler
 	settings  *repository.SettingRepo
-	remarkFmt string
-	log       *slog.Logger
+	profiles     *repository.SubscriptionProfileRepo
+	rulesets     *repository.SubscriptionRulesetRepo
+	rulesetCache *ruleset.Cache
+	remarkFmt    string
+	log          *slog.Logger
 }
 
 // NewSubHandler returns a handler. settings may be nil — when nil,
@@ -53,6 +59,44 @@ func NewSubHandler(a *sub.Assembler, settings *repository.SettingRepo, remarkFmt
 		remarkFmt: remarkFmt,
 		log:       lg.With(slog.String("component", "handler.public.sub")),
 	}
+}
+
+// SetProfileStore wires the DB-backed subscription profile + ruleset
+// repos and the ruleset fetch cache. When unset (e.g. in unit tests),
+// the handler falls back to the built-in default profile so rendering
+// still works.
+func (h *SubHandler) SetProfileStore(profiles *repository.SubscriptionProfileRepo, rulesets *repository.SubscriptionRulesetRepo, cache *ruleset.Cache) {
+	h.profiles = profiles
+	h.rulesets = rulesets
+	h.rulesetCache = cache
+}
+
+// resolveProfile picks the routing profile + its rulesets for a request:
+// ?profile=<key> if present and found, else the DB default, else the
+// built-in code default. Rulesets fall back to the built-in set when
+// none are configured.
+func (h *SubHandler) resolveProfile(ctx context.Context, key string) (model.SubscriptionProfile, []model.SubscriptionRuleset) {
+	if h.profiles == nil {
+		return policy.DefaultProfile(), policy.DefaultRulesets()
+	}
+	var p *model.SubscriptionProfile
+	if key != "" {
+		p, _ = h.profiles.GetByKey(ctx, key)
+	}
+	if p == nil {
+		p, _ = h.profiles.GetDefault(ctx)
+	}
+	if p == nil {
+		return policy.DefaultProfile(), policy.DefaultRulesets()
+	}
+	var rs []model.SubscriptionRuleset
+	if h.rulesets != nil {
+		rs, _ = h.rulesets.List(ctx)
+	}
+	if len(rs) == 0 {
+		rs = policy.DefaultRulesets()
+	}
+	return *p, rs
 }
 
 // RegisterRoutes mounts /sub/* on the supplied engine (no auth).
@@ -77,9 +121,55 @@ func (h *SubHandler) RegisterRoutes(r *gin.Engine, limiter gin.HandlerFunc) {
 	group.GET("/json/:subId", h.bind(FormatJSON))
 	group.GET("/clash/:subId", h.bind(FormatClash))
 	group.GET("/singbox/:subId", h.bind(FormatSingBox))
+	group.GET("/surge/:subId", h.bind(FormatSurge))
 	group.GET("/sip008/:subId", h.bind(FormatSIP008))
 	group.GET("/wireguard/:subId", h.bind(FormatWireGuard))
 	group.GET("/wireguard-zip/:subId", h.bind(FormatWGZip))
+	// Self-hosted rule lists: profiles in self_hosted mode point their
+	// rule-providers here instead of at the upstream URL.
+	group.GET("/ruleset/:key", h.ServeRuleset)
+}
+
+// ServeRuleset returns a ruleset's rule list (the body a self_hosted
+// profile's rule-providers point at). The :key maps to an admin-
+// configured ruleset (or a built-in default); the body is fetched +
+// cached server-side.
+func (h *SubHandler) ServeRuleset(c *gin.Context) {
+	rs := h.lookupRuleset(c.Request.Context(), c.Param("key"))
+	if rs == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ruleset not found"})
+		return
+	}
+	if h.rulesetCache == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ruleset cache unavailable"})
+		return
+	}
+	content, err := h.rulesetCache.Content(c.Request.Context(), *rs)
+	if err != nil {
+		h.log.Warn("ruleset fetch failed", slog.String("key", rs.Key), slog.String("err", err.Error()))
+		c.JSON(http.StatusBadGateway, gin.H{"error": "ruleset fetch failed"})
+		return
+	}
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.String(http.StatusOK, content)
+}
+
+// lookupRuleset resolves a ruleset key to its definition: the DB row if
+// present, else a built-in default ruleset of that key.
+func (h *SubHandler) lookupRuleset(ctx context.Context, key string) *model.SubscriptionRuleset {
+	if h.rulesets != nil {
+		if rs, _ := h.rulesets.GetByKey(ctx, key); rs != nil {
+			return rs
+		}
+	}
+	for _, rs := range policy.DefaultRulesets() {
+		if rs.Key == key {
+			rs := rs
+			return &rs
+		}
+	}
+	return nil
 }
 
 // Auto picks the format from ?format= or User-Agent and dispatches.
@@ -117,14 +207,16 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
 	case FormatClash:
-		opts := h.loadFormatOpts(c.Request.Context())
-		body, err := h.asm.FormatClash(data, opts)
+		// Routing policy comes from the selected profile (?profile= or the
+		// default), falling back to the built-in default. `base` is the
+		// optional operator template override.
+		profile, rulesets := h.resolveProfile(c.Request.Context(), c.Query("profile"))
+		base := h.clashBase(c.Request.Context())
+		serveBase := requestOrigin(c)
+		body, err := h.asm.FormatClash(data, profile, rulesets, base, serveBase)
 		if err != nil {
-			h.log.Error("FormatClash failed, falling back to default", "err", err)
-			// Last-ditch fallback — call again with zero opts to ignore
-			// the (broken) operator template.
-			opts.ClashTemplate = ""
-			body, err = h.asm.FormatClash(data, opts)
+			h.log.Error("FormatClash failed, retrying without operator base", "err", err)
+			body, err = h.asm.FormatClash(data, profile, rulesets, "", serveBase)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -134,18 +226,27 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
 	case FormatSingBox:
-		opts := h.loadFormatOpts(c.Request.Context())
-		body, err := h.asm.FormatSingBox(data, opts)
+		base := h.singboxBase(c.Request.Context())
+		body, err := h.asm.FormatSingBox(data, base)
 		if err != nil {
-			h.log.Error("FormatSingBox failed, falling back to default", "err", err)
-			opts.SingBoxTemplate = ""
-			body, err = h.asm.FormatSingBox(data, opts)
+			h.log.Error("FormatSingBox failed, retrying without operator base", "err", err)
+			body, err = h.asm.FormatSingBox(data, "")
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 		}
 		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.Write(body)
+	case FormatSurge:
+		profile, rulesets := h.resolveProfile(c.Request.Context(), c.Query("profile"))
+		body, err := h.asm.FormatSurge(data, profile, rulesets, "")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Type", "text/plain; charset=utf-8")
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.Write(body)
 	case FormatSIP008:
@@ -178,7 +279,7 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		_, _ = c.Writer.Write(body)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "unsupported format; valid: base64, json, clash, singbox, sip008, wireguard, wireguard-zip",
+			"error": "unsupported format; valid: base64, json, clash, singbox, surge, sip008, wireguard, wireguard-zip",
 		})
 	}
 }
@@ -223,6 +324,8 @@ func detectFormat(qs, ua string) Format {
 			return FormatClash
 		case "singbox", "sing-box":
 			return FormatSingBox
+		case "surge":
+			return FormatSurge
 		case "sip008":
 			return FormatSIP008
 		case "wireguard", "wg":
@@ -242,6 +345,8 @@ func detectFormat(qs, ua string) Format {
 	case strings.Contains(l, "sing-box"),
 		strings.Contains(l, "singbox"):
 		return FormatSingBox
+	case strings.Contains(l, "surge"):
+		return FormatSurge
 	case strings.Contains(l, "shadowsocks"):
 		return FormatSIP008
 	default:
@@ -249,30 +354,36 @@ func detectFormat(qs, ua string) Format {
 	}
 }
 
-// loadFormatOpts populates FormatOpts from the settings repo. Missing
-// keys leave the corresponding field at its zero value so the template
-// engine uses its embedded default.
-func (h *SubHandler) loadFormatOpts(ctx context.Context) sub.FormatOpts {
-	opts := sub.FormatOpts{RuleProvidersEnabled: true} // default ON
+// requestOrigin reconstructs the absolute origin the client used to
+// reach us (scheme + host) so self-hosted rule-provider URLs point back
+// at this dashboard. Honors X-Forwarded-Proto for TLS-terminating
+// proxies.
+func requestOrigin(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Request.Host
+}
+
+// clashBase returns the operator's Clash template override, or "" when
+// unset (use the built-in skeleton).
+func (h *SubHandler) clashBase(ctx context.Context) string {
 	if h.settings == nil {
-		return opts
+		return ""
 	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingClashTemplateYAML); ok {
-		opts.ClashTemplate = v
+	v, _, _ := h.settings.Get(ctx, model.SettingClashTemplateYAML)
+	return v
+}
+
+// singboxBase returns the operator's sing-box template override, or ""
+// when unset.
+func (h *SubHandler) singboxBase(ctx context.Context) string {
+	if h.settings == nil {
+		return ""
 	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingSingBoxTemplateJSON); ok {
-		opts.SingBoxTemplate = v
-	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingProxyGroupStrategy); ok && v != "" {
-		opts.ProxyGroupStrategy = v
-	}
-	if v, ok, _ := h.settings.Get(ctx, model.SettingRuleProvidersEnabled); ok {
-		// only "false" turns it off; any other string (or absent) means on
-		if strings.EqualFold(v, "false") || v == "0" {
-			opts.RuleProvidersEnabled = false
-		}
-	}
-	return opts
+	v, _, _ := h.settings.Get(ctx, model.SettingSingBoxTemplateJSON)
+	return v
 }
 
 func (h *SubHandler) errorResponse(c *gin.Context, err error) {

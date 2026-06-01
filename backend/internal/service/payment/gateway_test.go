@@ -39,29 +39,26 @@ func (s *stubGateway) CreatePayment(_ context.Context, _ *model.Order, _ string)
 func (s *stubGateway) Query(_ context.Context, _ string) (Status, error)         { return StatusPending, nil }
 func (s *stubGateway) VerifyNotify(_ map[string]string, _ string) error          { return nil }
 
-func TestRegistry_RegisterAndGet(t *testing.T) {
-	r := NewRegistry()
+func TestRegistry_Get(t *testing.T) {
+	r := NewStaticRegistry()
 	if _, err := r.Get("alipay"); !errors.Is(err, ErrUnknownProvider) {
 		t.Errorf("Get on empty registry should be ErrUnknownProvider, got %v", err)
 	}
-	r.Register(&stubGateway{name: "alipay"})
+	r = NewStaticRegistry(&stubGateway{name: "alipay"})
 	if _, err := r.Get("alipay"); err != nil {
-		t.Errorf("Get after Register: %v", err)
+		t.Errorf("Get after register: %v", err)
 	}
 }
 
-func TestRegistry_NilRegisterIsNoOp(t *testing.T) {
-	r := NewRegistry()
-	r.Register(nil) // must not panic
+func TestRegistry_NilGatewayIsSkipped(t *testing.T) {
+	r := NewStaticRegistry(nil) // must not panic
 	if got := r.EnabledProviders(); len(got) != 1 || got[0] != "balance" {
-		t.Errorf("EnabledProviders after nil register = %v, want [balance]", got)
+		t.Errorf("EnabledProviders with only a nil gateway = %v, want [balance]", got)
 	}
 }
 
 func TestRegistry_EnabledProvidersIncludesBalance(t *testing.T) {
-	r := NewRegistry()
-	r.Register(&stubGateway{name: "alipay"})
-	r.Register(&stubGateway{name: "stripe"})
+	r := NewStaticRegistry(&stubGateway{name: "alipay"}, &stubGateway{name: "stripe"})
 	got := r.EnabledProviders()
 	if len(got) != 3 {
 		t.Errorf("EnabledProviders = %v, want 3 entries", got)

@@ -46,39 +46,52 @@ type NotificationLogStore interface {
 	MarkSent(ctx context.Context, surface, kind string, ownershipID int64, userEmail string) error
 }
 
-// Service wires the bus subscriber + channels + router + dedup log.
-// No user / ownership repos: all events handled here target ops,
-// not the user — user-side mail lives in service/messages.
+// ConfigProvider supplies the live routing + channel set for each
+// dispatch. Read per dispatch (ops events are infrequent) so an admin
+// editing routes / tokens in the panel takes effect without a restart.
+// A nil Router from Resolve means "no fanout" — the dispatch is skipped.
+type ConfigProvider interface {
+	Resolve(ctx context.Context) (*Router, []Channel)
+}
+
+// StaticProvider is a ConfigProvider that always returns the same
+// router + channels — for tests and fixed-config callers.
+type StaticProvider struct {
+	router   *Router
+	channels []Channel
+}
+
+// NewStaticProvider builds a fixed ConfigProvider.
+func NewStaticProvider(router *Router, channels []Channel) StaticProvider {
+	return StaticProvider{router: router, channels: channels}
+}
+
+// Resolve implements ConfigProvider.
+func (p StaticProvider) Resolve(context.Context) (*Router, []Channel) { return p.router, p.channels }
+
+// Service wires the bus subscriber + dedup log + a ConfigProvider that
+// yields the routing + channels per dispatch. No user / ownership
+// repos: all events handled here target ops, not the user — user-side
+// mail lives in service/messages.
 type Service struct {
 	bus      *event.Bus
-	router   *Router
-	channels map[string]Channel
+	provider ConfigProvider
 	logs     NotificationLogStore
 	log      *slog.Logger
 }
 
-// New wires the service. `channels` is a flat list — the service
-// indexes by Channel.Name(). The router decides which channels see
-// each event type. `logs` is the NotificationLogStore interface so
+// New wires the service. `provider` yields the router + channels live
+// on each dispatch. `logs` is the NotificationLogStore interface so
 // tests can pass a stub without a real DB.
 func New(
 	bus *event.Bus,
-	router *Router,
-	channels []Channel,
+	provider ConfigProvider,
 	logs NotificationLogStore,
 	lg *slog.Logger,
 ) *Service {
-	idx := make(map[string]Channel, len(channels))
-	for _, c := range channels {
-		if c == nil {
-			continue
-		}
-		idx[c.Name()] = c
-	}
 	return &Service{
 		bus:      bus,
-		router:   router,
-		channels: idx,
+		provider: provider,
 		logs:     logs,
 		log:      lg.With(slog.String("component", "service.notify")),
 	}
@@ -217,9 +230,19 @@ func (s *Service) opsOrderEvent(e event.Event, eventType string, lvl Level, titl
 // the key onto a stable int64 so the existing notification_log table
 // (typed BIGINT) still works without a schema change.
 func (s *Service) dispatchOpsEvent(ctx context.Context, eventType, dedupKey string, msg Message) {
+	router, channels := s.provider.Resolve(ctx)
+	if router == nil {
+		return
+	}
+	byName := make(map[string]Channel, len(channels))
+	for _, c := range channels {
+		if c != nil {
+			byName[c.Name()] = c
+		}
+	}
 	dedupID := hashDedupKey(dedupKey)
-	for _, chanName := range s.router.Channels(eventType) {
-		ch, ok := s.channels[chanName]
+	for _, chanName := range router.Channels(eventType) {
+		ch, ok := byName[chanName]
 		if !ok || !ch.Enabled() {
 			continue
 		}

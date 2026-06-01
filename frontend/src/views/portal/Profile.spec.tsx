@@ -40,6 +40,17 @@ vi.mock('@/hooks/queries/portal/profile', () => ({
   useStartOidcLink: () => ({ isPending: false, mutateAsync: startOidcLinkMutateAsync }),
 }))
 
+vi.mock('@/hooks/queries/portal/traffic', () => ({
+  useOwnTraffic: () => ({
+    data: [
+      { node_id: 1, inbound_tag: 'vless', client_email: 'alice@example.com', up: 0, down: 0, total: 0 },
+      { node_id: 2, inbound_tag: 'trojan', client_email: 'alice@example.com', up: 0, down: 0, total: 0 },
+    ],
+    error: null,
+    isLoading: false,
+  }),
+}))
+
 vi.mock('@/api/portal/profile', async () => {
   const actual = await vi.importActual<typeof import('@/api/portal/profile')>('@/api/portal/profile')
   return {
@@ -60,7 +71,7 @@ function makeProfile(overrides: Partial<UserProfile> = {}): UserProfile {
     display_name: 'Alice',
     email_verified: true,
     status: 'active',
-    balance_cents: 0,
+    balance_cents: 132703,
     sub_id: 'sub-7',
     created_at: '2026-05-01T00:00:00Z',
     ...overrides,
@@ -116,14 +127,26 @@ beforeEach(() => {
 })
 
 describe('Portal Profile', () => {
+  it('renders the account overview with balance and profile sections', () => {
+    renderProfile()
+
+    expect(screen.getByRole('heading', { name: 'Alice' })).toBeInTheDocument()
+    expect(screen.getByText('Account balance')).toBeInTheDocument()
+    expect(screen.getByText('¥1327.03')).toBeInTheDocument()
+    expect(screen.getByText('Active clients')).toBeInTheDocument()
+    expect(screen.getByText('Profile and avatar')).toBeInTheDocument()
+    expect(screen.getByText('Change password')).toBeInTheDocument()
+    expect(screen.getByText('Login method binding')).toBeInTheDocument()
+  })
+
   it('saves display name as metadata only', async () => {
     const user = userEvent.setup()
     renderProfile()
 
-    const input = screen.getByLabelText('Display name')
+    const input = screen.getByLabelText('Username')
     await user.clear(input)
     await user.type(input, 'Alice Cooper')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Update profile' }))
 
     await waitFor(() => expect(updateProfileMutateAsync).toHaveBeenCalledWith({ display_name: 'Alice Cooper' }))
     expect(updateProfileMutateAsync).toHaveBeenCalledTimes(1)
@@ -133,6 +156,7 @@ describe('Portal Profile', () => {
     const user = userEvent.setup()
     renderProfile()
 
+    await user.click(screen.getByRole('button', { name: 'Manage email' }))
     const emailInput = screen.getByLabelText('Email')
     await user.clear(emailInput)
     await user.type(emailInput, 'new@example.com')
@@ -200,8 +224,8 @@ describe('Portal Profile', () => {
     const user = userEvent.setup()
     renderProfile()
 
-    const googleRow = screen.getByText('Google').closest('.ant-list-item') as HTMLElement
-    const githubRow = screen.getByText('GitHub').closest('.ant-list-item') as HTMLElement
+    const googleRow = screen.getByTestId('oidc-provider-google')
+    const githubRow = screen.getByTestId('oidc-provider-github')
 
     expect(within(googleRow).getAllByText('Linked').length).toBeGreaterThan(0)
     expect(within(githubRow).getByRole('button', { name: /connect/i })).toBeInTheDocument()

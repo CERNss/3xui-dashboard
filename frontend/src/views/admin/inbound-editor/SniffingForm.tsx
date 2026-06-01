@@ -10,7 +10,7 @@ export function SniffingForm() {
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Form.Item name="sniffEnabled" label={t('admin.inboundEditor.sniff.enabled')} valuePropName="checked">
-        <Switch />
+        <Switch aria-label={`${t('admin.inboundEditor.tab.sniffing')} ${t('admin.inboundEditor.sniff.enabled')}`} />
       </Form.Item>
       {enabled ? (
         <>

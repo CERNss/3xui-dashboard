@@ -34,10 +34,11 @@ func main() {
 }
 
 func run() error {
-	envFile := flag.String("env", ".env", "path to .env file (optional — real environment variables always win)")
+	envFile := flag.String("env", ".env", "path to .env secrets file (optional — real environment variables always win)")
+	configFile := flag.String("config", "config.yaml", "path to config.yaml non-secret config file (optional)")
 	flag.Parse()
 
-	cfg, err := config.Load(*envFile)
+	cfg, err := config.Load(*envFile, *configFile)
 	if err != nil {
 		return err
 	}

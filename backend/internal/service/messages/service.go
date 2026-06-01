@@ -43,7 +43,7 @@ import (
 // which satisfies this shape.
 type Mailer interface {
 	Enabled() bool
-	Send(to, subject, body string) error
+	Send(ctx context.Context, to, subject, body string) error
 }
 
 // NotificationLogStore is the subset of repository.NotificationLogRepo
@@ -158,7 +158,7 @@ func (s *Service) Send(
 		}
 	}
 
-	if err := s.mailer.Send(to, subject, body); err != nil {
+	if err := s.mailer.Send(ctx, to, subject, body); err != nil {
 		return fmt.Errorf("messages.Send mailer: %w", err)
 	}
 

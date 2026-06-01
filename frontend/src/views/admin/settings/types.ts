@@ -3,6 +3,7 @@ import type { SettingItem } from '@/api/admin/settings'
 export type SettingsTab =
   | 'general'
   | 'subscription'
+  | 'payment'
   | 'alerts'
   | 'dataCollection'
   | 'securityAuth'

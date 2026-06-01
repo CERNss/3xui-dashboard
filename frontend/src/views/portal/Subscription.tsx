@@ -11,9 +11,11 @@ import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, PageHeader } from '@/components/common'
+import { usePortalOrdersList } from '@/hooks/queries/portal/billing'
 import { useProfile, useRotateSubId } from '@/hooks/queries/portal/profile'
 import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
 import { formatError } from '@/utils/format'
+import { useProvisioningStatus } from './_shared/provisioning'
 import {
   subscriptionFormats,
   subscriptionUrl,
@@ -55,14 +57,23 @@ export function Subscription() {
   const [activeKey, setActiveKey] = useState<SubscriptionFormatKey>('base64')
   const profile = useProfile()
   const traffic = useOwnTraffic()
+  const orders = usePortalOrdersList()
   const rotateSubId = useRotateSubId()
   const formats = useMemo(() => subscriptionFormats(t), [t])
   const activeFormat = formats.find((format) => format.key === activeKey)
   const url = profile.data ? subscriptionUrl(window.location.origin, profile.data.sub_id, activeKey) : ''
   const qrDataUrl = useSubscriptionQr(url, activeFormat)
-  const loading = profile.isLoading || traffic.isLoading
-  const error = profile.error ?? traffic.error
+  const loading = profile.isLoading || traffic.isLoading || orders.isLoading
+  const error = profile.error ?? traffic.error ?? orders.error
   const clients = traffic.data ?? []
+  const provisioning = useProvisioningStatus({
+    clients,
+    orders: orders.data,
+    ordersFetching: orders.isFetching,
+    trafficFetching: traffic.isFetching,
+    refetchOrders: orders.refetch,
+    refetchTraffic: traffic.refetch,
+  })
 
   async function copyUrl() {
     if (!url || activeFormat?.downloadOnly) return
@@ -112,7 +123,18 @@ export function Subscription() {
 
       {loading ? (
         <Skeleton active />
-      ) : !profile.data ? null : clients.length === 0 ? (
+      ) : !profile.data ? null : provisioning.isProvisioning ? (
+        <Card>
+          <EmptyState
+            title={t('portal.subscription.provisioningTitle')}
+            description={t('portal.subscription.provisioningDescription')}
+            actionLabel={provisioning.isRefreshingProvisioning ? t('portal.subscription.provisioningRefreshing') : t('portal.subscription.provisioningRefresh')}
+            onAction={() => {
+              void Promise.all([traffic.refetch(), orders.refetch()])
+            }}
+          />
+        </Card>
+      ) : clients.length === 0 ? (
         <Card>
           <EmptyState
             title={t('portal.subscription.empty')}

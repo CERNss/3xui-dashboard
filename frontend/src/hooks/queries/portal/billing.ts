@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { portalBillingApi, type PaymentMethod, type PurchaseInput } from '@/api/portal/billing'
 import { useMutationErrorHandler, useQueryErrorReporter } from '../error'
 import { queryKeys } from '../keys'
@@ -6,6 +6,14 @@ import { queryKeys } from '../keys'
 const planKeys = queryKeys('portal', 'plans')
 const orderKeys = queryKeys('portal', 'orders')
 const billingKeys = queryKeys('portal', 'billing')
+const profileKeys = queryKeys('portal', 'profile')
+const trafficKeys = queryKeys('portal', 'traffic')
+
+export function invalidatePortalProvisioningQueries(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: orderKeys.root })
+  void queryClient.invalidateQueries({ queryKey: profileKeys.root })
+  void queryClient.invalidateQueries({ queryKey: trafficKeys.root })
+}
 
 export function usePortalPlansList() {
   const result = useQuery({
@@ -49,7 +57,7 @@ export function usePurchasePlan() {
   const handleError = useMutationErrorHandler()
   return useMutation({
     mutationFn: (input: PurchaseInput) => portalBillingApi.purchase(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: orderKeys.root }),
+    onSuccess: () => invalidatePortalProvisioningQueries(queryClient),
     onError: (error) => handleError(error),
   })
 }
@@ -60,7 +68,7 @@ export function usePurchaseViaPayment() {
   return useMutation({
     mutationFn: ({ provider, input }: { provider: PaymentMethod; input: PurchaseInput }) =>
       portalBillingApi.purchaseViaPayment(provider, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: orderKeys.root }),
+    onSuccess: () => invalidatePortalProvisioningQueries(queryClient),
     onError: (error) => handleError(error),
   })
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
 	"github.com/cern/3xui-dashboard/internal/runtime"
+	"github.com/cern/3xui-dashboard/internal/sub/policy"
 	subtemplate "github.com/cern/3xui-dashboard/internal/sub/template"
 )
 
@@ -269,21 +270,35 @@ func (a *Assembler) FormatJSON(d *SubscriptionData) ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// FormatOpts controls FormatClash / FormatSingBox rendering. Populated
-// by the handler from the runtime settings repo so admin changes take
-// effect without a restart.
-type FormatOpts struct {
-	ProxyGroupStrategy   string // "auto-only" / "select-only" / "auto+select"
-	RuleProvidersEnabled bool
-	ClashTemplate        string // operator override; empty → embedded default
-	SingBoxTemplate      string // operator override; empty → embedded default
-}
-
 // FormatClash returns a complete Mihomo YAML config — proxies +
 // proxy-groups + rule-providers + rules + dns — ready to drop into
-// Clash Verge / Mihomo / ClashX. See internal/sub/template/defaults.go
-// for the embedded default.
-func (a *Assembler) FormatClash(d *SubscriptionData, opts FormatOpts) ([]byte, error) {
+// Clash Verge / Mihomo / ClashX. The routing policy (groups + rules) is
+// resolved from `profile` against `rulesets`; `base` is an optional
+// operator template override (empty → built-in skeleton). `serveBase`
+// (e.g. "https://panel.example.com") is the absolute origin used to
+// build self-hosted rule-provider URLs when the profile's RulesetMode
+// is self_hosted; it is ignored in passthrough mode.
+func (a *Assembler) FormatClash(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base, serveBase string) ([]byte, error) {
+	nodes := a.clashNodes(d)
+	names := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		if s, ok := n["name"].(string); ok {
+			names = append(names, s)
+		}
+	}
+	resolved := policy.Resolve(profile, names, policy.RulesetMap(rulesets))
+	pol := subtemplate.ClashPolicy{
+		Groups:        clashProxyGroupsYAML(resolved),
+		RuleProviders: clashRuleProvidersYAML(resolved, profile.RulesetMode, serveBase),
+		Rules:         clashRulesYAML(resolved),
+	}
+	return subtemplate.RenderClash(nodes, pol, base)
+}
+
+// clashNodes renders every link in d to a Clash proxy entry, skipping
+// unsupported protocols. Names on the returned maps drive group
+// membership resolution, so they must match what the renderer emits.
+func (a *Assembler) clashNodes(d *SubscriptionData) []map[string]any {
 	nodes := make([]map[string]any, 0, len(d.Links))
 	for i := range d.Links {
 		l := &d.Links[i]
@@ -299,16 +314,16 @@ func (a *Assembler) FormatClash(d *SubscriptionData, opts FormatOpts) ([]byte, e
 		}
 		nodes = append(nodes, n)
 	}
-	return subtemplate.RenderClash(nodes, subtemplate.Options{
-		ProxyGroupStrategy:   opts.ProxyGroupStrategy,
-		RuleProvidersEnabled: opts.RuleProvidersEnabled,
-		ClashTemplate:        opts.ClashTemplate,
-	})
+	return nodes
 }
 
 // FormatSingBox returns a sing-box JSON config with outbounds, a
 // selector + urltest pair, and a geosite-cn / geoip-cn rule set.
-func (a *Assembler) FormatSingBox(d *SubscriptionData, opts FormatOpts) ([]byte, error) {
+// FormatSingBox returns a sing-box JSON config. `base` is an optional
+// operator template override (singbox_template_json); empty uses the
+// built-in default. sing-box routing is not yet profile-driven (its
+// rule-set format differs); that lands in a later phase.
+func (a *Assembler) FormatSingBox(d *SubscriptionData, base string) ([]byte, error) {
 	outs := make([]map[string]any, 0, len(d.Links))
 	for i := range d.Links {
 		l := &d.Links[i]
@@ -324,9 +339,32 @@ func (a *Assembler) FormatSingBox(d *SubscriptionData, opts FormatOpts) ([]byte,
 		}
 		outs = append(outs, n)
 	}
-	return subtemplate.RenderSingBox(outs, subtemplate.Options{
-		SingBoxTemplate: opts.SingBoxTemplate,
-	})
+	return subtemplate.RenderSingBox(outs, base)
+}
+
+// FormatSurge renders a Surge config. Only Surge-supported protocols
+// are included (surgeNode skips VLESS / WireGuard), and group membership
+// + rules resolve over exactly that supported subset, so the config is
+// always self-consistent. Ruleset-based rules are omitted for now (see
+// surgeRulesBlock's TODO); proxies + groups + inline rules are emitted.
+func (a *Assembler) FormatSurge(d *SubscriptionData, profile model.SubscriptionProfile, rulesets []model.SubscriptionRuleset, base string) ([]byte, error) {
+	var proxyLines, names []string
+	for i := range d.Links {
+		l := &d.Links[i]
+		body, ok := surgeNode(l.Host, l.Port, l.Inbound, l.Client)
+		if !ok {
+			continue
+		}
+		name := surgeName(l.Remark)
+		proxyLines = append(proxyLines, name+" = "+body)
+		names = append(names, name)
+	}
+	resolved := policy.Resolve(profile, names, policy.RulesetMap(rulesets))
+	return subtemplate.RenderSurge(subtemplate.SurgePolicy{
+		Proxies: strings.Join(proxyLines, "\n"),
+		Groups:  surgeProxyGroupsBlock(resolved),
+		Rules:   surgeRulesBlock(resolved),
+	}, base)
 }
 
 // FormatSIP008 returns a SIP008 v1 JSON document containing only the

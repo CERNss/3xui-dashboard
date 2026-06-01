@@ -83,6 +83,18 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 			Uptime: 12345,
 		})
 
+	case req.URL.Path == "/panel/api/server/getNewX25519Cert":
+		writeEnv(w, runtime.X25519Cert{
+			PrivateKey: "MOCK_REALITY_PRIVATE",
+			PublicKey:  "MOCK_REALITY_PUBLIC",
+		})
+
+	case req.URL.Path == "/panel/api/server/getNewmldsa65":
+		writeEnv(w, runtime.Mldsa65Cert{
+			Seed:   "MOCK_MLDSA65_SEED",
+			Verify: "MOCK_MLDSA65_VERIFY",
+		})
+
 	case req.URL.Path == "/panel/api/inbounds/list":
 		m.mu.Lock()
 		out := make([]runtime.Inbound, 0, len(m.inbounds))

@@ -267,10 +267,10 @@ func lowBalanceDedupKind(o *model.ClientOwnership) string {
 // mailer's own timeout governs delivery. When mailer or opsEmail
 // isn't configured, just WARN-log the body so the alert isn't
 // silently lost.
-func (j *AutoRenewJob) alertAdmin(_ context.Context, body string) {
+func (j *AutoRenewJob) alertAdmin(ctx context.Context, body string) {
 	const subject = "[ops] auto-renewal needs attention"
 	if j.mailer != nil && j.mailer.Enabled() && j.opsEmail != "" {
-		if err := j.mailer.Send(j.opsEmail, subject, body); err != nil {
+		if err := j.mailer.Send(ctx, j.opsEmail, subject, body); err != nil {
 			j.log.Warn("alertAdmin mailer.Send failed", slog.String("err", err.Error()))
 		}
 		return

@@ -22,6 +22,10 @@ interface AppTopbarProps {
   /** Notifications icon button. Hidden on portal until that surface
    * grows a real inbox. */
   showNotifications?: boolean
+  notificationsLabel?: string
+  /** Optional slot rendered in the right-hand tools after the locale
+   * switcher — e.g. portal balance. */
+  toolSlot?: ReactNode
   /** Optional slot rendered between the page heading and the right-hand
    * tools — e.g. a per-page status pill. */
   centerSlot?: ReactNode
@@ -41,9 +45,12 @@ export function AppTopbar({
   onLogout,
   onOpenMobileNav,
   showNotifications = false,
+  notificationsLabel,
+  toolSlot,
   centerSlot,
 }: AppTopbarProps) {
   const { t } = useTranslation()
+  const notificationText = notificationsLabel ?? t('admin.notifications')
   return (
     <div className="admin-topbar-inner">
       <div className="admin-topbar-heading">
@@ -68,13 +75,14 @@ export function AppTopbar({
       {centerSlot}
       <div className="admin-topbar-tools">
         {showNotifications ? (
-          <Tooltip title={t('admin.notifications')}>
-            <button aria-label={t('admin.notifications')} className="admin-topbar-icon-button" type="button">
+          <Tooltip title={notificationText}>
+            <button aria-label={notificationText} className="admin-topbar-icon-button" type="button">
               <BellOutlined />
             </button>
           </Tooltip>
         ) : null}
         <LocaleSwitcher variant="chip" />
+        {toolSlot}
         <AccountMenu items={accountItems} logoutLabel={t('nav.logout')} onLogout={onLogout}>
           <button aria-label={t('account.openMenu')} className="admin-topbar-account" type="button">
             <span aria-hidden="true" className="admin-topbar-avatar">

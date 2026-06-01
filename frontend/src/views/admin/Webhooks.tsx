@@ -182,13 +182,11 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
 
   const openCreate = () => {
     setEditing(null)
-    form.setFieldsValue(inputToForm(blankWebhookInput()))
     setDrawerOpen(true)
   }
 
   const openEdit = (webhook: Webhook) => {
     setEditing(webhook)
-    form.setFieldsValue(inputToForm(webhookToInput(webhook)))
     setDrawerOpen(true)
   }
 
@@ -259,6 +257,12 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
       setReplayingID(undefined)
     }
   }
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    form.resetFields()
+    form.setFieldsValue(editing ? inputToForm(webhookToInput(editing)) : inputToForm(blankWebhookInput()))
+  }, [drawerOpen, editing, form])
 
   const confirmDelete = (webhook: Webhook) => {
     Modal.confirm({
@@ -457,7 +461,7 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
           </Space>
         }
       >
-        <Form form={form} layout="vertical" initialValues={inputToForm(blankWebhookInput())}>
+        <Form form={form} layout="vertical" initialValues={inputToForm(blankWebhookInput())} preserve={false}>
           <Form.Item name="name" label={t('admin.webhooks.name')} rules={[{ required: true, message: t('admin.webhooks.nameRequired') }]}>
             <Input />
           </Form.Item>

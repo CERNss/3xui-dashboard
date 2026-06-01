@@ -116,6 +116,10 @@ describe('InboundTemplates', () => {
     expect(within(drawer).getByRole('tab', { name: 'Sniffing' })).toBeInTheDocument()
     expect(within(drawer).getByRole('tab', { name: 'Advanced' })).toBeInTheDocument()
 
+    await user.click(within(drawer).getByRole('tab', { name: 'Sniffing' }))
+    expect(within(drawer).getByLabelText('Sniffing Enabled')).not.toBeChecked()
+    await user.click(within(drawer).getByRole('tab', { name: 'Basic' }))
+
     await user.type(within(drawer).getByPlaceholderText('e.g. basic-vless-template'), 'Edge Trojan')
 
     fireEvent.mouseDown(within(drawer).getByRole('combobox', { name: 'Protocol' }))
@@ -133,6 +137,12 @@ describe('InboundTemplates', () => {
           name: 'Edge Trojan',
           enabled: true,
           protocol: 'trojan',
+          sniffing: JSON.stringify({
+            enabled: false,
+            destOverride: ['http', 'tls', 'quic', 'fakedns'],
+            metadataOnly: false,
+            routeOnly: false,
+          }),
         }),
       ),
     )

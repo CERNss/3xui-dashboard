@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProvisioningPools from './ProvisioningPools'
+import type { FleetInbound } from '@/api/admin/inbounds'
 import type { InboundTemplate } from '@/api/admin/inboundTemplates'
 import type { Node } from '@/api/admin/nodes'
 import type { ProvisioningPool } from '@/api/admin/provisioningPools'
@@ -17,9 +18,11 @@ const removeTargetMutateAsync = vi.fn()
 const poolsRefetch = vi.fn()
 const templatesRefetch = vi.fn()
 const nodesRefetch = vi.fn()
+const fleetRefetch = vi.fn()
 
 let pools: ProvisioningPool[] = []
 let templates: InboundTemplate[] = []
+let fleetInbounds: FleetInbound[] = []
 let nodes: Node[] = []
 let loading = false
 
@@ -40,7 +43,7 @@ vi.mock('@/hooks/queries/admin/provisioningPools', () => ({
 }))
 
 vi.mock('@/hooks/queries/admin/inbounds', () => ({
-  useInboundsFleet: () => ({ data: { inbounds: [] }, error: null, isLoading: false, isFetching: false }),
+  useInboundsFleet: () => ({ data: { inbounds: fleetInbounds }, error: null, isLoading: false, isFetching: false, refetch: fleetRefetch }),
 }))
 
 vi.mock('@/hooks/queries/admin/inboundTemplates', () => ({
@@ -108,6 +111,31 @@ beforeEach(() => {
       sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls'] }),
     },
   ]
+  fleetInbounds = [
+    {
+      node_id: 4,
+      node_name: 'Node A',
+      inbound: {
+        id: 11,
+        up: 0,
+        down: 0,
+        total: 0,
+        allTime: 0,
+        remark: 'Main VLESS',
+        enable: true,
+        expiryTime: 0,
+        trafficReset: 'never',
+        clientStats: [],
+        listen: '',
+        port: 45100,
+        protocol: 'vless',
+        settings: '{}',
+        streamSettings: '{}',
+        tag: 'vless-100',
+        sniffing: '{}',
+      },
+    },
+  ]
   nodes = [
     {
       id: 4,
@@ -137,6 +165,7 @@ beforeEach(() => {
   poolsRefetch.mockReset()
   templatesRefetch.mockReset()
   nodesRefetch.mockReset()
+  fleetRefetch.mockReset()
   vi.restoreAllMocks()
 })
 
@@ -146,10 +175,41 @@ describe('ProvisioningPools', () => {
 
     expect(screen.getByRole('heading', { name: 'Provisioning Pools' })).toBeInTheDocument()
     expect(screen.getByText('Default Pool')).toBeInTheDocument()
-    expect(screen.getByText('Primary pool')).toBeInTheDocument()
+    expect(screen.queryByText('Primary pool')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Target inbound/ })).toHaveAttribute('aria-expanded', 'true')
     expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
-    expect(screen.getByText('Node A')).toBeInTheDocument()
+    expect(screen.getByText('Main VLESS · Node A')).toBeInTheDocument()
+    expect(screen.getByText('vless-100 · vless:45100')).toBeInTheDocument()
     expect(screen.getByText('7 / 20')).toBeInTheDocument()
+  })
+
+  it('collapses and expands target lists per pool', async () => {
+    const user = userEvent.setup()
+    renderPools()
+
+    const toggle = screen.getByRole('button', { name: /Target inbound/ })
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('[data-component="responsive-list-table"]')).not.toBeInTheDocument()
+    expect(screen.queryByText('Main VLESS · Node A')).not.toBeInTheDocument()
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(document.querySelector('[data-component="responsive-list-table"]')).toBeInTheDocument()
+    expect(screen.getByText('Main VLESS · Node A')).toBeInTheDocument()
+  })
+
+  it('labels inbound target options by inbound name plus node', async () => {
+    const user = userEvent.setup()
+    renderPools()
+
+    await user.click(screen.getByRole('button', { name: 'Add inbound Default Pool' }))
+    const modal = screen.getByRole('dialog', { name: 'Add inbound to pool "Default Pool"' })
+    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: 'Inbound' }))
+
+    expect(await screen.findByText('Main VLESS · Node A · already in pool')).toBeInTheDocument()
   })
 
   it('creates template-driven pools and validates port ranges', async () => {
@@ -227,5 +287,6 @@ describe('ProvisioningPools', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     expect(poolsRefetch).toHaveBeenCalledTimes(1)
     expect(nodesRefetch).toHaveBeenCalledTimes(1)
+    expect(fleetRefetch).toHaveBeenCalledTimes(1)
   })
 })

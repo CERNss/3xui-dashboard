@@ -74,6 +74,36 @@ func failingServer() *httptest.Server {
 	}))
 }
 
+func updatingPanelServer(t *testing.T, current runtime.Inbound) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/panel/api/inbounds/list":
+			body, _ := json.Marshal(map[string]any{"success": true, "obj": []runtime.Inbound{current}})
+			_, _ = w.Write(body)
+		case "/panel/api/server/getNewmldsa65":
+			body, _ := json.Marshal(map[string]any{
+				"success": true,
+				"obj": map[string]string{
+					"seed":   "UPDATED_MLDSA65_SEED",
+					"verify": "UPDATED_MLDSA65_VERIFY",
+				},
+			})
+			_, _ = w.Write(body)
+		case "/panel/api/inbounds/update/7":
+			if err := req.ParseForm(); err != nil {
+				t.Fatalf("parse update form: %v", err)
+			}
+			current.StreamSettings = req.FormValue("streamSettings")
+			body, _ := json.Marshal(map[string]any{"success": true, "obj": current})
+			_, _ = w.Write(body)
+		default:
+			t.Fatalf("unexpected path %s", req.URL.Path)
+		}
+	}))
+}
+
 func nodeForURL(t *testing.T, id int64, name string, base string) model.Node {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -165,5 +195,50 @@ func TestListAll_PartialFailureSurfacesHealthyAndErrors(t *testing.T) {
 	}
 	if msg, ok := res.NodeErrors[9]; !ok || msg == "" {
 		t.Errorf("expected error for node 9, got %v", res.NodeErrors)
+	}
+}
+
+func TestUpdate_ResolvesIntentBeforePanelUpdate(t *testing.T) {
+	current := runtime.Inbound{
+		ID:             7,
+		Tag:            "reality-443",
+		Protocol:       "vless",
+		Port:           443,
+		Settings:       `{"clients":[]}`,
+		StreamSettings: `{"security":"reality","realitySettings":{}}`,
+	}
+	srv := updatingPanelServer(t, current)
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{nodeForURL(t, 1, "reality", srv.URL)}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+
+	updated, err := svc.Update(context.Background(), 1, "reality-443", &runtime.Inbound{
+		Tag:            "reality-443",
+		Protocol:       "vless",
+		Port:           443,
+		Settings:       `{"clients":[]}`,
+		StreamSettings: `{"security":"reality","realitySettings":{},"_intent":{"realityMldsa65":true}}`,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("updated inbound is nil")
+	}
+	if contains := json.Valid([]byte(updated.StreamSettings)); !contains {
+		t.Fatalf("updated streamSettings is invalid JSON: %s", updated.StreamSettings)
+	}
+	var stream map[string]any
+	_ = json.Unmarshal([]byte(updated.StreamSettings), &stream)
+	reality, _ := stream["realitySettings"].(map[string]any)
+	settings, _ := reality["settings"].(map[string]any)
+	if reality["mldsa65Seed"] != "UPDATED_MLDSA65_SEED" || settings["mldsa65Verify"] != "UPDATED_MLDSA65_VERIFY" {
+		t.Fatalf("ML-DSA-65 not resolved before update: %+v", reality)
+	}
+	if _, ok := stream["_intent"]; ok {
+		t.Fatalf("_intent leaked to panel update: %s", updated.StreamSettings)
 	}
 }

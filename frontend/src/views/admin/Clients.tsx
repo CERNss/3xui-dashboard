@@ -20,7 +20,7 @@ import {
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Client, FleetInbound, Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
@@ -68,8 +68,8 @@ function trafficUsed(row: ClientRow): number {
 }
 
 function quotaBytes(client: Client): number {
-  const gb = client.totalGB ?? 0
-  return gb > 0 ? gb * 1024 * 1024 * 1024 : 0
+  // 3x-ui keeps the historic `totalGB` field name, but the value is bytes.
+  return client.totalGB ?? 0
 }
 
 function formatExpiry(ms: number | undefined, never: string): string {
@@ -467,11 +467,10 @@ function ClientEditorModal({ state, rows, users, busy, onClose, onCreate, onUpda
   const inboundKey = Form.useWatch('inboundKey', form)
   const selectedProtocol = inboundOptions.find((o) => o.value === inboundKey)?.protocol ?? ''
 
-  // Reset form values when modal opens.
-  useMemo(() => {
-    if (state.open) {
-      form.setFieldsValue(clientFormDefaults(state.row))
-    }
+  useEffect(() => {
+    if (!state.open) return
+    form.resetFields()
+    form.setFieldsValue(clientFormDefaults(state.row))
   }, [state.open, state.row, form])
 
   const save = async () => {

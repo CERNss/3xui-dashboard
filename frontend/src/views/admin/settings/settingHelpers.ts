@@ -1,9 +1,11 @@
 import type { SettingItem } from '@/api/admin/settings'
+import { DASHBOARD_AUTO_REFRESH_INTERVAL_KEY } from '@/hooks/queries/admin/settings'
 import type { SettingsTab } from './types'
 
 export const SETTINGS_TABS: SettingsTab[] = [
   'general',
   'subscription',
+  'payment',
   'alerts',
   'dataCollection',
   'securityAuth',
@@ -15,6 +17,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
 export const tabI18nKeys: Record<SettingsTab, string> = {
   general: 'admin.settings.generalTab',
   subscription: 'admin.settings.subscriptionTab',
+  payment: 'admin.settings.paymentTab',
   alerts: 'admin.settings.alertsTab',
   dataCollection: 'admin.settings.dataCollectionTab',
   securityAuth: 'admin.settings.securityAuthTab',
@@ -75,11 +78,13 @@ export function filterSettings(items: SettingItem[], tab: SettingsTab) {
       return item.group === 'other' && !BRAND_INFO_KEYS.has(item.key) && !OIDC_KEYS.has(item.key)
     }
     if (tab === 'subscription') return item.group === 'subscription'
+    if (tab === 'payment') return item.group === 'payment'
     if (tab === 'alerts') return item.group === 'traffic'
     if (tab === 'dataCollection') return item.group === 'data_collection'
     if (tab === 'securityAuth') return item.group === 'registration' || OIDC_KEYS.has(item.key)
     if (tab === 'userDefaults') return NEW_USER_KEYS.has(item.key)
-    if (tab === 'messages') return item.group === 'other' && !BRAND_INFO_KEYS.has(item.key) && !OIDC_KEYS.has(item.key)
+    if (tab === 'messages') return item.group === 'smtp'
+    if (tab === 'notifications') return item.group === 'notify'
     return false
   })
 }
@@ -88,19 +93,24 @@ export function groupTitleKey(group: string) {
   return {
     data_collection: 'admin.settings.groupDataCollection',
     other: 'admin.settings.groupOther',
+    notify: 'admin.settings.groupNotify',
+    payment: 'admin.settings.groupPayment',
     registration: 'admin.settings.groupRegistration',
+    smtp: 'admin.settings.groupSmtp',
     subscription: 'admin.settings.groupSubscription',
     traffic: 'admin.settings.groupTraffic',
   }[group]
 }
 
 export function inputMin(key: string) {
+  if (key === DASHBOARD_AUTO_REFRESH_INTERVAL_KEY) return 0
   if (key.endsWith('_interval_seconds')) return 5
   if (key.endsWith('_concurrency') || key.endsWith('_timeout_seconds')) return 1
   return 0
 }
 
 export function inputMax(key: string, drafts: Record<string, string>) {
+  if (key === DASHBOARD_AUTO_REFRESH_INTERVAL_KEY) return 3600
   if (key.endsWith('_concurrency')) return 64
   if (key.endsWith('_timeout_seconds')) return Math.min(300, Number(drafts[intervalKeyForTimeout(key)] || 300))
   if (key.endsWith('_retry_attempts')) return 5

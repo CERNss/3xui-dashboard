@@ -4,6 +4,7 @@ export type SubscriptionFormatKey =
   | 'base64'
   | 'clash'
   | 'singbox'
+  | 'surge'
   | 'sip008'
   | 'wireguard'
   | 'wireguard-zip'
@@ -21,6 +22,7 @@ const I18N_KEYS: Record<SubscriptionFormatKey, string> = {
   base64: 'base64',
   clash: 'clash',
   singbox: 'singbox',
+  surge: 'surge',
   sip008: 'sip008',
   wireguard: 'wireguard',
   'wireguard-zip': 'wireguardZip',
@@ -32,6 +34,7 @@ export function subscriptionFormats(t: TFunction): SubscriptionFormatInfo[] {
     format('base64', 'Base64', t),
     format('clash', 'Clash', t),
     format('singbox', 'Sing-box', t),
+    format('surge', 'Surge', t),
     format('sip008', 'SIP008', t),
     format('wireguard', 'WireGuard', t),
     format('wireguard-zip', 'WG (ZIP)', t, true),
