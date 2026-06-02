@@ -166,6 +166,9 @@ func singboxAttachTLS(node map[string]any, security string, ss map[string]any) {
 			if srv := realityServerName(r); srv != "" {
 				tlsCfg["server_name"] = srv
 			}
+			if fp := realityFingerprint(r); fp != "" {
+				tlsCfg["utls"] = map[string]any{"enabled": true, "fingerprint": fp}
+			}
 		}
 		node["tls"] = tlsCfg
 	}

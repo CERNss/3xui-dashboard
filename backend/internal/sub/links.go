@@ -115,8 +115,11 @@ func vlessLink(host string, port int, in *runtime.Inbound, c *runtime.Client, re
 			if srv := realityServerName(r); srv != "" {
 				q.Set("sni", srv)
 			}
-			if fp := realityFingerprint(r, "chrome"); fp != "" {
+			if fp := realityFingerprint(r); fp != "" {
 				q.Set("fp", fp)
+			}
+			if spiderX := realitySpiderX(r); spiderX != "" {
+				q.Set("spx", spiderX)
 			}
 		}
 	}

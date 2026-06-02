@@ -63,31 +63,33 @@ func TestClashNode_VLESSReality(t *testing.T) {
 	}
 }
 
-func TestClashNode_VLESSRealityNestedClientSettings(t *testing.T) {
+func TestClashNode_VLESSRealityNestedSettings(t *testing.T) {
 	in := fixture("vless", `{
-		"network": "tcp",
+		"network": "grpc",
 		"security": "reality",
 		"realitySettings": {
-			"shortIds": ["abcd1234"],
-			"serverNames": ["server-only.example.com"],
+			"shortIds": [""],
+			"serverNames": ["www.cloudflare.com"],
 			"settings": {
 				"publicKey": "PUB_NESTED",
-				"fingerprint": "firefox",
-				"serverName": "client-sni.example.com"
+				"serverName": "www.cloudflare.com",
+				"fingerprint": "chrome",
+				"spiderX": "/"
 			}
-		}
+		},
+		"grpcSettings": {"serviceName": "grpc"}
 	}`, "")
-	c := &runtime.Client{ID: "11111111-1111-1111-1111-111111111111"}
+	c := &runtime.Client{ID: "u"}
 
 	node, ok := clashNode("1.2.3.4", 443, in, c, "vless-reality")
 	if !ok {
 		t.Fatalf("clashNode returned ok=false")
 	}
-	if node["servername"] != "client-sni.example.com" {
-		t.Errorf("servername = %v, want nested settings.serverName", node["servername"])
+	if node["servername"] != "www.cloudflare.com" {
+		t.Errorf("servername = %v, want www.cloudflare.com", node["servername"])
 	}
-	if node["client-fingerprint"] != "firefox" {
-		t.Errorf("client-fingerprint = %v, want nested settings.fingerprint", node["client-fingerprint"])
+	if node["client-fingerprint"] != "chrome" {
+		t.Errorf("client-fingerprint = %v, want chrome", node["client-fingerprint"])
 	}
 	ro, ok := node["reality-opts"].(map[string]any)
 	if !ok {
@@ -95,6 +97,16 @@ func TestClashNode_VLESSRealityNestedClientSettings(t *testing.T) {
 	}
 	if ro["public-key"] != "PUB_NESTED" {
 		t.Errorf("public-key wrong: %v", ro["public-key"])
+	}
+	if ro["short-id"] != nil {
+		t.Errorf("empty short-id should be omitted, got %v", ro["short-id"])
+	}
+	if ro["spider-x"] != "/" {
+		t.Errorf("spider-x wrong: %v", ro["spider-x"])
+	}
+	g, ok := node["grpc-opts"].(map[string]any)
+	if !ok || g["grpc-service-name"] != "grpc" {
+		t.Errorf("grpc opts wrong: %+v", node["grpc-opts"])
 	}
 }
 

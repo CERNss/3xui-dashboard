@@ -106,8 +106,11 @@ func clashVLESS(host string, port int, in *runtime.Inbound, c *runtime.Client, r
 			if srv := realityServerName(r); srv != "" {
 				node["servername"] = srv
 			}
-			if fp := realityFingerprint(r, "chrome"); fp != "" {
+			if fp := realityFingerprint(r); fp != "" {
 				node["client-fingerprint"] = fp
+			}
+			if spiderX := realitySpiderX(r); spiderX != "" {
+				opts["spider-x"] = spiderX
 			}
 			if len(opts) > 0 {
 				node["reality-opts"] = opts

@@ -82,34 +82,42 @@ func TestVLESS_Reality(t *testing.T) {
 	}
 }
 
-func TestVLESS_RealityUsesNestedClientSettings(t *testing.T) {
+func TestVLESS_RealityNestedSettings(t *testing.T) {
 	stream, _ := json.Marshal(map[string]any{
-		"network":  "tcp",
+		"network":  "grpc",
 		"security": "reality",
 		"realitySettings": map[string]any{
-			"shortIds":    []any{"abcd"},
-			"serverNames": []any{"server-only.example.com"},
+			"shortIds":    []any{""},
+			"serverNames": []any{"www.cloudflare.com"},
 			"settings": map[string]any{
 				"publicKey":   "PUB_NESTED",
-				"fingerprint": "firefox",
-				"serverName":  "client-sni.example.com",
+				"fingerprint": "chrome",
+				"serverName":  "www.cloudflare.com",
+				"spiderX":     "/",
 			},
 		},
+		"grpcSettings": map[string]any{"serviceName": "grpc"},
 	})
 	in := &runtime.Inbound{Protocol: "vless", Port: 443, StreamSettings: string(stream)}
 	c := &runtime.Client{ID: "uuid-x", Email: "bob"}
-
 	got := BuildLink("1.2.3.4", 443, in, c, "bob@reality")
 	u, _ := url.Parse(got)
 	q := u.Query()
 	for _, kv := range []struct{ k, want string }{
+		{"type", "grpc"},
+		{"security", "reality"},
 		{"pbk", "PUB_NESTED"},
-		{"sni", "client-sni.example.com"},
-		{"fp", "firefox"},
+		{"sni", "www.cloudflare.com"},
+		{"fp", "chrome"},
+		{"spx", "/"},
+		{"serviceName", "grpc"},
 	} {
 		if got := q.Get(kv.k); got != kv.want {
 			t.Errorf("reality q[%s] = %q, want %q", kv.k, got, kv.want)
 		}
+	}
+	if got := q.Get("sid"); got != "" {
+		t.Errorf("empty shortId should be omitted, got sid=%q", got)
 	}
 }
 

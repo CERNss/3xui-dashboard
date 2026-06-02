@@ -37,6 +37,25 @@ func TestRenderClash_SubstitutesPolicyBlocks(t *testing.T) {
 			t.Errorf("missing %q key", key)
 		}
 	}
+	dns, ok := doc["dns"].(map[string]any)
+	if !ok {
+		t.Fatalf("dns is not a YAML map")
+	}
+	proxyServerNameservers, ok := dns["proxy-server-nameserver"].([]any)
+	if !ok {
+		t.Fatalf("dns.proxy-server-nameserver is not a YAML list")
+	}
+	gotNameservers := map[string]bool{}
+	for _, ns := range proxyServerNameservers {
+		if s, ok := ns.(string); ok {
+			gotNameservers[s] = true
+		}
+	}
+	for _, want := range []string{"223.5.5.5", "119.29.29.29"} {
+		if !gotNameservers[want] {
+			t.Errorf("dns.proxy-server-nameserver missing %q", want)
+		}
+	}
 	if !strings.Contains(string(out), "node-1") || !strings.Contains(string(out), "node-2") {
 		t.Errorf("output does not contain expected node names")
 	}

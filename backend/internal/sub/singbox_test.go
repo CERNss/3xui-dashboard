@@ -53,18 +53,20 @@ func TestSingboxOutbound_VLESSReality(t *testing.T) {
 	}
 }
 
-func TestSingboxOutbound_VLESSRealityNestedClientSettings(t *testing.T) {
+func TestSingboxOutbound_VLESSRealityNestedSettings(t *testing.T) {
 	in := fixture("vless", `{
-		"network": "tcp",
+		"network": "grpc",
 		"security": "reality",
 		"realitySettings": {
-			"shortIds": ["sid"],
-			"serverNames": ["server-only.example.com"],
+			"shortIds": [""],
+			"serverNames": ["www.cloudflare.com"],
 			"settings": {
 				"publicKey": "PUB_NESTED",
-				"serverName": "client-sni.example.com"
+				"serverName": "www.cloudflare.com",
+				"fingerprint": "chrome"
 			}
-		}
+		},
+		"grpcSettings": {"serviceName": "grpc"}
 	}`, "")
 	c := &runtime.Client{ID: "v-uuid"}
 
@@ -83,8 +85,19 @@ func TestSingboxOutbound_VLESSRealityNestedClientSettings(t *testing.T) {
 	if reality["public_key"] != "PUB_NESTED" {
 		t.Errorf("public_key wrong: %v", reality["public_key"])
 	}
-	if tls["server_name"] != "client-sni.example.com" {
+	if reality["short_id"] != nil {
+		t.Errorf("empty short_id should be omitted, got %v", reality["short_id"])
+	}
+	if tls["server_name"] != "www.cloudflare.com" {
 		t.Errorf("server_name wrong: %v", tls["server_name"])
+	}
+	utls, ok := tls["utls"].(map[string]any)
+	if !ok || utls["fingerprint"] != "chrome" {
+		t.Errorf("utls wrong: %+v", tls["utls"])
+	}
+	transport, ok := o["transport"].(map[string]any)
+	if !ok || transport["service_name"] != "grpc" {
+		t.Errorf("transport wrong: %+v", o["transport"])
 	}
 }
 
