@@ -447,6 +447,7 @@ jobs:
             "${IMAGE}" \
             bash -lc '
               set -euo pipefail
+              export PATH="/usr/local/go/bin:${PATH}"
               cd backend
               go vet ./...
               go build ./...
@@ -539,6 +540,7 @@ jobs:
             "${GOLANG_BUILD_IMAGE}" \
             bash -lc '
               set -euo pipefail
+              export PATH="/usr/local/go/bin:${PATH}"
 
               rm -rf .release-build/work .release-build/payload
               mkdir -p .release-build/work/binaries .release-build/payload
@@ -656,6 +658,7 @@ jobs:
             "${GOLANG_BUILD_IMAGE}" \
             bash -lc '
               set -euo pipefail
+              export PATH="/usr/local/go/bin:${PATH}"
 
               rm -rf .release-build/work .release-build/payload
               mkdir -p .release-build/work/binaries .release-build/payload
