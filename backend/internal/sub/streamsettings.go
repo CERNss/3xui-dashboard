@@ -79,6 +79,32 @@ func firstString(m map[string]any, key string) string {
 	return s[0]
 }
 
+func realityClientSettings(r map[string]any) map[string]any {
+	settings, _ := ssObj(r, "settings")
+	return settings
+}
+
+func realityPublicKey(r map[string]any) string {
+	if pbk := stringFrom(realityClientSettings(r), "publicKey", ""); pbk != "" {
+		return pbk
+	}
+	return stringFrom(r, "publicKey", "")
+}
+
+func realityFingerprint(r map[string]any, fallback string) string {
+	if fp := stringFrom(realityClientSettings(r), "fingerprint", ""); fp != "" {
+		return fp
+	}
+	return stringFrom(r, "fingerprint", fallback)
+}
+
+func realityServerName(r map[string]any) string {
+	if sni := stringFrom(realityClientSettings(r), "serverName", ""); sni != "" {
+		return sni
+	}
+	return firstString(r, "serverNames")
+}
+
 // wsHost reads the Host header from wsSettings — newer 3x-ui keeps
 // it under `headers.Host`, older versions stored it at `host` (string).
 func wsHost(ws map[string]any) string {

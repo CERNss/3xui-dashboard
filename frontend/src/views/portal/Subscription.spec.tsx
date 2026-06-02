@@ -9,6 +9,10 @@ import '@/i18n'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Subscription from './Subscription'
 
+const brandingState = vi.hoisted(() => ({
+  publicBaseURL: '',
+}))
+
 vi.mock('qrcode', () => ({
   default: {
     toDataURL: vi.fn(),
@@ -32,6 +36,14 @@ vi.mock('@/api/portal/billing', () => ({
   portalBillingApi: {
     listOrders: vi.fn(),
   },
+}))
+
+vi.mock('@/hooks/queries/branding', () => ({
+  useBranding: () => ({
+    data: { subscription_public_base_url: brandingState.publicBaseURL },
+    error: null,
+    isLoading: false,
+  }),
 }))
 
 const profileGetMock = vi.mocked(portalProfileApi.get)
@@ -79,6 +91,7 @@ beforeEach(() => {
   ordersListMock.mockResolvedValue([])
   qrMock.mockReset()
   qrMock.mockImplementation((value: string) => Promise.resolve(`data:image/png;base64,${value}`))
+  brandingState.publicBaseURL = ''
   Object.assign(navigator, {
     clipboard: {
       writeText: vi.fn().mockResolvedValue(undefined),
@@ -87,6 +100,15 @@ beforeEach(() => {
 })
 
 describe('Subscription', () => {
+  it('uses the configured public subscription base URL when present', async () => {
+    brandingState.publicBaseURL = 'https://sub.example.com/panel/'
+
+    renderSubscription()
+
+    expect(await screen.findByDisplayValue('https://sub.example.com/panel/sub/sub-token')).toBeInTheDocument()
+    expect(qrMock).toHaveBeenLastCalledWith('https://sub.example.com/panel/sub/sub-token', expect.any(Object))
+  })
+
   it('renders the eight formats and keeps base64 URL query-free', async () => {
     renderSubscription()
 

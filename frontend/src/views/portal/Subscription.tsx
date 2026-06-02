@@ -11,6 +11,7 @@ import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, PageHeader } from '@/components/common'
+import { useBranding } from '@/hooks/queries/branding'
 import { usePortalOrdersList } from '@/hooks/queries/portal/billing'
 import { useProfile, useRotateSubId } from '@/hooks/queries/portal/profile'
 import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
@@ -56,12 +57,14 @@ export function Subscription() {
   const [messageApi, contextHolder] = message.useMessage()
   const [activeKey, setActiveKey] = useState<SubscriptionFormatKey>('base64')
   const profile = useProfile()
+  const branding = useBranding()
   const traffic = useOwnTraffic()
   const orders = usePortalOrdersList()
   const rotateSubId = useRotateSubId()
   const formats = useMemo(() => subscriptionFormats(t), [t])
   const activeFormat = formats.find((format) => format.key === activeKey)
-  const url = profile.data ? subscriptionUrl(window.location.origin, profile.data.sub_id, activeKey) : ''
+  const subscriptionBaseURL = branding.data?.subscription_public_base_url || window.location.origin
+  const url = profile.data ? subscriptionUrl(subscriptionBaseURL, profile.data.sub_id, activeKey) : ''
   const qrDataUrl = useSubscriptionQr(url, activeFormat)
   const loading = profile.isLoading || traffic.isLoading || orders.isLoading
   const error = profile.error ?? traffic.error ?? orders.error

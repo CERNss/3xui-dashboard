@@ -8,6 +8,7 @@ export interface Branding {
   footer: string
   docs_url: string
   homepage_content: string
+  subscription_public_base_url: string
 }
 
 export const brandingApi = {

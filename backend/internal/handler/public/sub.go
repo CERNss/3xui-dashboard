@@ -34,19 +34,24 @@ const (
 
 // SubHandler serves /sub/*.
 type SubHandler struct {
-	asm       *sub.Assembler
-	settings  *repository.SettingRepo
-	profiles     *repository.SubscriptionProfileRepo
-	rulesets     *repository.SubscriptionRulesetRepo
-	rulesetCache *ruleset.Cache
-	remarkFmt    string
-	log          *slog.Logger
+	asm           *sub.Assembler
+	settings      settingsReader
+	profiles      *repository.SubscriptionProfileRepo
+	rulesets      *repository.SubscriptionRulesetRepo
+	rulesetCache  *ruleset.Cache
+	remarkFmt     string
+	publicBaseURL string
+	log           *slog.Logger
+}
+
+type settingsReader interface {
+	Get(context.Context, string) (string, bool, error)
 }
 
 // NewSubHandler returns a handler. settings may be nil — when nil,
 // format calls fall back to embedded default templates and the
 // strategy/rule knobs use compile-time defaults.
-func NewSubHandler(a *sub.Assembler, settings *repository.SettingRepo, remarkFmt string, lg *slog.Logger) *SubHandler {
+func NewSubHandler(a *sub.Assembler, settings settingsReader, remarkFmt, publicBaseURL string, lg *slog.Logger) *SubHandler {
 	if remarkFmt == "" {
 		remarkFmt = "-ieo"
 	}
@@ -54,10 +59,11 @@ func NewSubHandler(a *sub.Assembler, settings *repository.SettingRepo, remarkFmt
 		lg = slog.Default()
 	}
 	return &SubHandler{
-		asm:       a,
-		settings:  settings,
-		remarkFmt: remarkFmt,
-		log:       lg.With(slog.String("component", "handler.public.sub")),
+		asm:           a,
+		settings:      settings,
+		remarkFmt:     remarkFmt,
+		publicBaseURL: normalizePublicBaseURL(publicBaseURL),
+		log:           lg.With(slog.String("component", "handler.public.sub")),
 	}
 }
 
@@ -212,7 +218,7 @@ func (h *SubHandler) serve(c *gin.Context, f Format) {
 		// optional operator template override.
 		profile, rulesets := h.resolveProfile(c.Request.Context(), c.Query("profile"))
 		base := h.clashBase(c.Request.Context())
-		serveBase := requestOrigin(c)
+		serveBase := h.subscriptionPublicBaseURL(c)
 		body, err := h.asm.FormatClash(data, profile, rulesets, base, serveBase)
 		if err != nil {
 			h.log.Error("FormatClash failed, retrying without operator base", "err", err)
@@ -364,6 +370,23 @@ func requestOrigin(c *gin.Context) string {
 		scheme = "https"
 	}
 	return scheme + "://" + c.Request.Host
+}
+
+func (h *SubHandler) subscriptionPublicBaseURL(c *gin.Context) string {
+	if h.settings != nil {
+		v, _, _ := h.settings.Get(c.Request.Context(), model.SettingSubscriptionPublicBaseURL)
+		if normalized := normalizePublicBaseURL(v); normalized != "" {
+			return normalized
+		}
+	}
+	if h.publicBaseURL != "" {
+		return h.publicBaseURL
+	}
+	return requestOrigin(c)
+}
+
+func normalizePublicBaseURL(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 // clashBase returns the operator's Clash template override, or "" when

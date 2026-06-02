@@ -228,7 +228,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	if wgProvisioner != nil {
 		subAsm.SetWGPeerSource(&subWGAdapter{prov: wgProvisioner})
 	}
-	subHandler := publichandler.NewSubHandler(subAsm, settingRepo, "", logger)
+	subHandler := publichandler.NewSubHandler(subAsm, settingRepo, "", cfg.Subscription.PublicBaseURL, logger)
 	subProfileRepo := repository.NewSubscriptionProfileRepo(db)
 	subRulesetRepo := repository.NewSubscriptionRulesetRepo(db)
 	subHandler.SetProfileStore(subProfileRepo, subRulesetRepo, ruleset.NewCache(nil))
@@ -261,7 +261,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	userhandler.NewAccountHandler(userService, userRepo, verifyService).RegisterRoutes(apiUserAuthed)
 	adminhandler.NewUserHandler(userService, userRepo).RegisterRoutes(apiAdminAuthed)
 	adminhandler.NewSettingHandler(settingRepo, cfg, mailerSvc).RegisterRoutes(apiAdminAuthed)
-	adminhandler.NewBrandingHandler(settingRepo).RegisterRoutes(engine.Group("/api/public"))
+	adminhandler.NewBrandingHandler(settingRepo, cfg).RegisterRoutes(engine.Group("/api/public"))
 
 	// Billing + payment gateways. provisioningPoolRepo was created
 	// earlier alongside inbound handler wiring.

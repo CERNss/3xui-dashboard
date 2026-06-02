@@ -63,6 +63,41 @@ func TestClashNode_VLESSReality(t *testing.T) {
 	}
 }
 
+func TestClashNode_VLESSRealityNestedClientSettings(t *testing.T) {
+	in := fixture("vless", `{
+		"network": "tcp",
+		"security": "reality",
+		"realitySettings": {
+			"shortIds": ["abcd1234"],
+			"serverNames": ["server-only.example.com"],
+			"settings": {
+				"publicKey": "PUB_NESTED",
+				"fingerprint": "firefox",
+				"serverName": "client-sni.example.com"
+			}
+		}
+	}`, "")
+	c := &runtime.Client{ID: "11111111-1111-1111-1111-111111111111"}
+
+	node, ok := clashNode("1.2.3.4", 443, in, c, "vless-reality")
+	if !ok {
+		t.Fatalf("clashNode returned ok=false")
+	}
+	if node["servername"] != "client-sni.example.com" {
+		t.Errorf("servername = %v, want nested settings.serverName", node["servername"])
+	}
+	if node["client-fingerprint"] != "firefox" {
+		t.Errorf("client-fingerprint = %v, want nested settings.fingerprint", node["client-fingerprint"])
+	}
+	ro, ok := node["reality-opts"].(map[string]any)
+	if !ok {
+		t.Fatalf("reality-opts missing")
+	}
+	if ro["public-key"] != "PUB_NESTED" {
+		t.Errorf("public-key wrong: %v", ro["public-key"])
+	}
+}
+
 func TestClashNode_VLESSwsTLS(t *testing.T) {
 	in := fixture("vless", `{
 		"network": "ws",

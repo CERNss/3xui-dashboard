@@ -68,13 +68,13 @@ func clashVLESS(host string, port int, in *runtime.Inbound, c *runtime.Client, r
 	security := stringFrom(ss, "security", "none")
 
 	node := map[string]any{
-		"name":              remark,
-		"type":              "vless",
-		"server":            host,
-		"port":              port,
-		"uuid":              c.ID,
-		"network":           network,
-		"udp":               true,
+		"name":               remark,
+		"type":               "vless",
+		"server":             host,
+		"port":               port,
+		"uuid":               c.ID,
+		"network":            network,
+		"udp":                true,
 		"client-fingerprint": "chrome",
 	}
 
@@ -97,16 +97,16 @@ func clashVLESS(host string, port int, in *runtime.Inbound, c *runtime.Client, r
 		node["tls"] = true
 		if r, ok := ssObj(ss, "realitySettings"); ok {
 			opts := map[string]any{}
-			if pbk := stringFrom(r, "publicKey", ""); pbk != "" {
+			if pbk := realityPublicKey(r); pbk != "" {
 				opts["public-key"] = pbk
 			}
 			if sid := firstString(r, "shortIds"); sid != "" {
 				opts["short-id"] = sid
 			}
-			if srv := firstString(r, "serverNames"); srv != "" {
+			if srv := realityServerName(r); srv != "" {
 				node["servername"] = srv
 			}
-			if fp := stringFrom(r, "fingerprint", "chrome"); fp != "" {
+			if fp := realityFingerprint(r, "chrome"); fp != "" {
 				node["client-fingerprint"] = fp
 			}
 			if len(opts) > 0 {

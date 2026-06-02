@@ -32,6 +32,7 @@ type Config struct {
 
 	PublicRegistration   bool
 	EmailDomainAllowlist []string
+	Subscription         Subscription
 
 	// SecretEncryptionKey (hex-encoded 32-byte AES key) encrypts secret
 	// settings stored in the DB (SMTP/notify/payment credentials as those
@@ -47,6 +48,12 @@ type Bootstrap struct {
 	// Each item may either provide scheme/host/port/base_path directly or an
 	// access_url such as https://node.example.com:2053/secret-panel-path.
 	NodesJSON string
+}
+
+// Subscription holds public subscription endpoint defaults. It can be
+// overridden at runtime through the settings table.
+type Subscription struct {
+	PublicBaseURL string
 }
 
 // WireGuard holds the at-rest key encryption configuration for
@@ -248,6 +255,7 @@ func Load(envFile, configFile string) (*Config, error) {
 	v.SetDefault("SMTP_USE_TLS", true)
 	v.SetDefault("PUBLIC_REGISTRATION", false) // safer default; admin enables it in the panel
 	v.SetDefault("EMAIL_DOMAIN_ALLOWLIST", "")
+	v.SetDefault("SUBSCRIPTION_PUBLIC_BASE_URL", "")
 	v.SetDefault("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
 	v.SetDefault("STRIPE_CURRENCY", "usd")
 	v.SetDefault("STRIPE_SESSION_EXPIRY_MINUTES", 30)
@@ -363,7 +371,10 @@ func Load(envFile, configFile string) (*Config, error) {
 		},
 		PublicRegistration:   v.GetBool("PUBLIC_REGISTRATION"),
 		EmailDomainAllowlist: splitCSV(v.GetString("EMAIL_DOMAIN_ALLOWLIST")),
-		SecretEncryptionKey:  v.GetString("SECRET_ENCRYPTION_KEY"),
+		Subscription: Subscription{
+			PublicBaseURL: strings.TrimRight(strings.TrimSpace(v.GetString("SUBSCRIPTION_PUBLIC_BASE_URL")), "/"),
+		},
+		SecretEncryptionKey: v.GetString("SECRET_ENCRYPTION_KEY"),
 	}
 
 	// LOG_FORMAT defaults to text in dev, json in prod.

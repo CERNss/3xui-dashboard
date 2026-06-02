@@ -42,9 +42,13 @@ export function subscriptionFormats(t: TFunction): SubscriptionFormatInfo[] {
   ]
 }
 
-export function subscriptionUrl(origin: string, subId: string, formatKey: SubscriptionFormatKey): string {
-  const base = `${origin}/sub/${subId}`
+export function subscriptionUrl(baseUrl: string, subId: string, formatKey: SubscriptionFormatKey): string {
+  const base = `${normalizeSubscriptionBaseURL(baseUrl)}/sub/${subId}`
   return formatKey === 'base64' ? base : `${base}?format=${formatKey}`
+}
+
+export function normalizeSubscriptionBaseURL(value: string): string {
+  return value.trim().replace(/\/+$/, '')
 }
 
 function format(

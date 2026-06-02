@@ -56,10 +56,11 @@ func (h *SettingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // metadata used by the login page and shell chrome.
 type BrandingHandler struct {
 	repo *repository.SettingRepo
+	cfg  *config.Config
 }
 
-func NewBrandingHandler(repo *repository.SettingRepo) *BrandingHandler {
-	return &BrandingHandler{repo: repo}
+func NewBrandingHandler(repo *repository.SettingRepo, cfg *config.Config) *BrandingHandler {
+	return &BrandingHandler{repo: repo, cfg: cfg}
 }
 
 func (h *BrandingHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -77,6 +78,7 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 		model.SettingBrandFooter,
 		model.SettingBrandDocsURL,
 		model.SettingBrandHomepageContent,
+		model.SettingSubscriptionPublicBaseURL,
 	} {
 		value, _, err := h.repo.Get(ctx, key)
 		if err != nil {
@@ -86,14 +88,22 @@ func (h *BrandingHandler) Get(c *gin.Context) {
 		values[key] = value
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"icon_url":         values[model.SettingBrandIconURL],
-		"title":            firstNonEmpty(values[model.SettingBrandTitle], defaultBrandTitle),
-		"subtitle":         firstNonEmpty(values[model.SettingBrandSubtitle], defaultBrandSubtitle),
-		"description":      firstNonEmpty(values[model.SettingBrandDescription], defaultBrandDescription),
-		"footer":           firstNonEmpty(values[model.SettingBrandFooter], defaultBrandFooter),
-		"docs_url":         values[model.SettingBrandDocsURL],
-		"homepage_content": values[model.SettingBrandHomepageContent],
+		"icon_url":                     values[model.SettingBrandIconURL],
+		"title":                        firstNonEmpty(values[model.SettingBrandTitle], defaultBrandTitle),
+		"subtitle":                     firstNonEmpty(values[model.SettingBrandSubtitle], defaultBrandSubtitle),
+		"description":                  firstNonEmpty(values[model.SettingBrandDescription], defaultBrandDescription),
+		"footer":                       firstNonEmpty(values[model.SettingBrandFooter], defaultBrandFooter),
+		"docs_url":                     values[model.SettingBrandDocsURL],
+		"homepage_content":             values[model.SettingBrandHomepageContent],
+		"subscription_public_base_url": normalizePublicBaseURL(firstNonEmpty(values[model.SettingSubscriptionPublicBaseURL], h.subscriptionPublicBaseURLFallback())),
 	})
+}
+
+func (h *BrandingHandler) subscriptionPublicBaseURLFallback() string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+	return h.cfg.Subscription.PublicBaseURL
 }
 
 func firstNonEmpty(values ...string) string {
@@ -797,6 +807,15 @@ var knownSettings = []settingDescriptor{
 		DescriptionZh: "/sub 客户端链接 label 的格式串。首字符为分隔符；后续字符为字段标记 i/e/o/t（inbound、email、node、tag）。",
 	},
 	{
+		Key:           model.SettingSubscriptionPublicBaseURL,
+		Label:         "Subscription public base URL",
+		LabelZh:       "订阅公网基础地址",
+		Type:          "string",
+		Group:         "subscription",
+		Description:   "Public dashboard URL used to generate subscription links, e.g. https://sub.example.com or https://panel.example.com/panel-path. Empty uses the browser's current origin.",
+		DescriptionZh: "生成订阅链接时使用的公网 Dashboard 地址，如 https://sub.example.com 或 https://panel.example.com/panel-path。留空则使用浏览器当前地址。",
+	},
+	{
 		Key:           model.SettingTrafficWarnPct,
 		Label:         "Traffic warning %",
 		LabelZh:       "流量预警 %",
@@ -1045,6 +1064,8 @@ func (h *SettingHandler) envFallback(key string) string {
 		return strconv.FormatBool(h.cfg.SMTP.Enabled())
 	case model.SettingEmailDomainAllowlist:
 		return strings.Join(h.cfg.EmailDomainAllowlist, ",")
+	case model.SettingSubscriptionPublicBaseURL:
+		return h.cfg.Subscription.PublicBaseURL
 	case model.SettingOIDCEnabled:
 		return "true"
 	case model.SettingOIDCIssuer:
@@ -1317,6 +1338,10 @@ func validate(key, value string) error {
 			if err := validateOptionalURL(key, value); err != nil {
 				return err
 			}
+		case model.SettingSubscriptionPublicBaseURL:
+			if err := validateOptionalURL(key, value); err != nil {
+				return err
+			}
 		case model.SettingNewUserPlanIDs:
 			for _, part := range strings.Split(value, ",") {
 				part = strings.TrimSpace(part)
@@ -1347,6 +1372,10 @@ func validate(key, value string) error {
 		}
 		return nil
 	}
+}
+
+func normalizePublicBaseURL(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 func validateOptionalURL(key, value string) error {

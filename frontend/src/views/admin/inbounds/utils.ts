@@ -75,6 +75,22 @@ export function filterInbounds(rows: FleetInbound[], query: string, protocols: P
   })
 }
 
+function realityClientSettings(reality: Record<string, unknown>) {
+  return reality.settings && typeof reality.settings === 'object'
+    ? reality.settings as Record<string, unknown>
+    : {}
+}
+
+function firstString(value: unknown) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === 'string' && item.trim()) return item.trim()
+    }
+    return ''
+  }
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 export function buildClientLink(row: FleetInbound, client: Client, nodes: Node[]): string {
   const inbound = row.inbound
   const node = nodes.find((item) => item.id === row.node_id)
@@ -93,10 +109,15 @@ export function buildClientLink(row: FleetInbound, client: Client, nodes: Node[]
     if (security === 'tls' && stream.tlsSettings?.serverName) q.set('sni', stream.tlsSettings.serverName)
     if (security === 'reality' && stream.realitySettings) {
       const reality = stream.realitySettings
-      if (reality.publicKey) q.set('pbk', reality.publicKey)
-      if (Array.isArray(reality.shortIds) && reality.shortIds.length) q.set('sid', reality.shortIds[0])
-      if (Array.isArray(reality.serverNames) && reality.serverNames.length) q.set('sni', reality.serverNames[0])
-      if (reality.fingerprint) q.set('fp', reality.fingerprint)
+      const realitySettings = realityClientSettings(reality)
+      const publicKey = firstString(realitySettings.publicKey) || firstString(reality.publicKey)
+      const shortId = firstString(reality.shortIds)
+      const serverName = firstString(realitySettings.serverName) || firstString(reality.serverNames)
+      const fingerprint = firstString(realitySettings.fingerprint) || firstString(reality.fingerprint)
+      if (publicKey) q.set('pbk', publicKey)
+      if (shortId) q.set('sid', shortId)
+      if (serverName) q.set('sni', serverName)
+      if (fingerprint) q.set('fp', fingerprint)
     }
     if (network === 'ws' && stream.wsSettings?.path) q.set('path', stream.wsSettings.path)
     if (network === 'grpc' && stream.grpcSettings?.serviceName) q.set('serviceName', stream.grpcSettings.serviceName)

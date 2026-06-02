@@ -7,6 +7,10 @@ import '@/i18n'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import Usage from './Usage'
 
+const brandingState = vi.hoisted(() => ({
+  publicBaseURL: '',
+}))
+
 vi.mock('@/api/portal/profile', () => ({
   portalProfileApi: {
     get: vi.fn(),
@@ -23,6 +27,14 @@ vi.mock('@/api/portal/billing', () => ({
   portalBillingApi: {
     listOrders: vi.fn(),
   },
+}))
+
+vi.mock('@/hooks/queries/branding', () => ({
+  useBranding: () => ({
+    data: { subscription_public_base_url: brandingState.publicBaseURL },
+    error: null,
+    isLoading: false,
+  }),
 }))
 
 const profileGetMock = vi.mocked(portalProfileApi.get)
@@ -69,6 +81,7 @@ beforeEach(() => {
   ])
   ordersListMock.mockReset()
   ordersListMock.mockResolvedValue([])
+  brandingState.publicBaseURL = ''
 })
 
 describe('Usage', () => {
@@ -82,6 +95,14 @@ describe('Usage', () => {
     expect(screen.getByText('http://localhost:3000/sub/sub-token')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('across 2 nodes')).toBeInTheDocument()
+  })
+
+  it('shows the configured public subscription URL when present', async () => {
+    brandingState.publicBaseURL = 'https://sub.example.com/panel/'
+
+    renderUsage()
+
+    expect(await screen.findByText('https://sub.example.com/panel/sub/sub-token')).toBeInTheDocument()
   })
 
   it('renders per-client upload, download, limit, and expiry rows', async () => {

@@ -217,4 +217,36 @@ describe('Inbounds', () => {
     expect(screen.getByText('Shadow inbound')).toBeInTheDocument()
     expect(screen.queryByText('Main inbound')).not.toBeInTheDocument()
   })
+
+  it('builds Reality links from nested client settings', async () => {
+    const user = userEvent.setup()
+    fleet = {
+      inbounds: [
+        makeFleetRow({
+          inbound: makeInbound({
+            streamSettings: JSON.stringify({
+              network: 'tcp',
+              security: 'reality',
+              realitySettings: {
+                shortIds: ['abcd'],
+                serverNames: ['server-only.example.com'],
+                settings: {
+                  publicKey: 'PUB_NESTED',
+                  fingerprint: 'firefox',
+                  serverName: 'client-sni.example.com',
+                },
+              },
+            }),
+          }),
+        }),
+      ],
+    }
+    renderInbounds()
+
+    await user.click(screen.getByRole('button', { name: /Expand row/ }))
+
+    expect(screen.getByText(/pbk=PUB_NESTED/)).toBeInTheDocument()
+    expect(screen.getByText(/sni=client-sni\.example\.com/)).toBeInTheDocument()
+    expect(screen.getByText(/fp=firefox/)).toBeInTheDocument()
+  })
 })

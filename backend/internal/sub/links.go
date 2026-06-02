@@ -106,16 +106,16 @@ func vlessLink(host string, port int, in *runtime.Inbound, c *runtime.Client, re
 		}
 	case "reality":
 		if r, ok := ssObj(ss, "realitySettings"); ok {
-			if pbk := stringFrom(r, "publicKey", ""); pbk != "" {
+			if pbk := realityPublicKey(r); pbk != "" {
 				q.Set("pbk", pbk)
 			}
 			if sid := firstString(r, "shortIds"); sid != "" {
 				q.Set("sid", sid)
 			}
-			if srv := firstString(r, "serverNames"); srv != "" {
+			if srv := realityServerName(r); srv != "" {
 				q.Set("sni", srv)
 			}
-			if fp := stringFrom(r, "fingerprint", "chrome"); fp != "" {
+			if fp := realityFingerprint(r, "chrome"); fp != "" {
 				q.Set("fp", fp)
 			}
 		}

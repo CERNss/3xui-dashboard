@@ -174,6 +174,16 @@ func TestValidateBrandSettings(t *testing.T) {
 }
 
 func TestValidateSubscriptionTemplatePlaceholders(t *testing.T) {
+	if err := validate(model.SettingSubscriptionPublicBaseURL, "https://sub.example.com/panel"); err != nil {
+		t.Fatalf("subscription public base URL rejected: %v", err)
+	}
+	if err := validate(model.SettingSubscriptionPublicBaseURL, "/sub"); err == nil {
+		t.Fatal("relative subscription public base URL should be rejected")
+	}
+	if err := validate(model.SettingSubscriptionPublicBaseURL, "ftp://sub.example.com"); err == nil {
+		t.Fatal("non-http subscription public base URL should be rejected")
+	}
+
 	clash := "mixed-port: 7890\nproxies:\n  ${proxies}\nproxy-groups:\n  - name: 节点选择\n    type: select\n    proxies: [${proxy_names}]\nrules:\n  - MATCH,节点选择\n"
 	if err := validate(model.SettingClashTemplateYAML, clash); err != nil {
 		t.Fatalf("clash template with placeholders rejected: %v", err)

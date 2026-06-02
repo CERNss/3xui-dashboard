@@ -120,12 +120,13 @@ func TestLoad_GeneratesAdminPasswordWhenBlank(t *testing.T) {
 
 func TestLoad_FullEnvLoadsCleanly(t *testing.T) {
 	withEnv(t, map[string]string{
-		"DATABASE_URL":   "postgres://x@x/x",
-		"JWT_SECRET":     "secret",
-		"ADMIN_USERNAME": "admin",
-		"ADMIN_PASSWORD": "pw",
-		"ENV":            "dev",
-		"LOG_FORMAT":     "",
+		"DATABASE_URL":                 "postgres://x@x/x",
+		"JWT_SECRET":                   "secret",
+		"ADMIN_USERNAME":               "admin",
+		"ADMIN_PASSWORD":               "pw",
+		"ENV":                          "dev",
+		"LOG_FORMAT":                   "",
+		"SUBSCRIPTION_PUBLIC_BASE_URL": "https://sub.example.com/panel/",
 	}, func() {
 		cfg, err := Load("", "")
 		if err != nil {
@@ -139,6 +140,9 @@ func TestLoad_FullEnvLoadsCleanly(t *testing.T) {
 		}
 		if cfg.Bootstrap.NodesJSON != "" {
 			t.Errorf("Bootstrap.NodesJSON = %q, want empty default", cfg.Bootstrap.NodesJSON)
+		}
+		if cfg.Subscription.PublicBaseURL != "https://sub.example.com/panel" {
+			t.Errorf("Subscription.PublicBaseURL = %q, want trimmed public URL", cfg.Subscription.PublicBaseURL)
 		}
 	})
 }

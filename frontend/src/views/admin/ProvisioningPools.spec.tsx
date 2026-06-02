@@ -235,6 +235,20 @@ describe('ProvisioningPools', () => {
     )
   })
 
+  it('shows distinct labels for every allowed protocol option', async () => {
+    const user = userEvent.setup()
+    renderPools()
+
+    await user.click(screen.getByRole('button', { name: 'New Pool' }))
+    const modal = screen.getByRole('dialog', { name: 'New provisioning pool' })
+    fireEvent.mouseDown(within(modal).getByRole('combobox', { name: 'Allowed protocols' }))
+
+    for (const label of ['VLESS', 'VMess', 'Trojan', 'Shadowsocks', 'WireGuard', 'Hysteria', 'HTTP', 'Mixed', 'Tunnel', 'TUN']) {
+      expect(await screen.findByTitle(label)).toBeInTheDocument()
+    }
+    expect(screen.getAllByTitle('Trojan')).toHaveLength(1)
+  })
+
   it('edits and deletes pools', async () => {
     const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
       act(() => {

@@ -6,12 +6,14 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { ClientUsage } from '@/api/portal/traffic'
 import { EmptyState, PageHeader, RefreshButton } from '@/components/common'
+import { useBranding } from '@/hooks/queries/branding'
 import { usePortalOrdersList } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
 import { formatError } from '@/utils/format'
 import { formatBytes, formatDateTime, formatYuan, trafficPercent } from './_shared/format'
 import { useProvisioningStatus } from './_shared/provisioning'
+import { subscriptionUrl } from './_shared/subscriptionFormats'
 
 function daysToExpiry(clients: ClientUsage[]): number | null {
   const now = Date.now()
@@ -27,6 +29,7 @@ function daysToExpiry(clients: ClientUsage[]): number | null {
 export function Usage() {
   const { t } = useTranslation()
   const profile = useProfile()
+  const branding = useBranding()
   const traffic = useOwnTraffic()
   const orders = usePortalOrdersList()
   const clients = useMemo(() => traffic.data ?? [], [traffic.data])
@@ -40,7 +43,8 @@ export function Usage() {
   const refreshing = profile.isFetching || traffic.isFetching || orders.isFetching
   const error = profile.error ?? traffic.error ?? orders.error
   const nodeCount = useMemo(() => new Set(clients.map((client) => client.node_id)).size, [clients])
-  const subUrl = profile.data ? `${window.location.origin}/sub/${profile.data.sub_id}` : ''
+  const subscriptionBaseURL = branding.data?.subscription_public_base_url || window.location.origin
+  const subUrl = profile.data ? subscriptionUrl(subscriptionBaseURL, profile.data.sub_id, 'base64') : ''
   const provisioning = useProvisioningStatus({
     clients,
     orders: orders.data,

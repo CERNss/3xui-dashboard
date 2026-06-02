@@ -53,6 +53,41 @@ func TestSingboxOutbound_VLESSReality(t *testing.T) {
 	}
 }
 
+func TestSingboxOutbound_VLESSRealityNestedClientSettings(t *testing.T) {
+	in := fixture("vless", `{
+		"network": "tcp",
+		"security": "reality",
+		"realitySettings": {
+			"shortIds": ["sid"],
+			"serverNames": ["server-only.example.com"],
+			"settings": {
+				"publicKey": "PUB_NESTED",
+				"serverName": "client-sni.example.com"
+			}
+		}
+	}`, "")
+	c := &runtime.Client{ID: "v-uuid"}
+
+	o, ok := singboxOutbound("h", 443, in, c, "vless-r")
+	if !ok {
+		t.Fatalf("ok=false")
+	}
+	tls, ok := o["tls"].(map[string]any)
+	if !ok {
+		t.Fatalf("tls block missing")
+	}
+	reality, ok := tls["reality"].(map[string]any)
+	if !ok {
+		t.Fatalf("reality block missing")
+	}
+	if reality["public_key"] != "PUB_NESTED" {
+		t.Errorf("public_key wrong: %v", reality["public_key"])
+	}
+	if tls["server_name"] != "client-sni.example.com" {
+		t.Errorf("server_name wrong: %v", tls["server_name"])
+	}
+}
+
 func TestSingboxOutbound_VMessws(t *testing.T) {
 	in := fixture("vmess", `{
 		"network": "ws",

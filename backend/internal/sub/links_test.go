@@ -15,7 +15,7 @@ func TestVLESS_TLS_WS_Link(t *testing.T) {
 		"network":  "ws",
 		"security": "tls",
 		"tlsSettings": map[string]any{
-			"serverName": "sni.example.com",
+			"serverName":  "sni.example.com",
 			"fingerprint": "chrome",
 		},
 		"wsSettings": map[string]any{
@@ -75,6 +75,37 @@ func TestVLESS_Reality(t *testing.T) {
 		{"sid", "abcd"},
 		{"sni", "www.cloudflare.com"},
 		{"fp", "chrome"},
+	} {
+		if got := q.Get(kv.k); got != kv.want {
+			t.Errorf("reality q[%s] = %q, want %q", kv.k, got, kv.want)
+		}
+	}
+}
+
+func TestVLESS_RealityUsesNestedClientSettings(t *testing.T) {
+	stream, _ := json.Marshal(map[string]any{
+		"network":  "tcp",
+		"security": "reality",
+		"realitySettings": map[string]any{
+			"shortIds":    []any{"abcd"},
+			"serverNames": []any{"server-only.example.com"},
+			"settings": map[string]any{
+				"publicKey":   "PUB_NESTED",
+				"fingerprint": "firefox",
+				"serverName":  "client-sni.example.com",
+			},
+		},
+	})
+	in := &runtime.Inbound{Protocol: "vless", Port: 443, StreamSettings: string(stream)}
+	c := &runtime.Client{ID: "uuid-x", Email: "bob"}
+
+	got := BuildLink("1.2.3.4", 443, in, c, "bob@reality")
+	u, _ := url.Parse(got)
+	q := u.Query()
+	for _, kv := range []struct{ k, want string }{
+		{"pbk", "PUB_NESTED"},
+		{"sni", "client-sni.example.com"},
+		{"fp", "firefox"},
 	} {
 		if got := q.Get(kv.k); got != kv.want {
 			t.Errorf("reality q[%s] = %q, want %q", kv.k, got, kv.want)

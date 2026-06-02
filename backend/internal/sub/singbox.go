@@ -43,10 +43,10 @@ func singboxHysteria2(host string, port int, in *runtime.Inbound, c *runtime.Cli
 	allowInsecure, _ := tlsCfg["allowInsecure"].(bool)
 
 	tlsBlock := map[string]any{
-		"enabled":    true,
-		"alpn":       []string{"h3"},
+		"enabled":     true,
+		"alpn":        []string{"h3"},
 		"server_name": sni,
-		"insecure":   allowInsecure,
+		"insecure":    allowInsecure,
 	}
 	if sni == "" {
 		// sing-box requires a non-empty server_name when enabled=true.
@@ -151,19 +151,19 @@ func singboxAttachTLS(node map[string]any, security string, ss map[string]any) {
 		node["tls"] = tlsCfg
 	case "reality":
 		tlsCfg := map[string]any{
-			"enabled":     true,
-			"utls":        map[string]any{"enabled": true, "fingerprint": "chrome"},
-			"reality":     map[string]any{"enabled": true},
+			"enabled": true,
+			"utls":    map[string]any{"enabled": true, "fingerprint": "chrome"},
+			"reality": map[string]any{"enabled": true},
 		}
 		if r, ok := ssObj(ss, "realitySettings"); ok {
 			realityCfg := tlsCfg["reality"].(map[string]any)
-			if pbk := stringFrom(r, "publicKey", ""); pbk != "" {
+			if pbk := realityPublicKey(r); pbk != "" {
 				realityCfg["public_key"] = pbk
 			}
 			if sid := firstString(r, "shortIds"); sid != "" {
 				realityCfg["short_id"] = sid
 			}
-			if srv := firstString(r, "serverNames"); srv != "" {
+			if srv := realityServerName(r); srv != "" {
 				tlsCfg["server_name"] = srv
 			}
 		}

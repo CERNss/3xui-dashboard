@@ -96,7 +96,7 @@ func normalizeRealitySettings(raw json.RawMessage) (json.RawMessage, bool) {
 			changed = true
 		}
 	}
-	if _, ok := client["serverName"]; !ok {
+	if firstString(client["serverName"]) == "" {
 		if serverName := firstString(settings["serverNames"]); serverName != "" {
 			client["serverName"] = serverName
 			changed = true

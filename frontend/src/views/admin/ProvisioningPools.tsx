@@ -67,18 +67,18 @@ function formToPoolPayload(values: PoolFormValues): ProvisioningPoolInput {
 
 const PROTOCOL_SELECT_OPTIONS = PROTOCOL_OPTIONS.map((protocol) => ({
   value: protocol,
-  label:
-    protocol === 'vmess'
-      ? 'VMess'
-      : protocol === 'vless'
-        ? 'VLESS'
-        : protocol === 'shadowsocks'
-          ? 'Shadowsocks'
-          : protocol === 'wireguard'
-            ? 'WireGuard'
-            : protocol === 'hysteria'
-              ? 'Hysteria'
-              : 'Trojan',
+  label: {
+    vless: 'VLESS',
+    vmess: 'VMess',
+    trojan: 'Trojan',
+    shadowsocks: 'Shadowsocks',
+    wireguard: 'WireGuard',
+    hysteria: 'Hysteria',
+    http: 'HTTP',
+    mixed: 'Mixed',
+    tunnel: 'Tunnel',
+    tun: 'TUN',
+  }[protocol],
 }))
 
 function capacityText(target: ProvisioningPoolTarget, unlimited: string) {

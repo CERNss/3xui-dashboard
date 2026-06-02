@@ -639,3 +639,20 @@ func TestSanitizeStreamSettings_NormalizesRealityClientSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeStreamSettings_BackfillsEmptyRealityServerName(t *testing.T) {
+	stream := `{"network":"tcp","security":"reality","realitySettings":{"serverNames":["www.cloudflare.com"],"settings":{"serverName":""}}}`
+
+	out := sanitizeStreamSettingsForRemote(stream)
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("sanitized output is not JSON: %v", err)
+	}
+	var reality map[string]any
+	_ = json.Unmarshal(parsed["realitySettings"], &reality)
+	settings, _ := reality["settings"].(map[string]any)
+	if settings["serverName"] != "www.cloudflare.com" {
+		t.Errorf("settings.serverName = %v, want first serverNames entry", settings["serverName"])
+	}
+}
