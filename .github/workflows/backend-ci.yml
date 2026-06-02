@@ -18,13 +18,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: dashboard_ci
+          POSTGRES_DB: dashboard_e2e
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ci
+          POSTGRES_PASSWORD: test
         ports:
-          - 55432:5432
+          - 5499:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d dashboard_ci"
+          --health-cmd "pg_isready -U postgres -d dashboard_e2e"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -50,21 +50,21 @@ jobs:
         working-directory: backend
         run: go test ./...
 
-      # Integration tests need the Postgres service container.
-      # The test setup helpers DROP + CREATE the public schema per
-      # case, so -p 1 keeps them from racing on the same db.
       - name: Integration tests
-        working-directory: backend
         env:
-          INTEGRATION_DB_URL: postgres://postgres:ci@127.0.0.1:55432/dashboard_ci?sslmode=disable
-        run: >
-          go test -p 1
-          ./internal/repository/...
-          ./internal/job/...
-          ./internal/service/billing/...
-          ./internal/service/verification/...
-          ./internal/service/messages/...
-          ./internal/service/notify/...
+          INTEGRATION_DB_URL: postgres://postgres:test@127.0.0.1:5499/dashboard_e2e?sslmode=disable
+        run: |
+          set -euo pipefail
+          cd backend
+          go test -p 1 \
+            ./internal/repository/... \
+            ./internal/job/... \
+            ./internal/service/billing/... \
+            ./internal/service/verification/... \
+            ./internal/service/messages/... \
+            ./internal/service/notify/...
+          cd ..
+          make test-e2e
 
   frontend:
     runs-on: ubuntu-latest
@@ -79,7 +79,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install
+      - name: Install dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
 
@@ -104,9 +104,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Verify the multi-stage Dockerfile builds end-to-end. No push
-      # on CI — that's release.yml's job. linux/amd64 only here to
-      # keep PR feedback fast; multi-arch is covered on tag.
       - name: Build image
         uses: docker/build-push-action@v6
         with:
