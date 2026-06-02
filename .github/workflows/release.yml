@@ -9,6 +9,10 @@ name: Release
 # - JSON arrays, e.g. ["self-hosted","macOS","ARM64"]
 # - single label strings, e.g. ubuntu-latest
 # - comma-separated labels, e.g. self-hosted,macOS,ARM64
+#
+# Go validation/build stages default to the official golang image so
+# the release job always has the go toolchain available; override the
+# Go image vars only with images that include go, bash, git, and sha256sum.
 
 on:
   push:
@@ -37,8 +41,8 @@ on:
 
 env:
   PUBLISH_LATEST_TAG: ${{ vars.PUBLISH_LATEST_TAG || secrets.PUBLISH_LATEST_TAG || 'true' }}
-  VALIDATION_IMAGE: ${{ vars.VALIDATION_IMAGE || secrets.VALIDATION_IMAGE || 'cernss/git-action-golang-cicd-validate' }}
-  BUILD_IMAGE: ${{ vars.BUILD_IMAGE || secrets.BUILD_IMAGE || 'cernss/git-action-golang-cicd-build' }}
+  GOLANG_VALIDATE_IMAGE: ${{ vars.GOLANG_VALIDATE_IMAGE || secrets.GOLANG_VALIDATE_IMAGE || 'golang:1.26-bookworm' }}
+  GOLANG_BUILD_IMAGE: ${{ vars.GOLANG_BUILD_IMAGE || secrets.GOLANG_BUILD_IMAGE || 'golang:1.26-bookworm' }}
   FRONTEND_VALIDATE_IMAGE: ${{ vars.FRONTEND_VALIDATE_IMAGE || secrets.FRONTEND_VALIDATE_IMAGE || 'cernss/git-action-typescript-cicd-validate' }}
   FRONTEND_BUILD_IMAGE: ${{ vars.FRONTEND_BUILD_IMAGE || secrets.FRONTEND_BUILD_IMAGE || 'cernss/git-action-typescript-cicd-build' }}
   NEXUS_URL: ${{ vars.NEXUS_URL || secrets.NEXUS_URL }}
@@ -395,7 +399,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE="${VALIDATION_IMAGE}"
+          IMAGE="${GOLANG_VALIDATE_IMAGE}"
           POSTGRES_IMAGE="postgres:16-alpine"
           VALIDATION_NETWORK="3xui-dashboard-validate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           POSTGRES_CONTAINER="3xui-dashboard-validate-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -505,7 +509,7 @@ jobs:
           mkdir -p backend/internal/web/dist .release-build/payload
 
           docker pull "${FRONTEND_BUILD_IMAGE}"
-          docker pull "${BUILD_IMAGE}"
+          docker pull "${GOLANG_BUILD_IMAGE}"
 
           docker run --rm \
             -u "$(id -u):$(id -g)" \
@@ -532,7 +536,7 @@ jobs:
             -e PLATFORMS="${PLATFORMS}" \
             -v "${PWD}:/work" \
             -w /work \
-            "${BUILD_IMAGE}" \
+            "${GOLANG_BUILD_IMAGE}" \
             bash -lc '
               set -euo pipefail
 
@@ -622,7 +626,7 @@ jobs:
           mkdir -p backend/internal/web/dist .release-build/payload
 
           docker pull "${FRONTEND_BUILD_IMAGE}"
-          docker pull "${BUILD_IMAGE}"
+          docker pull "${GOLANG_BUILD_IMAGE}"
 
           docker run --rm \
             -u "$(id -u):$(id -g)" \
@@ -649,7 +653,7 @@ jobs:
             -e PLATFORMS="${PLATFORMS}" \
             -v "${PWD}:/work" \
             -w /work \
-            "${BUILD_IMAGE}" \
+            "${GOLANG_BUILD_IMAGE}" \
             bash -lc '
               set -euo pipefail
 
