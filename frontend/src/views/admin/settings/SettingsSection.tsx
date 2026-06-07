@@ -1,4 +1,4 @@
-import { Card, Empty, Space, Typography } from 'antd'
+import { Empty, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SettingItem } from '@/api/admin/settings'
@@ -36,14 +36,25 @@ export function SettingsSection({
     return buckets
   }, {})
 
-  const itemsBlock = Object.keys(grouped).length === 0 && !extra ? (
-    <Empty description={t('admin.settings.emptySection')} />
-  ) : Object.keys(grouped).length > 0 ? (
-    Object.entries(grouped).map(([group, rows]) => {
+  const groupEntries = Object.entries(grouped)
+  const mergesSingleGroup = groupEntries.length === 1
+
+  const itemsBlock = groupEntries.length === 0 && !extra ? (
+    <section className="settings-empty-panel">
+      <Empty description={t('admin.settings.emptySection')} />
+    </section>
+  ) : groupEntries.length > 0 ? (
+    groupEntries.map(([group, rows]) => {
       const titleKey = groupTitleKey(group)
       return (
-        <Card key={group} title={titleKey ? t(titleKey) : group}>
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <section className="settings-group-panel" key={group} aria-labelledby={`settings-group-${group}`}>
+          <header className="settings-group-header">
+            <Typography.Title id={`settings-group-${group}`} level={3}>
+              {mergesSingleGroup ? title : titleKey ? t(titleKey) : group}
+            </Typography.Title>
+            {mergesSingleGroup ? <Typography.Text>{description}</Typography.Text> : null}
+          </header>
+          <div className="settings-group-rows">
             {rows.map((item) => (
               <SettingRow
                 key={item.key}
@@ -55,23 +66,23 @@ export function SettingsSection({
                 onReset={onReset}
               />
             ))}
-          </Space>
-        </Card>
+          </div>
+        </section>
       )
     })
   ) : null
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card>
-        <Typography.Title level={4} style={{ marginTop: 0 }}>
-          {title}
-        </Typography.Title>
-        <Typography.Text type="secondary">{description}</Typography.Text>
-      </Card>
+    <div className="settings-section-stack">
+      {mergesSingleGroup ? null : (
+        <header className="settings-section-intro">
+          <Typography.Title level={2}>{title}</Typography.Title>
+          <Typography.Text>{description}</Typography.Text>
+        </header>
+      )}
       {extraPosition === 'top' ? extra : null}
       {itemsBlock}
       {extraPosition === 'bottom' ? extra : null}
-    </Space>
+    </div>
   )
 }

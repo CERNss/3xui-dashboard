@@ -3,8 +3,14 @@ import { CopyOutlined } from '@ant-design/icons'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SettingItem } from '@/api/admin/settings'
-import { SettingsSection } from './SettingsSection'
-import { OIDC_KEYS, itemValue } from './settingHelpers'
+import {
+  PreferenceActions,
+  PreferencePanel,
+  PreferenceSwitchRow,
+  PreferenceTagsRow,
+  changedItems,
+} from './PreferencePanel'
+import { OIDC_KEYS, REGISTRATION_KEYS, itemValue } from './settingHelpers'
 import type { SettingsSectionProps } from './types'
 
 const oidcKeyOrder = [
@@ -27,7 +33,7 @@ const signingAlgorithmOptions = [{ label: 'RS256', value: 'RS256' }]
 
 export function SecurityAuthSettings(props: SettingsSectionProps) {
   const { t } = useTranslation()
-  const registrationItems = props.items.filter((item) => !OIDC_KEYS.has(item.key))
+  const registrationItems = props.items.filter((item) => REGISTRATION_KEYS.has(item.key))
   const oidcItems = useMemo(
     () =>
       props.items
@@ -37,14 +43,83 @@ export function SecurityAuthSettings(props: SettingsSectionProps) {
   )
 
   return (
-    <SettingsSection
-      {...props}
-      items={registrationItems}
-      title={t('admin.settings.securityAuthTitle')}
-      description={t('admin.settings.securityAuthDesc')}
-      extra={<OIDCSettingsPanel {...props} items={oidcItems} />}
-      extraPosition="bottom"
-    />
+    <div className="settings-section-stack">
+      <header className="settings-section-intro">
+        <Typography.Title level={2}>{t('admin.settings.securityAuthTitle')}</Typography.Title>
+        <Typography.Text>{t('admin.settings.securityAuthDesc')}</Typography.Text>
+      </header>
+      <RegistrationSettingsPanel {...props} items={registrationItems} />
+      <OIDCSettingsPanel {...props} items={oidcItems} />
+    </div>
+  )
+}
+
+function RegistrationSettingsPanel({
+  drafts,
+  items,
+  savingKey,
+  onDraftChange,
+  onReset,
+  onSave,
+}: SettingsSectionProps) {
+  const { t } = useTranslation()
+  const byKey = useMemo(() => new Map(items.map((item) => [item.key, item])), [items])
+  const changed = changedItems(items, drafts)
+  const saving = items.some((item) => savingKey === item.key)
+
+  const saveAll = () => {
+    for (const item of changed) onSave(item)
+  }
+
+  const resetAll = () => {
+    for (const item of items.filter((item) => item.has_override)) onReset(item)
+  }
+
+  return (
+    <PreferencePanel
+      id="registration"
+      title={t('admin.settings.registration.title')}
+      description={t('admin.settings.registration.subtitle')}
+      footer={
+        <PreferenceActions
+          resetLabel={t('admin.settings.reset')}
+          saveLabel={t('admin.settings.registration.save')}
+          saving={saving}
+          canReset={items.some((item) => item.has_override)}
+          canSave={changed.length > 0}
+          onReset={resetAll}
+          onSave={saveAll}
+        />
+      }
+    >
+      <PreferenceSwitchRow
+        item={byKey.get('public_registration_enabled')}
+        drafts={drafts}
+        title={t('admin.settings.registration.publicTitle')}
+        description={t('admin.settings.registration.publicDesc')}
+        onText={t('admin.settings.registration.enabled')}
+        offText={t('admin.settings.registration.disabled')}
+        onDraftChange={onDraftChange}
+      />
+      <PreferenceSwitchRow
+        item={byKey.get('email_verification_required')}
+        drafts={drafts}
+        title={t('admin.settings.registration.verifyTitle')}
+        description={t('admin.settings.registration.verifyDesc')}
+        onText={t('admin.settings.registration.required')}
+        offText={t('admin.settings.registration.optional')}
+        onDraftChange={onDraftChange}
+      />
+      <PreferenceTagsRow
+        item={byKey.get('email_domain_allowlist')}
+        drafts={drafts}
+        title={t('admin.settings.registration.allowlistTitle')}
+        description={t('admin.settings.registration.allowlistDesc')}
+        hint={t('admin.settings.registration.allowlistHint')}
+        placeholder={t('admin.settings.registration.allowlistPlaceholder')}
+        onDraftChange={onDraftChange}
+      />
+    </PreferencePanel>
   )
 }
 

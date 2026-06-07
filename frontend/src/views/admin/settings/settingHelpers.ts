@@ -81,7 +81,7 @@ export function filterSettings(items: SettingItem[], tab: SettingsTab) {
     if (tab === 'payment') return item.group === 'payment'
     if (tab === 'alerts') return item.group === 'traffic'
     if (tab === 'dataCollection') return item.group === 'data_collection'
-    if (tab === 'securityAuth') return item.group === 'registration' || OIDC_KEYS.has(item.key)
+    if (tab === 'securityAuth') return REGISTRATION_KEYS.has(item.key) || OIDC_KEYS.has(item.key)
     if (tab === 'userDefaults') return NEW_USER_KEYS.has(item.key)
     if (tab === 'messages') return item.group === 'smtp'
     if (tab === 'notifications') return item.group === 'notify'
