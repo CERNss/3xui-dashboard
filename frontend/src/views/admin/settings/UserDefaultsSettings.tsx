@@ -117,8 +117,8 @@ function NumberField({
   title: string
   unit: string
 }) {
-  if (!item) return null
   const { i18n } = useTranslation()
+  if (!item) return null
   const label = localizedLabel(item, i18n.language)
   return (
     <label className="settings-user-defaults-field" data-setting-key={item.key}>
