@@ -63,6 +63,7 @@ export function AdminLayout() {
       sections={sections}
       themeMode={themeMode}
       title={branding?.title ?? t('app.title')}
+      subtitle="node orchestration"
       navLabel={t('nav.admin')}
     />
   )
@@ -76,7 +77,7 @@ export function AdminLayout() {
           collapsedWidth={80}
           theme="dark"
           trigger={null}
-          width={252}
+          width={228}
         >
           {sidebar}
         </Sider>
@@ -106,8 +107,8 @@ export function AdminLayout() {
         placement="left"
         open={!wide && drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        styles={{ body: { padding: 0 }, content: { background: themeMode === 'dark' ? '#081321' : '#f8fafc' } }}
-        width={252}
+        styles={{ body: { padding: 0 }, content: { background: 'var(--elev)' } }}
+        width={228}
       >
         {sidebar}
       </Drawer>

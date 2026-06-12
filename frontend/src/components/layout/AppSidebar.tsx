@@ -15,6 +15,9 @@ interface AppSidebarProps {
   sections: NavSection[]
   themeMode: 'light' | 'dark'
   title: string
+  /** Small monospace line under the brand title (e.g. "node
+   * orchestration" on the admin shell, "user portal" on the portal). */
+  subtitle?: string
   /** Optional aria-label for the surrounding <nav>. */
   navLabel?: string
 }
@@ -33,6 +36,7 @@ export function AppSidebar({
   sections,
   themeMode,
   title,
+  subtitle,
   navLabel,
 }: AppSidebarProps) {
   const { t } = useTranslation()
@@ -49,6 +53,7 @@ export function AppSidebar({
             <Typography.Title className="admin-sidebar-title" level={4}>
               {title}
             </Typography.Title>
+            {subtitle ? <span className="admin-sidebar-subtitle">{subtitle}</span> : null}
           </div>
         ) : null}
       </div>
