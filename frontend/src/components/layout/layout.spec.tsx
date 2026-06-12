@@ -94,6 +94,12 @@ vi.mock('@/hooks/queries/admin/settings', () => ({
   useDashboardAutoRefresh: () => mocks.useDashboardAutoRefresh(),
 }))
 
+vi.mock('@/hooks/queries/admin/nodes', () => ({
+  // The cluster pill renders nothing until node data arrives; the
+  // layout specs only assert on the shared chrome around it.
+  useNodesList: () => ({ data: undefined }),
+}))
+
 function mockMinWidth(matches: boolean) {
   vi.spyOn(window, 'matchMedia').mockImplementation(
     (query: string) =>
@@ -135,7 +141,9 @@ describe('layout components', () => {
     expect(screen.getByTestId('admin-layout')).toBeInTheDocument()
     expect(screen.getByText('Overview')).toBeInTheDocument()
     expect(screen.getByText('Node ops')).toBeInTheDocument()
-    expect(screen.getByText('Users & billing')).toBeInTheDocument()
+    // The active group label renders twice: sidebar section heading and
+    // the topbar breadcrumb ("Users & billing › Users").
+    expect(screen.getAllByText('Users & billing')).toHaveLength(2)
     expect(screen.getByText('System')).toBeInTheDocument()
     expect(screen.getByText('Users view')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Users' })).toBeInTheDocument()

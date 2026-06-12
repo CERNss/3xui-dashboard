@@ -1709,6 +1709,7 @@ export const en = {
     admin: 'Admin',
     audit: 'Audit log',
     clients: 'Clients',
+    clusterOnline: '{count} nodes online',
     collapseSidebar: 'Collapse',
     dashboard: 'Dashboard',
     expandSidebar: 'Expand',

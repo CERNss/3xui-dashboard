@@ -1,5 +1,6 @@
 import { GlobalOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
 import { Tooltip, Typography } from 'antd'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { NavSection } from './nav'
 
@@ -18,6 +19,10 @@ interface AppSidebarProps {
   /** Small monospace line under the brand title (e.g. "node
    * orchestration" on the admin shell, "user portal" on the portal). */
   subtitle?: string
+  /** Optional slot rendered below the brand row — the admin shell puts
+   * its cluster-status pill ("N nodes online") here. Hidden while the
+   * sidebar is collapsed. */
+  clusterSlot?: ReactNode
   /** Optional aria-label for the surrounding <nav>. */
   navLabel?: string
 }
@@ -37,6 +42,7 @@ export function AppSidebar({
   themeMode,
   title,
   subtitle,
+  clusterSlot,
   navLabel,
 }: AppSidebarProps) {
   const { t } = useTranslation()
@@ -57,6 +63,7 @@ export function AppSidebar({
           </div>
         ) : null}
       </div>
+      {!collapsed && clusterSlot ? <div className="admin-sidebar-cluster">{clusterSlot}</div> : null}
 
       <nav aria-label={resolvedNavLabel} className="admin-sidebar-nav">
         {sections.map((section) => (

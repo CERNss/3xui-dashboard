@@ -7,6 +7,7 @@ import { useMinWidth } from '@/hooks/useBreakpoint'
 import { adminAuthApi } from '@/api/admin/auth'
 import { useBranding } from '@/hooks/queries/branding'
 import { useDashboardAutoRefresh } from '@/hooks/queries/admin/settings'
+import { useNodesList } from '@/hooks/queries/admin/nodes'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { useThemeStore } from '@/stores/theme'
 import { MD_BREAKPOINT } from '@/theme'
@@ -15,6 +16,29 @@ import { AppTopbar } from './AppTopbar'
 import { adminSections, flattenSections, selectedKey } from './nav'
 
 const { Header, Sider, Content } = Layout
+
+/* Cluster-status pill under the sidebar brand: animated signal bars,
+ * "N nodes online", and a health score badge (% of nodes online).
+ * Renders nothing until the node list has loaded. */
+function ClusterStatus() {
+  const { t } = useTranslation()
+  const nodes = useNodesList()
+  if (!nodes.data || nodes.data.length === 0) return null
+  const online = nodes.data.filter((node) => node.status === 'online').length
+  const health = Math.round((online / nodes.data.length) * 100)
+  return (
+    <div className="admin-cluster" data-health={health >= 100 ? 'ok' : health > 0 ? 'warn' : 'bad'}>
+      <span aria-hidden="true" className="admin-cluster-signal">
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="admin-cluster-text">{t('nav.clusterOnline', { count: online })}</span>
+      <span className="admin-cluster-badge">{health}</span>
+    </div>
+  )
+}
 
 export function AdminLayout() {
   const { t } = useTranslation()
@@ -34,6 +58,7 @@ export function AdminLayout() {
   const links = useMemo(() => flattenSections(sections), [sections])
   const selected = selectedKey(location.pathname, links)
   const activeLink = links.find((item) => item.key === selected)
+  const activeSection = sections.find((section) => section.items.some((item) => item.key === selected))
   const accountLabel = username || 'admin'
 
   function selectRoute(key: string) {
@@ -64,6 +89,7 @@ export function AdminLayout() {
       themeMode={themeMode}
       title={branding?.title ?? t('app.title')}
       subtitle="node orchestration"
+      clusterSlot={<ClusterStatus />}
       navLabel={t('nav.admin')}
     />
   )
@@ -86,7 +112,7 @@ export function AdminLayout() {
         <Header className="admin-topbar">
           <AppTopbar
             title={activeLink?.label ?? t('nav.dashboard')}
-            subtitle={t('admin.topbarWelcome')}
+            breadcrumbGroup={activeSection?.label}
             accountLabel={accountLabel}
             accountRole={t('account.adminRole')}
             accountItems={[{ label: t('account.profile'), to: '/admin/settings?tab=securityAuth' }]}

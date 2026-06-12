@@ -1709,6 +1709,7 @@ export const zh = {
     admin: '管理后台',
     audit: '审计日志',
     clients: '客户端列表',
+    clusterOnline: '{count} 节点在线',
     collapseSidebar: '收起',
     dashboard: '概览',
     expandSidebar: '展开',
