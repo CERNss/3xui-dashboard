@@ -1407,7 +1407,6 @@ export const en = {
         notePlaceholder: 'Optional, shown in the balance ledger',
         reasonLabel: 'Reason',
         reasonPlaceholder: 'e.g. refund / manual top-up / referral bonus',
-        reasonRequired: 'Reason is required (for balance_log audit)',
         refund: 'Refund',
         refundAmount: 'Refund amount',
         refundReasonPlaceholder: 'e.g. admin refund',

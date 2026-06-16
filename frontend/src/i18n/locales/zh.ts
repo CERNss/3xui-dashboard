@@ -1407,7 +1407,6 @@ export const zh = {
         notePlaceholder: '可选，展示在余额变动记录里',
         reasonLabel: '理由',
         reasonPlaceholder: '例如：退款 / 手动充值 / 邀请奖励',
-        reasonRequired: '请填写理由（balance_log 审计需要）',
         refund: '退款',
         refundAmount: '退款金额',
         refundReasonPlaceholder: '例如：管理员退款',
