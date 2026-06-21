@@ -1,4 +1,5 @@
 import {
+  ApiOutlined,
   DeleteOutlined,
   EditOutlined,
   ExperimentOutlined,
@@ -359,8 +360,10 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
     },
   ]
 
+  const className = embedded ? 'webhooks-page webhooks-page--embedded' : 'webhooks-page'
+
   return (
-    <div>
+    <div className={className}>
       <ConfigListPage
         title={embedded ? undefined : t('admin.webhooks.title')}
         subtitle={embedded ? undefined : t('admin.webhooks.subtitle')}
@@ -376,14 +379,17 @@ export default function Webhooks({ embedded = false }: WebhooksProps) {
         }
         header={
           embedded ? (
-            <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}>
-              <div>
-                <Typography.Title level={4} style={{ margin: 0 }}>
+            <div className="webhooks-embedded-header">
+              <span className="webhooks-embedded-icon">
+                <ApiOutlined />
+              </span>
+              <div className="webhooks-embedded-copy">
+                <Typography.Title level={4}>
                   {t('admin.webhooks.title')}
                 </Typography.Title>
-                <Typography.Text type="secondary">{t('admin.webhooks.subtitle')}</Typography.Text>
+                <Typography.Text>{t('admin.webhooks.subtitle')}</Typography.Text>
               </div>
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              <Button className="webhooks-embedded-create" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                 {t('admin.webhooks.createNew')}
               </Button>
             </div>

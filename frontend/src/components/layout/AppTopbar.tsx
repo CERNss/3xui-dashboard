@@ -1,4 +1,4 @@
-import { BellOutlined, DownOutlined, MenuFoldOutlined } from '@ant-design/icons'
+import { BellOutlined, DownOutlined, MenuFoldOutlined, RightOutlined } from '@ant-design/icons'
 import { Button, Tooltip, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,6 +12,10 @@ interface AccountMenuItem {
 interface AppTopbarProps {
   title: string
   subtitle?: string
+  /** When set, the left side renders a breadcrumb ("group › page") in
+   * place of the title/subtitle pair — the admin shell uses this to
+   * mirror the design demo's topbar. */
+  breadcrumbGroup?: string
   accountLabel: string
   accountRole: string
   accountItems: AccountMenuItem[]
@@ -39,6 +43,7 @@ interface AppTopbarProps {
 export function AppTopbar({
   title,
   subtitle,
+  breadcrumbGroup,
   accountLabel,
   accountRole,
   accountItems,
@@ -63,14 +68,24 @@ export function AppTopbar({
             type="text"
           />
         ) : null}
-        <div className="admin-topbar-copy">
-          <Typography.Title className="admin-topbar-title" level={1}>
-            {title}
-          </Typography.Title>
-          {subtitle ? (
-            <Typography.Text className="admin-topbar-subtitle">{subtitle}</Typography.Text>
-          ) : null}
-        </div>
+        {breadcrumbGroup ? (
+          <nav aria-label={title} className="admin-topbar-crumb">
+            <span className="admin-topbar-crumb-group">{breadcrumbGroup}</span>
+            <RightOutlined aria-hidden="true" className="admin-topbar-crumb-sep" />
+            <Typography.Title className="admin-topbar-crumb-current" level={1}>
+              {title}
+            </Typography.Title>
+          </nav>
+        ) : (
+          <div className="admin-topbar-copy">
+            <Typography.Title className="admin-topbar-title" level={1}>
+              {title}
+            </Typography.Title>
+            {subtitle ? (
+              <Typography.Text className="admin-topbar-subtitle">{subtitle}</Typography.Text>
+            ) : null}
+          </div>
+        )}
       </div>
       {centerSlot}
       <div className="admin-topbar-tools">

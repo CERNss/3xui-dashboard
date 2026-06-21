@@ -330,7 +330,7 @@ export default function Users() {
     await adjustBalance.mutateAsync({
       id: balanceUser.id,
       deltaCents: balanceMode === 'deposit' ? amountCents : -amountCents,
-      reason: values.reason.trim(),
+      reason: values.reason?.trim() ?? '',
       note: values.note?.trim() ?? '',
     })
     balanceForm.setFieldsValue({ amount_yuan: 0, reason: '', note: '' })
@@ -763,8 +763,19 @@ export default function Users() {
           <Form.Item name="password" label={t('admin.users.create.passwordLabel')} rules={[{ required: true, min: 8, message: t('admin.users.create.passwordMin') }]}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="initial_balance_yuan" label={t('admin.users.create.initialBalanceLabel')} rules={[{ type: 'number', min: 0, message: t('admin.users.create.initialBalanceLabel') }]}>
-            <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
+          <Form.Item
+            name="initial_balance_yuan"
+            label={t('admin.users.create.initialBalanceLabel')}
+            extra={t('admin.users.create.initialBalanceHint')}
+          >
+            <InputNumber
+              min={0}
+              step={0.01}
+              precision={2}
+              prefix="¥"
+              placeholder={t('admin.users.create.initialBalancePlaceholder')}
+              style={{ width: '100%' }}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -862,7 +873,7 @@ export default function Users() {
               >
                 <InputNumber min={0} step={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
               </Form.Item>
-              <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')} rules={[{ required: true, whitespace: true, message: t('admin.users.balance.reasonRequired') }]}>
+              <Form.Item name="reason" label={t('admin.users.balance.reasonLabel')}>
                 <Input placeholder={balanceMode === 'deposit' ? t('admin.users.balance.depositReasonPlaceholder') : t('admin.users.balance.refundReasonPlaceholder')} />
               </Form.Item>
               <Form.Item name="note" label={t('admin.users.balance.noteLabel')}>

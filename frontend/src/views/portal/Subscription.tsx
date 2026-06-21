@@ -157,31 +157,26 @@ export function Subscription() {
                 <Typography.Paragraph type="secondary">
                   {t('portal.subscription.formats.hint')}
                 </Typography.Paragraph>
-                <Row gutter={[8, 8]}>
+                <div className="portal-fmt-grid">
                   {formats.map((format) => (
-                    <Col xs={12} md={8} key={format.key}>
-                      <Button
-                        block
-                        type={activeKey === format.key ? 'primary' : 'default'}
-                        style={{ height: 'auto', minHeight: 88, padding: 12, textAlign: 'left', whiteSpace: 'normal' }}
-                        onClick={() => setActiveKey(format.key)}
-                      >
-                        <Space direction="vertical" size={2} style={{ alignItems: 'flex-start', width: '100%' }}>
-                          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                            <Typography.Text strong>{format.label}</Typography.Text>
-                            {activeKey === format.key ? <CheckOutlined aria-label={t('portal.subscription.selected')} /> : null}
-                          </Space>
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                            {format.hint}
-                          </Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                            {format.apps}
-                          </Typography.Text>
-                        </Space>
-                      </Button>
-                    </Col>
+                    <button
+                      className="portal-fmt"
+                      data-active={activeKey === format.key ? 'true' : 'false'}
+                      key={format.key}
+                      onClick={() => setActiveKey(format.key)}
+                      type="button"
+                    >
+                      <span className="portal-fmt-name">
+                        {format.label}
+                        {activeKey === format.key ? (
+                          <CheckOutlined aria-label={t('portal.subscription.selected')} className="portal-fmt-check" />
+                        ) : null}
+                      </span>
+                      <span className="portal-fmt-desc">{format.hint}</span>
+                      <span className="portal-fmt-apps">{format.apps}</span>
+                    </button>
                   ))}
-                </Row>
+                </div>
               </Card>
 
               <Card>
@@ -200,7 +195,13 @@ export function Subscription() {
                       </Button>
                     )}
                   </Space>
-                  <Input readOnly value={url} prefix={<LinkOutlined />} aria-label={t('portal.subscription.urlTitle')} />
+                  <Input
+                    aria-label={t('portal.subscription.urlTitle')}
+                    className="portal-url-bar"
+                    prefix={<LinkOutlined />}
+                    readOnly
+                    value={url}
+                  />
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {t('portal.subscription.rotateNote')}
                   </Typography.Text>
@@ -211,7 +212,7 @@ export function Subscription() {
                 <Typography.Title level={4} style={{ marginTop: 0 }}>
                   {t('portal.subscription.howToTitle')}
                 </Typography.Title>
-                <ol style={{ marginBottom: 0, paddingInlineStart: 20 }}>
+                <ol className="portal-howto">
                   <li>{t('portal.subscription.howTo1')}</li>
                   <li>{t('portal.subscription.howTo2')}</li>
                   <li>{t('portal.subscription.howTo3')}</li>
@@ -240,19 +241,7 @@ export function Subscription() {
                   <Typography.Text type="secondary" style={{ alignSelf: 'flex-start' }}>
                     {t('portal.subscription.qrHint')}
                   </Typography.Text>
-                  <div
-                    aria-label={t('portal.subscription.qrImageAlt')}
-                    style={{
-                      alignItems: 'center',
-                      aspectRatio: '1 / 1',
-                      border: '1px solid #eaecef',
-                      borderRadius: 8,
-                      display: 'flex',
-                      justifyContent: 'center',
-                      padding: 12,
-                      width: 'min(100%, 300px)',
-                    }}
-                  >
+                  <div aria-label={t('portal.subscription.qrImageAlt')} className="portal-qr-box">
                     {qrDataUrl ? (
                       <img alt={t('portal.subscription.qrImageAlt')} src={qrDataUrl} style={{ height: '100%', width: '100%' }} />
                     ) : (

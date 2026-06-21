@@ -59,6 +59,20 @@ beforeEach(() => {
   settings = [
     item({ key: 'site_name', label: 'Site name', group: 'other', type: 'string', value: 'Acme' }),
     item({ key: 'subscription_remark_model', label: 'Subscription remark model', group: 'subscription', type: 'string', value: '-ieo', has_override: true }),
+    item({
+      key: 'clash_template_yaml',
+      label: 'Clash template (YAML)',
+      group: 'subscription',
+      type: 'string',
+      value: 'mixed-port: 7890\nproxies:\n  ${proxies}\nproxy-groups:\n  - name: Proxy\n    proxies: [${proxy_names}]\n',
+    }),
+    item({
+      key: 'singbox_template_json',
+      label: 'Sing-box template (JSON)',
+      group: 'subscription',
+      type: 'string',
+      value: '{"outbounds":[${proxies},{"type":"direct","tag":"direct"}],"route":{"final":"select","tags":[${proxy_names}]}}',
+    }),
     item({ key: 'traffic_warn_pct', label: 'Traffic warning percent', group: 'traffic', type: 'int', value: '80' }),
     item({ key: 'dashboard_auto_refresh_interval_seconds', label: 'Dashboard auto refresh interval', group: 'data_collection', type: 'int', value: '0' }),
     item({ key: 'ops_collect_enabled', label: 'Node health collection', group: 'data_collection', type: 'bool', value: 'true', has_override: true }),
@@ -67,6 +81,8 @@ beforeEach(() => {
     item({ key: 'traffic_collect_concurrency', label: 'Traffic collection concurrency', group: 'data_collection', type: 'int', value: '8' }),
     item({ key: 'traffic_collect_retry_attempts', label: 'Traffic retry attempts', group: 'data_collection', type: 'int', value: '0' }),
     item({ key: 'public_registration_enabled', label: 'Public registration enabled', group: 'registration', type: 'bool', value: 'true' }),
+    item({ key: 'email_verification_required', label: 'Email verification required', group: 'registration', type: 'bool', value: 'false' }),
+    item({ key: 'email_domain_allowlist', label: 'Email domain allowlist', group: 'registration', type: 'string', value: 'example.com,*.edu.cn' }),
     item({ key: 'oidc_enabled', label: 'OIDC login enabled', group: 'other', type: 'bool', value: 'true', has_override: true }),
     item({ key: 'oidc_display_name', label: 'OIDC display name', group: 'other', type: 'string', value: 'Acme SSO' }),
     item({ key: 'oidc_client_id', label: 'OIDC client ID', group: 'other', type: 'string', value: 'client-123' }),
@@ -80,8 +96,19 @@ beforeEach(() => {
     item({ key: 'oidc_redirect_url', label: 'OIDC redirect URL', group: 'other', type: 'string', value: 'https://dash.example.test/oidc/callback' }),
     item({ key: 'oidc_icon_url', label: 'OIDC icon URL', group: 'other', type: 'string', value: 'https://auth.example.test/icon.svg' }),
     item({ key: 'new_user_initial_balance_cents', label: 'New-user initial balance', group: 'registration', type: 'int', value: '100' }),
+    item({ key: 'new_user_plan_ids', label: 'New-user starter plans', group: 'registration', type: 'string', value: '1,2' }),
     item({ key: 'smtp_host', label: 'SMTP host', group: 'smtp', type: 'string', value: 'smtp.example.test' }),
+    item({ key: 'smtp_port', label: 'SMTP port', group: 'smtp', type: 'int', value: '587' }),
+    item({ key: 'smtp_from', label: 'SMTP from address', group: 'smtp', type: 'string', value: 'noreply@example.test' }),
+    item({ key: 'smtp_username', label: 'SMTP username', group: 'smtp', type: 'string', value: 'smtp-user' }),
     item({ key: 'smtp_password', label: 'SMTP password', group: 'smtp', type: 'string', value: '', secret: true, has_override: true }),
+    item({ key: 'notify_routes', label: 'Notify routes', group: 'notify', type: 'string', value: 'order.paid:email,telegram;node.offline:discord' }),
+    item({ key: 'notify_ops_recipient', label: 'Ops email recipient', group: 'notify', type: 'string', value: 'ops@example.test' }),
+    item({ key: 'notify_telegram_bot_token', label: 'Telegram bot token', group: 'notify', type: 'string', value: '', secret: true, has_override: true }),
+    item({ key: 'notify_telegram_chat_id', label: 'Telegram chat ID', group: 'notify', type: 'string', value: '-10001' }),
+    item({ key: 'notify_discord_webhook_url', label: 'Discord webhook URL', group: 'notify', type: 'string', value: '', secret: true, has_override: true }),
+    item({ key: 'notify_feishu_webhook_url', label: 'Feishu webhook URL', group: 'notify', type: 'string', value: '', secret: true, has_override: false }),
+    item({ key: 'notify_feishu_card_template', label: 'Feishu card template', group: 'notify', type: 'string', value: '' }),
     item({ key: 'alipay_app_id', label: 'Alipay app ID', group: 'payment', type: 'string', value: '2021000000' }),
     item({ key: 'alipay_private_key', label: 'Alipay private key', group: 'payment', type: 'string', value: '', secret: true, has_override: true }),
     item({ key: 'brand_title', label: 'Brand title', group: 'other', type: 'string', value: 'Hidden brand row' }),
@@ -145,13 +172,13 @@ describe('Settings', () => {
     const input = screen.getByLabelText('SMTP host')
     await user.clear(input)
     await user.type(input, 'smtp2.example.test')
-    const siteCard = screen.getByText('SMTP host').closest('.ant-card')!
-    await user.click(within(siteCard as HTMLElement).getByRole('button', { name: 'Save' }))
+    const smtpRow = screen.getByText('SMTP host').closest('[data-setting-key]')!
+    await user.click(within(smtpRow as HTMLElement).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(setMutateAsync).toHaveBeenCalledWith({ key: 'smtp_host', value: 'smtp2.example.test' }))
 
     await user.click(screen.getByRole('tab', { name: 'Subscription' }))
-    const subscriptionCard = screen.getByText('Subscription remark model').closest('.ant-card')!
-    await user.click(within(subscriptionCard as HTMLElement).getByRole('button', { name: 'Reset' }))
+    const subscriptionRow = screen.getByText('Subscription remark model').closest('[data-setting-key]')!
+    await user.click(within(subscriptionRow as HTMLElement).getByRole('button', { name: 'Reset' }))
     await waitFor(() => expect(clearMutateAsync).toHaveBeenCalledWith('subscription_remark_model'))
   })
 
@@ -160,6 +187,30 @@ describe('Settings', () => {
     expect(screen.getByLabelText('Alipay app ID')).toHaveValue('2021000000')
     // Secret fields are masked: the row exists but never carries the value.
     expect(container.querySelector('[data-setting-key="alipay_private_key"]')).toBeInTheDocument()
+  })
+
+  it('formats and validates subscription YAML/JSON templates before saving', async () => {
+    const user = userEvent.setup()
+    renderSettings('/admin/settings?tab=subscription')
+
+    expect(screen.getByText('YAML')).toBeInTheDocument()
+    expect(screen.getByText('JSON')).toBeInTheDocument()
+
+    const jsonTemplate = screen.getByLabelText('Sing-box template (JSON)')
+    await user.click(within(screen.getByText('Sing-box template (JSON)').closest('[data-setting-key]') as HTMLElement).getByRole('button', { name: 'Format' }))
+    await waitFor(() => expect((jsonTemplate as HTMLTextAreaElement).value).toContain('\n  "outbounds": [\n'))
+    expect((jsonTemplate as HTMLTextAreaElement).value).toContain('${proxies}')
+    expect((jsonTemplate as HTMLTextAreaElement).value).toContain('${proxy_names}')
+
+    const clashTemplate = screen.getByLabelText('Clash template (YAML)')
+    await user.clear(clashTemplate)
+    await user.type(clashTemplate, 'mixed-port: 7890')
+    const clashRow = screen.getByText('Clash template (YAML)').closest('[data-setting-key]') as HTMLElement
+    expect(within(clashRow).getByText(/must include the \$\{proxies\} placeholder/)).toBeInTheDocument()
+    expect(within(clashRow).getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    await user.click(within(clashRow).getByRole('button', { name: 'Validate' }))
+    expect(within(clashRow).getByText(/must include the \$\{proxies\} placeholder/)).toBeInTheDocument()
   })
 
   it('keeps plain site settings on the general tab without brand or OIDC rows', async () => {
@@ -179,9 +230,13 @@ describe('Settings', () => {
 
     expect(screen.getByRole('heading', { name: 'Security & auth' })).toBeInTheDocument()
     expect(container.querySelector('[data-setting-key="public_registration_enabled"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-setting-key="new_user_initial_balance_cents"]')).not.toBeInTheDocument()
     expect(container.querySelector('[data-setting-key="oidc_issuer"]')).not.toBeInTheDocument()
     expect(screen.getByTestId('oidc-settings-panel')).toBeInTheDocument()
-    expect(screen.getByLabelText('Public registration enabled')).toHaveValue('true')
+    expect(screen.getByLabelText('Public registration enabled')).toBeChecked()
+    expect(screen.getByLabelText('Email verification required')).not.toBeChecked()
+    expect(screen.getByText('example.com')).toBeInTheDocument()
+    expect(screen.getByText('*.edu.cn')).toBeInTheDocument()
     expect(screen.getByLabelText('Issuer URL')).toHaveValue('https://auth.example.test')
     expect(screen.getByLabelText('Discovery URL')).toHaveValue('https://auth.example.test/.well-known/openid-configuration')
     expect(screen.getByLabelText('Enable OIDC login')).toBeChecked()
@@ -217,9 +272,11 @@ describe('Settings', () => {
   it('keeps new-user defaults on the user defaults tab', async () => {
     const { container } = renderSettings('/admin/settings?tab=userDefaults')
 
-    expect(screen.getByRole('heading', { name: 'User defaults' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'User default settings' })).toBeInTheDocument()
     expect(container.querySelector('[data-setting-key="new_user_initial_balance_cents"]')).toBeInTheDocument()
     expect(screen.getByLabelText('New-user initial balance')).toHaveValue(100)
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
     expect(container.querySelector('[data-setting-key="public_registration_enabled"]')).not.toBeInTheDocument()
   })
 
@@ -240,7 +297,7 @@ describe('Settings', () => {
     expect(screen.getByLabelText('Traffic retry attempts')).toHaveAttribute('max', '5')
 
     await user.selectOptions(screen.getByLabelText('Node health collection'), 'false')
-    const row = screen.getByText('Node health collection').closest('.ant-card')!
+    const row = screen.getByLabelText('Node health collection').closest('[data-setting-key]')!
     const saveButton = within(row as HTMLElement).getByRole('button', { name: 'Save' })
     await waitFor(() => expect(saveButton).toBeEnabled())
     await user.click(saveButton)
@@ -251,15 +308,24 @@ describe('Settings', () => {
     const user = userEvent.setup()
     renderSettings('/admin/settings?tab=messages')
 
+    expect(screen.getByRole('heading', { name: 'User messages' })).toBeInTheDocument()
+    expect(screen.getByText('SMTP connection')).toBeInTheDocument()
+    expect(screen.getByLabelText('SMTP port')).toHaveValue(587)
+    expect(screen.getByLabelText('SMTP from address')).toHaveValue('noreply@example.test')
     await user.type(screen.getByLabelText('SMTP test recipient'), 'ops@example.test')
     await user.click(screen.getByRole('button', { name: /Send test/ }))
 
     await waitFor(() => expect(smtpMutateAsync).toHaveBeenCalledWith('ops@example.test'))
   })
 
-  it('renders notifications as a thin embedded Webhooks wrapper', async () => {
+  it('renders notification routing, channels, and embedded Webhooks', async () => {
     renderSettings('/admin/settings?tab=notifications')
 
+    expect(screen.getByRole('heading', { name: 'Ops notifications' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Routing rules' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Delivery channels' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Notify routes')).toHaveValue('order.paid:email,telegram;node.offline:discord')
+    expect(screen.getByLabelText('Ops email recipient')).toHaveValue('ops@example.test')
     expect(screen.getByTestId('embedded-webhooks')).toHaveTextContent('embedded webhooks')
   })
 
@@ -276,7 +342,7 @@ describe('Settings', () => {
     settings = [item({ key: 'site_name', label: 'Site name', group: 'other', type: 'string', value: 'Acme' })]
     renderSettings('/admin/settings?tab=userDefaults')
 
-    expect(screen.getByRole('heading', { name: 'User defaults' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'User default settings' })).toBeInTheDocument()
     expect(screen.getByText('No settings in this section')).toBeInTheDocument()
   })
 
