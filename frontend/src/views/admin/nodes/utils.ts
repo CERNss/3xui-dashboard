@@ -1,4 +1,5 @@
 import type { Node, NodeInput } from '@/api/admin/nodes'
+import { formatDateTime } from '@/utils/format'
 
 export const AREA_OPTIONS = [
   { key: 'jp', code: 'JP', label: 'Japan' },
@@ -126,10 +127,7 @@ export function nodeLocationText(node: Node): string {
 }
 
 export function formatLastSeen(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString()
+  return formatDateTime(value, '-')
 }
 
 export function parsePanelURL(value: string): Pick<NodeFormValues, 'scheme' | 'host' | 'port' | 'base_path'> | null {

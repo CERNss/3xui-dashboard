@@ -34,6 +34,7 @@ import {
 import { useNodesList } from '@/hooks/queries/admin/nodes'
 import { useUsersList } from '@/hooks/queries/admin/users'
 import { buildClientLink, formatBytes, formatLimit, parseClients } from './inbounds/utils'
+import { formatDateTime } from '@/utils/format'
 
 // Flattened "1 client per row" shape.
 interface ClientRow {
@@ -74,7 +75,7 @@ function quotaBytes(client: Client): number {
 
 function formatExpiry(ms: number | undefined, never: string): string {
   if (!ms || ms <= 0) return never
-  return new Date(ms).toLocaleString()
+  return formatDateTime(ms, never)
 }
 
 interface EditorState {

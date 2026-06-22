@@ -45,6 +45,7 @@ import {
   textToHeaders,
   webhookToInput,
 } from './webhooks/parse'
+import { formatDateTime } from '@/utils/format'
 
 interface WebhookFormValues extends Omit<WebhookInput, 'events' | 'headers'> {
   events_text: string
@@ -127,7 +128,7 @@ function DeliveryList({
                   {t('admin.webhooks.deliveryMeta', { attempt: delivery.attempt, status: delivery.http_status || '-' })}
                 </Typography.Text>
               </Space>
-              <Typography.Text type="secondary">{new Date(delivery.scheduled_at).toLocaleString()}</Typography.Text>
+              <Typography.Text type="secondary">{formatDateTime(delivery.scheduled_at)}</Typography.Text>
               {delivery.error ? <Typography.Text type="danger">{t('admin.webhooks.deliveryError', { error: delivery.error })}</Typography.Text> : null}
             </Space>
             <Button

@@ -9,6 +9,7 @@ import { ConfigListPage, RefreshButton } from '@/components/common'
 import { useOrdersList, useRefundOrder } from '@/hooks/queries/admin/orders'
 import { usePlansList } from '@/hooks/queries/admin/plans'
 import { useUpdateUser, useUsersList } from '@/hooks/queries/admin/users'
+import { formatDateTime } from '@/utils/format'
 
 type StatusFilter = 'all' | OrderStatus
 
@@ -17,7 +18,7 @@ function formatMoney(cents: number) {
 }
 
 function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : '-'
+  return formatDateTime(value, '-')
 }
 
 function canRefund(status: OrderStatus) {

@@ -7,11 +7,12 @@ import { Link } from 'react-router-dom'
 import type { Order, PaymentMethod, Plan } from '@/api/portal/billing'
 import { portalBillingApi } from '@/api/portal/billing'
 import { AlipayPayModal } from '@/components/portal'
-import { ConfigListPage } from '@/components/common'
+import { ConfigListPage, PageHeader } from '@/components/common'
 import { invalidatePortalProvisioningQueries, usePortalOrdersList, usePortalPlansList } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { formatError } from '@/utils/format'
 import { canContinuePayment, formatYuan, OrderStatusTag, paymentMethodLabel } from './_shared/billing'
+import { formatDateTime } from './_shared/format'
 
 function planName(plans: Plan[], planId: number, fallback: string): string {
   return plans.find((plan) => plan.id === planId)?.name ?? fallback
@@ -121,7 +122,7 @@ export default function Orders() {
       dataIndex: 'payment_method',
       align: 'center',
       width: 120,
-      render: (method: PaymentMethod) => paymentMethodLabel(method, methodLabels),
+      render: (method: PaymentMethod) => <Typography.Text code>{paymentMethodLabel(method, methodLabels)}</Typography.Text>,
     },
     {
       title: t('portal.orders.column.status'),
@@ -136,9 +137,15 @@ export default function Orders() {
       align: 'center',
       className: 'table-cell-nowrap',
       width: 180,
-      render: (value: string) => new Date(value).toLocaleString(),
+      render: (value: string) => formatDateTime(value),
     },
-    {
+  ]
+
+  // The mockup's order table has no actions column; only surface it when a
+  // pending order actually needs the "continue payment" affordance.
+  const hasContinuable = orders.some(canContinuePayment)
+  if (hasContinuable) {
+    columns.push({
       title: t('portal.orders.column.actions'),
       key: 'actions',
       align: 'center',
@@ -150,21 +157,24 @@ export default function Orders() {
             {t('portal.orders.continuePayment')}
           </Button>
         ) : null,
-    },
-  ]
+    })
+  }
 
   return (
     <div>
       <ConfigListPage
-        title={t('portal.orders.title')}
-        subtitle={t('portal.orders.subtitle')}
-        actions={
-          profileQuery.data ? (
-            <Space direction="vertical" size={0} style={{ textAlign: 'right' }}>
-              <Typography.Text type="secondary">{t('portal.orders.balance')}</Typography.Text>
-              <Typography.Text strong>{formatYuan(profileQuery.data.balance_cents)}</Typography.Text>
-            </Space>
-          ) : null
+        header={
+          <PageHeader
+            title={t('portal.orders.title')}
+            subtitle={t('portal.orders.subtitle')}
+            actions={
+              profileQuery.data ? (
+                <span className="portal-balance-pill">
+                  {t('portal.orders.balance')} <b>{formatYuan(profileQuery.data.balance_cents)}</b>
+                </span>
+              ) : null
+            }
+          />
         }
         alerts={error || flash ? (
           <>

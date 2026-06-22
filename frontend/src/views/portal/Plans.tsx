@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import type { Plan, PaymentMethod, Order } from '@/api/portal/billing'
 import { AlipayPayModal } from '@/components/portal'
-import { ConfigListPage, EmptyState } from '@/components/common'
+import { ConfigListPage, EmptyState, PageHeader } from '@/components/common'
 import { invalidatePortalProvisioningQueries, usePaymentMethods, usePortalPlansList, usePurchasePlan, usePurchaseViaPayment } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { formatError } from '@/utils/format'
@@ -20,6 +20,13 @@ function uuid(): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80
   const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function pricePeriod(t: ReturnType<typeof useTranslation>['t'], days: number): string {
+  if (days === 30 || days === 31) return t('portal.plans.perMonth')
+  if (days === 365 || days === 366) return t('portal.plans.perYear')
+  if (days === 7) return t('portal.plans.perWeek')
+  return t('portal.plans.perDays', { days })
 }
 
 function confirmPurchase(title: string, content: string, okText: string, cancelText: string): Promise<boolean> {
@@ -136,17 +143,18 @@ export default function Plans() {
   return (
     <div>
       <ConfigListPage<Plan>
-        title={t('portal.plans.title')}
-        subtitle={t('portal.plans.subtitle')}
-        actions={
-          profileQuery.data ? (
-            <Space direction="vertical" size={0} style={{ textAlign: 'right' }}>
-              <Typography.Text type="secondary">
-                {t('portal.plans.currentBalance')}
-              </Typography.Text>
-              <Typography.Text strong>{formatYuan(profileQuery.data.balance_cents)}</Typography.Text>
-            </Space>
-          ) : null
+        header={
+          <PageHeader
+            title={t('portal.plans.title')}
+            subtitle={t('portal.plans.subtitle')}
+            actions={
+              profileQuery.data ? (
+                <span className="portal-balance-pill">
+                  {t('portal.plans.currentBalance')} <b>{formatYuan(profileQuery.data.balance_cents)}</b>
+                </span>
+              ) : null
+            }
+          />
         }
         alerts={error || flash ? (
           <>
@@ -169,7 +177,7 @@ export default function Plans() {
             </Space>
           ) : undefined
         }
-        listClassName="config-list-page-card-grid"
+        listClassName="config-list-page-card-grid portal-plans-grid"
         listContent={
           enabledPlans.length > 0 || loading ? (
             <>
@@ -197,7 +205,10 @@ export default function Plans() {
                     </Typography.Title>
                     {plan.description ? <Typography.Text type="secondary">{plan.description}</Typography.Text> : null}
                     <Typography.Title level={2} style={{ margin: 0 }}>
-                      {formatYuan(plan.price_cents)}
+                      {formatYuan(plan.price_cents)}{' '}
+                      <Typography.Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>
+                        {pricePeriod(t, plan.duration_days)}
+                      </Typography.Text>
                     </Typography.Title>
                     <Space direction="vertical" size={6}>
                       <Typography.Text>
@@ -214,6 +225,12 @@ export default function Plans() {
                           <CheckOutlined /> {t('portal.plans.ipLimitText', { n: plan.ip_limit })}
                         </Typography.Text>
                       ) : null}
+                      <Typography.Text>
+                        <CheckOutlined /> {t('portal.plans.featureAutoNode')}
+                      </Typography.Text>
+                      <Typography.Text>
+                        <CheckOutlined /> {t('portal.plans.featureAllFormats')}
+                      </Typography.Text>
                     </Space>
                   </Space>
                 </Card>

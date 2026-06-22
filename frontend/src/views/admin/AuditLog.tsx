@@ -5,13 +5,14 @@ import { useTranslation } from 'react-i18next'
 import type { AdminAction, ListAuditParams } from '@/api/admin/audit'
 import { ConfigListPage, RefreshButton } from '@/components/common'
 import { useAuditLog } from '@/hooks/queries/admin/audit'
+import { formatDateTime } from '@/utils/format'
 
 type SortKey = 'created_at' | 'admin_username' | 'method' | 'status_code'
 
 const METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'] as const
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString()
+  return formatDateTime(value)
 }
 
 function methodTag(method: string) {

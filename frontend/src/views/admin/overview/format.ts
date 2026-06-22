@@ -18,6 +18,4 @@ export function formatYuan(cents: number): string {
   return `¥${(cents / 100).toFixed(2)}`
 }
 
-export function formatDateTime(value?: string | null): string {
-  return value ? new Date(value).toLocaleString() : '—'
-}
+export { formatDate, formatDateTime } from '@/utils/format'

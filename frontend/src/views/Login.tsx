@@ -1,5 +1,5 @@
 import { LockOutlined, LoginOutlined, MailOutlined, UserAddOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Divider, Form, Input, Space, Tabs, Typography } from 'antd'
+import { Alert, App, Button, Card, Checkbox, Divider, Form, Input, Space, Tabs, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +16,18 @@ type AuthMode = 'login' | 'register'
 interface LoginFormValues {
   email: string
   password: string
+  remember?: boolean
+}
+
+const REMEMBER_EMAIL_KEY = 'auth.rememberEmail'
+
+function persistRememberedEmail(email: string, remember: boolean | undefined) {
+  try {
+    if (remember) localStorage.setItem(REMEMBER_EMAIL_KEY, email)
+    else localStorage.removeItem(REMEMBER_EMAIL_KEY)
+  } catch {
+    /* localStorage unavailable — remember is best-effort */
+  }
 }
 
 interface RegisterFormValues {
@@ -65,6 +77,7 @@ function portalSessionUser(res: UserTokenResponse) {
 
 export function Login() {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const location = useLocation()
   const navigate = useNavigate()
   const setAdminSession = useAdminAuthStore((state) => state.setSession)
@@ -89,6 +102,15 @@ export function Login() {
   useEffect(() => {
     setMode(params.get('mode') === 'register' ? 'register' : 'login')
   }, [params])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REMEMBER_EMAIL_KEY)
+      if (saved) loginForm.setFieldsValue({ email: saved, remember: true })
+    } catch {
+      /* localStorage unavailable — skip restore */
+    }
+  }, [loginForm])
 
   useEffect(() => {
     let cancelled = false
@@ -140,6 +162,7 @@ export function Login() {
     try {
       const adminRes = await adminAuthApi.login(email, values.password)
       setAdminSession(adminRes.username)
+      persistRememberedEmail(email, values.remember)
       navigate(adminNextPath, { replace: true })
       return
     } catch (adminError) {
@@ -157,6 +180,7 @@ export function Login() {
         password: values.password,
       })
       setPortalSession(portalSessionUser(portalRes))
+      persistRememberedEmail(email, values.remember)
       navigate(
         rolePath(portalRes.redirect_after ?? portalRes.next, '/portal', portalNextPath),
         { replace: true },
@@ -219,6 +243,10 @@ export function Login() {
     }
   }
 
+  function onForgotPassword() {
+    message.info(t('auth.forgotPasswordHint'))
+  }
+
   function switchMode(nextMode: string) {
     const next = nextMode as AuthMode
     setMode(next)
@@ -249,6 +277,7 @@ export function Login() {
                     cooldown={cooldown}
                     form={loginForm}
                     loading={signingIn}
+                    onForgot={onForgotPassword}
                     onOidcStart={startOidc}
                     onSubmit={submitLogin}
                     oidcLoading={oidcStart.isPending}
@@ -289,6 +318,7 @@ interface LoginPaneProps {
   oidcLoading: boolean
   providers: OIDCProvider[]
   t: ReturnType<typeof useTranslation>['t']
+  onForgot: () => void
   onSubmit: (values: LoginFormValues) => Promise<void>
   onOidcStart: (provider: OIDCProvider) => Promise<void>
 }
@@ -298,6 +328,7 @@ function LoginPane({
   form,
   loading,
   oidcLoading,
+  onForgot,
   onOidcStart,
   onSubmit,
   providers,
@@ -328,6 +359,14 @@ function LoginPane({
             prefix={<LockOutlined />}
           />
         </Form.Item>
+        <div className="auth-remember-row">
+          <Form.Item name="remember" valuePropName="checked" noStyle>
+            <Checkbox>{t('auth.rememberMe')}</Checkbox>
+          </Form.Item>
+          <Typography.Link className="auth-forgot" onClick={onForgot}>
+            {t('auth.forgotPassword')}
+          </Typography.Link>
+        </div>
         <Button
           block
           htmlType="submit"

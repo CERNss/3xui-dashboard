@@ -19,9 +19,25 @@ export function formatYuan(cents: number | null | undefined): string {
   return `¥${((cents ?? 0) / 100).toFixed(2)}`
 }
 
+function pad(n: number): string {
+  return n < 10 ? `0${n}` : String(n)
+}
+
+/** Date only, "YYYY-MM-DD" — matches the design mockups. */
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return '∞'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '∞'
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** Date + time, "YYYY-MM-DD HH:mm:ss" — matches the design mockups
+ * (deterministic, not locale-dependent like toLocaleString). */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '∞'
-  return new Date(value).toLocaleString()
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '∞'
+  return `${formatDate(value)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 export function trafficPercent(used: number, limit: number): number {

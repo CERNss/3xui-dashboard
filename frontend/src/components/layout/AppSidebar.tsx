@@ -25,6 +25,14 @@ interface AppSidebarProps {
   clusterSlot?: ReactNode
   /** Optional aria-label for the surrounding <nav>. */
   navLabel?: string
+  /** Optional account row rendered at the top of the footer. The admin
+   * shell passes its account dropdown here to match the design mockup
+   * (account lives in the sidebar foot, not the topbar). */
+  accountSlot?: ReactNode
+  /** Whether to render the in-foot theme toggle. Defaults on (portal);
+   * the admin shell turns it off because its theme toggle lives in the
+   * topbar per the mockup. */
+  showThemeToggle?: boolean
 }
 
 /**
@@ -44,6 +52,8 @@ export function AppSidebar({
   subtitle,
   clusterSlot,
   navLabel,
+  accountSlot,
+  showThemeToggle = true,
 }: AppSidebarProps) {
   const { t } = useTranslation()
   const resolvedNavLabel = navLabel ?? t('nav.admin')
@@ -104,12 +114,15 @@ export function AppSidebar({
       </nav>
 
       <div className="admin-sidebar-footer">
-        <button className="admin-sidebar-action" onClick={onThemeToggle} type="button">
-          <span aria-hidden="true" className="admin-sidebar-item-icon">
-            {themeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
-          </span>
-          {!collapsed ? <span>{themeMode === 'dark' ? t('theme.light') : t('theme.dark')}</span> : null}
-        </button>
+        {accountSlot ? <div className="admin-sidebar-account-slot">{accountSlot}</div> : null}
+        {showThemeToggle ? (
+          <button className="admin-sidebar-action" onClick={onThemeToggle} type="button">
+            <span aria-hidden="true" className="admin-sidebar-item-icon">
+              {themeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+            </span>
+            {!collapsed ? <span>{themeMode === 'dark' ? t('theme.light') : t('theme.dark')}</span> : null}
+          </button>
+        ) : null}
         <button className="admin-sidebar-action" onClick={onCollapseToggle} type="button">
           <span aria-hidden="true" className="admin-sidebar-item-icon">
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}

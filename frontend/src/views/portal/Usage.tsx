@@ -11,7 +11,7 @@ import { usePortalOrdersList } from '@/hooks/queries/portal/billing'
 import { useProfile } from '@/hooks/queries/portal/profile'
 import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
 import { formatError } from '@/utils/format'
-import { formatBytes, formatDateTime, formatYuan, trafficPercent } from './_shared/format'
+import { formatBytes, formatDate, formatYuan, trafficPercent } from './_shared/format'
 import { useProvisioningStatus } from './_shared/provisioning'
 import { subscriptionUrl } from './_shared/subscriptionFormats'
 
@@ -101,7 +101,7 @@ export function Usage() {
       align: 'center',
       className: 'table-cell-nowrap',
       width: 180,
-      render: (value: string | null | undefined) => formatDateTime(value),
+      render: (value: string | null | undefined) => formatDate(value),
     },
   ]
 

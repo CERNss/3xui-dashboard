@@ -85,8 +85,8 @@ export function adminSections(t: TFunction): NavSection[] {
 
 export function portalItems(t: TFunction): NavLinkItem[] {
   return [
-    { key: '/portal/subscription', to: '/portal/subscription', label: t('nav.subscription'), icon: <CreditCardOutlined /> },
     { key: '/portal/usage', to: '/portal/usage', label: t('nav.usage'), icon: <BarChartOutlined /> },
+    { key: '/portal/subscription', to: '/portal/subscription', label: t('nav.subscription'), icon: <CreditCardOutlined /> },
     { key: '/portal/plans', to: '/portal/plans', label: t('nav.plans'), icon: <ShopOutlined /> },
     { key: '/portal/orders', to: '/portal/orders', label: t('nav.orders'), icon: <ShoppingCartOutlined /> },
     { key: '/portal/profile', to: '/portal/profile', label: t('nav.profile'), icon: <UserOutlined /> },

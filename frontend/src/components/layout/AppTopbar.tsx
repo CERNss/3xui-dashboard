@@ -1,4 +1,4 @@
-import { BellOutlined, DownOutlined, MenuFoldOutlined, RightOutlined } from '@ant-design/icons'
+import { BellOutlined, DownOutlined, MenuFoldOutlined, MoonOutlined, RightOutlined, SearchOutlined, SunOutlined } from '@ant-design/icons'
 import { Button, Tooltip, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -27,6 +27,18 @@ interface AppTopbarProps {
    * grows a real inbox. */
   showNotifications?: boolean
   notificationsLabel?: string
+  /** Locale switcher chip. Defaults on; the admin shell hides it because
+   * the design mockup keeps the admin topbar to search + theme + bell. */
+  showLocale?: boolean
+  /** Account menu. Defaults on; the admin shell moves the account row
+   * into the sidebar foot per the mockup, so it hides it here. */
+  showAccount?: boolean
+  /** When set, renders the design-mockup search box (decorative ⌘K). */
+  searchPlaceholder?: string
+  /** When provided, renders the dark/light theme-toggle pill (admin
+   * topbar). Portal keeps the toggle in the sidebar foot instead. */
+  themeMode?: 'light' | 'dark'
+  onThemeToggle?: () => void
   /** Optional slot rendered in the right-hand tools after the locale
    * switcher — e.g. portal balance. */
   toolSlot?: ReactNode
@@ -51,11 +63,17 @@ export function AppTopbar({
   onOpenMobileNav,
   showNotifications = false,
   notificationsLabel,
+  showLocale = true,
+  showAccount = true,
+  searchPlaceholder,
+  themeMode,
+  onThemeToggle,
   toolSlot,
   centerSlot,
 }: AppTopbarProps) {
   const { t } = useTranslation()
   const notificationText = notificationsLabel ?? t('admin.notifications')
+  const showThemePill = Boolean(themeMode && onThemeToggle)
   return (
     <div className="admin-topbar-inner">
       <div className="admin-topbar-heading">
@@ -89,6 +107,32 @@ export function AppTopbar({
       </div>
       {centerSlot}
       <div className="admin-topbar-tools">
+        {searchPlaceholder ? (
+          <button aria-label={searchPlaceholder} className="admin-topbar-search" type="button">
+            <SearchOutlined aria-hidden="true" />
+            <span className="admin-topbar-search-text">{searchPlaceholder}</span>
+            <kbd className="admin-topbar-search-kbd">⌘K</kbd>
+          </button>
+        ) : null}
+        {showLocale ? <LocaleSwitcher variant="chip" /> : null}
+        {showThemePill ? (
+          <>
+            <span aria-hidden="true" className="admin-topbar-divider" />
+            <button
+              aria-label={themeMode === 'dark' ? t('theme.toggleLight') : t('theme.toggleDark')}
+              className="admin-topbar-theme"
+              onClick={onThemeToggle}
+              type="button"
+            >
+              <span className="admin-topbar-theme-opt" data-active={themeMode === 'dark' ? 'true' : 'false'}>
+                <MoonOutlined />
+              </span>
+              <span className="admin-topbar-theme-opt" data-active={themeMode === 'light' ? 'true' : 'false'}>
+                <SunOutlined />
+              </span>
+            </button>
+          </>
+        ) : null}
         {showNotifications ? (
           <Tooltip title={notificationText}>
             <button aria-label={notificationText} className="admin-topbar-icon-button" type="button">
@@ -96,20 +140,21 @@ export function AppTopbar({
             </button>
           </Tooltip>
         ) : null}
-        <LocaleSwitcher variant="chip" />
         {toolSlot}
-        <AccountMenu items={accountItems} logoutLabel={t('nav.logout')} onLogout={onLogout}>
-          <button aria-label={t('account.openMenu')} className="admin-topbar-account" type="button">
-            <span aria-hidden="true" className="admin-topbar-avatar">
-              {initialsForAccount(accountLabel)}
-            </span>
-            <span className="admin-topbar-account-copy">
-              <span className="admin-topbar-account-name">{displayAccountName(accountLabel)}</span>
-              <span className="admin-topbar-account-role">{accountRole}</span>
-            </span>
-            <DownOutlined aria-hidden="true" className="admin-topbar-account-chevron" />
-          </button>
-        </AccountMenu>
+        {showAccount ? (
+          <AccountMenu items={accountItems} logoutLabel={t('nav.logout')} onLogout={onLogout}>
+            <button aria-label={t('account.openMenu')} className="admin-topbar-account" type="button">
+              <span aria-hidden="true" className="admin-topbar-avatar">
+                {initialsForAccount(accountLabel)}
+              </span>
+              <span className="admin-topbar-account-copy">
+                <span className="admin-topbar-account-name">{displayAccountName(accountLabel)}</span>
+                <span className="admin-topbar-account-role">{accountRole}</span>
+              </span>
+              <DownOutlined aria-hidden="true" className="admin-topbar-account-chevron" />
+            </button>
+          </AccountMenu>
+        ) : null}
       </div>
     </div>
   )

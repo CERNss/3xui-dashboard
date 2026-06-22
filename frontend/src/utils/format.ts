@@ -50,3 +50,26 @@ export function formatError(e: unknown, fallback = '操作失败'): string {
 
   return fallback
 }
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n)
+}
+
+/**
+ * Deterministic "YYYY-MM-DD" date — matches the design mockups and avoids
+ * locale-dependent output (e.g. "6/11/2026") from toLocaleString().
+ */
+export function formatDate(value: string | number | Date | null | undefined, fallback = '—'): string {
+  if (value === null || value === undefined || value === '') return fallback
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return fallback
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/** Deterministic "YYYY-MM-DD HH:mm:ss" timestamp — matches the mockups. */
+export function formatDateTime(value: string | number | Date | null | undefined, fallback = '—'): string {
+  if (value === null || value === undefined || value === '') return fallback
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return fallback
+  return `${formatDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}

@@ -1,8 +1,9 @@
+import { DownOutlined } from '@ant-design/icons'
 import { Drawer, Layout, theme } from 'antd'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { PageHeaderChromeProvider } from '@/components/common'
+import { AccountMenu, PageHeaderChromeProvider } from '@/components/common'
 import { useMinWidth } from '@/hooks/useBreakpoint'
 import { adminAuthApi } from '@/api/admin/auth'
 import { useBranding } from '@/hooks/queries/branding'
@@ -78,6 +79,23 @@ export function AdminLayout() {
     navigate('/login', { replace: true })
   }
 
+  const accountItems = [{ label: t('account.profile'), to: '/admin/settings?tab=securityAuth' }]
+  const accountInitials = (accountLabel.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) || 'AD').toUpperCase()
+  const accountSlot = !collapsed ? (
+    <AccountMenu items={accountItems} logoutLabel={t('nav.logout')} onLogout={logout}>
+      <button aria-label={t('account.openMenu')} className="admin-sidebar-account" type="button">
+        <span aria-hidden="true" className="admin-sidebar-account-avatar">
+          {accountInitials}
+        </span>
+        <span className="admin-sidebar-account-copy">
+          <span className="admin-sidebar-account-name">{accountLabel}</span>
+          <span className="admin-sidebar-account-role">{t('account.adminRole')}</span>
+        </span>
+        <DownOutlined aria-hidden="true" className="admin-sidebar-account-chevron" />
+      </button>
+    </AccountMenu>
+  ) : null
+
   const sidebar = (
     <AppSidebar
       collapsed={collapsed}
@@ -91,6 +109,8 @@ export function AdminLayout() {
       subtitle="node orchestration"
       clusterSlot={<ClusterStatus />}
       navLabel={t('nav.admin')}
+      accountSlot={accountSlot}
+      showThemeToggle={false}
     />
   )
 
@@ -115,10 +135,15 @@ export function AdminLayout() {
             breadcrumbGroup={activeSection?.label}
             accountLabel={accountLabel}
             accountRole={t('account.adminRole')}
-            accountItems={[{ label: t('account.profile'), to: '/admin/settings?tab=securityAuth' }]}
+            accountItems={accountItems}
             onLogout={logout}
             onOpenMobileNav={!wide ? () => setDrawerOpen(true) : undefined}
             showNotifications
+            showLocale={false}
+            showAccount={false}
+            searchPlaceholder={t('admin.searchPlaceholder')}
+            themeMode={themeMode}
+            onThemeToggle={toggleTheme}
           />
         </Header>
         <Content className="admin-shell-content" style={{ background: token.colorBgLayout }}>

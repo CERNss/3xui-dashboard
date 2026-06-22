@@ -1,6 +1,9 @@
 import {
+  ArrowUpOutlined,
   BarsOutlined,
+  CheckCircleOutlined,
   DeleteOutlined,
+  DollarOutlined,
   DownloadOutlined,
   EditOutlined,
   FilterOutlined,
@@ -10,6 +13,8 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
+  ShoppingOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -46,8 +51,10 @@ import {
   useUnsuspendUser,
   useUpdateUser,
 } from '@/hooks/queries/admin/users'
+import { useAdminStats } from '@/hooks/queries/admin/stats'
 import { useQueryErrorReporter } from '@/hooks/queries/error'
 import { queryKeys } from '@/hooks/queries/keys'
+import { formatDateTime } from '@/utils/format'
 
 type StatusFilter = 'all' | UserStatus
 type VerifiedFilter = 'all' | 'verified' | 'unverified'
@@ -84,7 +91,36 @@ function formatYuan(cents: number) {
 }
 
 function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : '—'
+  return formatDateTime(value, '—')
+}
+
+function UserStatCard({
+  icon,
+  tone,
+  value,
+  label,
+  trend,
+  trendTone,
+}: {
+  icon: React.ReactNode
+  tone: 'b' | 'g' | 'a' | 'p'
+  value: React.ReactNode
+  label: React.ReactNode
+  trend?: React.ReactNode
+  trendTone?: 'up' | 'flat'
+}) {
+  return (
+    <div className="admin-stat-card">
+      <div className="admin-stat-card-head">
+        <span aria-hidden className={`admin-stat-card-icon admin-stat-card-icon--${tone}`}>
+          {icon}
+        </span>
+        {trend ? <span className={`admin-stat-card-trend admin-stat-card-trend--${trendTone ?? 'flat'}`}>{trend}</span> : null}
+      </div>
+      <div className="admin-stat-card-value">{value}</div>
+      <div className="admin-stat-card-label">{label}</div>
+    </div>
+  )
 }
 
 function userLabel(user: AdminUser) {
@@ -166,6 +202,9 @@ export default function Users() {
     refetchOnWindowFocus: true,
   })
   useQueryErrorReporter(usersQuery.error, usersQuery.isError)
+
+  const statsQuery = useAdminStats({ reportErrors: false })
+  const stats = statsQuery.data
 
   const balanceLogsQuery = useQuery({
     queryKey: userKeys.op('balanceLogs', balanceUser?.id ?? 0),
@@ -590,6 +629,42 @@ export default function Users() {
       <ConfigListPage
         title={t('admin.users.title')}
         subtitle={t('admin.users.subtitle')}
+        stats={
+          stats ? (
+            <div className="admin-stat-grid">
+              <UserStatCard
+                tone="b"
+                icon={<TeamOutlined />}
+                value={stats.users.total}
+                label={`${t('admin.users.statRegistered')} · ${t('admin.users.statRegisteredFoot', { n: stats.users.month_new })}`}
+                trend={<><ArrowUpOutlined />+{stats.users.month_new}</>}
+                trendTone="up"
+              />
+              <UserStatCard
+                tone="g"
+                icon={<CheckCircleOutlined />}
+                value={stats.users.active}
+                label={`${t('admin.users.statActive')} · ${t('admin.users.statActiveFoot')}`}
+                trend={`${stats.users.total > 0 ? Math.round((stats.users.active / stats.users.total) * 100) : 100}%`}
+                trendTone="flat"
+              />
+              <UserStatCard
+                tone="a"
+                icon={<DollarOutlined />}
+                value={formatYuan(stats.users.total_balance_cents)}
+                label={`${t('admin.users.statBalance')} · ${t('admin.users.statBalanceFoot', { amount: formatYuan(stats.users.avg_balance_cents) })}`}
+              />
+              <UserStatCard
+                tone="p"
+                icon={<ShoppingOutlined />}
+                value={stats.orders.completed}
+                label={`${t('admin.users.statOrders')} · ${t('admin.users.statOrdersFoot', { amount: formatYuan(stats.orders.revenue_cents) })}`}
+                trend={<><ArrowUpOutlined />{formatYuan(stats.orders.month_revenue_cents)}</>}
+                trendTone="up"
+              />
+            </div>
+          ) : null
+        }
         actions={
           <div className="users-toolbar-actions">
             <Button
