@@ -6,17 +6,20 @@ import {
   QrcodeOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Card, Col, Input, message, Modal, Row, Skeleton, Space, Typography } from 'antd'
+import { Alert, App, Button, Card, Col, Input, message, Row, Skeleton, Space, Typography } from 'antd'
 import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { EmptyState, PageHeader } from '@/components/common'
 import { useBranding } from '@/hooks/queries/branding'
 import { usePortalOrdersList } from '@/hooks/queries/portal/billing'
 import { useProfile, useRotateSubId } from '@/hooks/queries/portal/profile'
 import { useOwnTraffic } from '@/hooks/queries/portal/traffic'
+import { copyText } from '@/utils/clipboard'
 import { formatError } from '@/utils/format'
-import { useProvisioningStatus } from './_shared/provisioning'
+import { ImportButtons } from './_shared/ImportButtons'
+import { hasAnyCompletedOrder, useProvisioningStatus } from './_shared/provisioning'
 import {
   subscriptionFormats,
   subscriptionUrl,
@@ -54,6 +57,10 @@ function useSubscriptionQr(url: string, activeFormat: SubscriptionFormatInfo | u
 
 export function Subscription() {
   const { t } = useTranslation()
+  // App.useApp() so confirm dialogs inherit the active (dark/light)
+  // theme — static Modal.confirm renders outside the ConfigProvider.
+  const { modal } = App.useApp()
+  const navigate = useNavigate()
   const [messageApi, contextHolder] = message.useMessage()
   const [activeKey, setActiveKey] = useState<SubscriptionFormatKey>('base64')
   const profile = useProfile()
@@ -80,12 +87,17 @@ export function Subscription() {
 
   async function copyUrl() {
     if (!url || activeFormat?.downloadOnly) return
-    await navigator.clipboard.writeText(url)
-    void messageApi.success(t('portal.subscription.copyOk'))
+    // copyText never throws — clipboard API is unavailable on plain
+    // http origins, where the old call silently failed with no toast.
+    if (await copyText(url)) {
+      void messageApi.success(t('portal.subscription.copyOk'))
+    } else {
+      void messageApi.error(t('portal.subscription.copyFailed'))
+    }
   }
 
   function rotate() {
-    Modal.confirm({
+    modal.confirm({
       title: t('portal.subscription.regenerateTitle'),
       content: t('portal.subscription.regenerateConfirm'),
       okText: t('portal.subscription.regenerate'),
@@ -94,6 +106,7 @@ export function Subscription() {
       onOk: async () => {
         try {
           await rotateSubId.mutateAsync()
+          void messageApi.success(t('portal.subscription.regenerateOk'))
         } catch (e) {
           void messageApi.error(formatError(e, t('portal.subscription.regenerateFailed')))
           throw e
@@ -126,12 +139,34 @@ export function Subscription() {
 
       {loading ? (
         <Skeleton active />
-      ) : !profile.data ? null : provisioning.isProvisioning ? (
+      ) : !profile.data ? (
+        <Card>
+          <EmptyState
+            title={t('portal.subscription.loadFailed')}
+            description={t('portal.subscription.profileMissingDescription')}
+            actionLabel={t('common.refresh')}
+            onAction={() => void profile.refetch()}
+          />
+        </Card>
+      ) : provisioning.isProvisioning ? (
         <Card>
           <EmptyState
             title={t('portal.subscription.provisioningTitle')}
             description={t('portal.subscription.provisioningDescription')}
             actionLabel={provisioning.isRefreshingProvisioning ? t('portal.subscription.provisioningRefreshing') : t('portal.subscription.provisioningRefresh')}
+            onAction={() => {
+              void Promise.all([traffic.refetch(), orders.refetch()])
+            }}
+          />
+        </Card>
+      ) : clients.length === 0 && hasAnyCompletedOrder(orders.data ?? []) ? (
+        // Paid but nothing provisioned and the fast-poll window is
+        // over — do NOT tell a paying user to "buy a plan first".
+        <Card>
+          <EmptyState
+            title={t('portal.subscription.stalledTitle')}
+            description={t('portal.subscription.stalledDescription')}
+            actionLabel={t('portal.subscription.provisioningRefresh')}
             onAction={() => {
               void Promise.all([traffic.refetch(), orders.refetch()])
             }}
@@ -143,7 +178,7 @@ export function Subscription() {
             title={t('portal.subscription.empty')}
             description={t('portal.subscription.emptyDescription')}
             actionLabel={t('portal.subscription.seePlans')}
-            onAction={() => undefined}
+            onAction={() => navigate('/portal/plans')}
           />
         </Card>
       ) : (
@@ -186,7 +221,15 @@ export function Subscription() {
                       {activeFormat?.downloadOnly ? t('portal.subscription.downloadLink') : t('portal.subscription.urlTitle')}
                     </Typography.Title>
                     {activeFormat?.downloadOnly ? (
-                      <Button type="primary" icon={<DownloadOutlined />} href={url} download>
+                      // `download` is ignored cross-origin (browser
+                      // navigates instead) — only claim it when the
+                      // sub endpoint shares our origin.
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        href={url}
+                        download={subscriptionBaseURL === window.location.origin ? 'subscription-wireguard.zip' : undefined}
+                      >
                         {t('portal.subscription.downloadFile')}
                       </Button>
                     ) : (
@@ -206,6 +249,20 @@ export function Subscription() {
                     {t('portal.subscription.rotateNote')}
                   </Typography.Text>
                 </Space>
+              </Card>
+
+              <Card>
+                <Typography.Title level={4} style={{ marginTop: 0 }}>
+                  {t('portal.subscription.importTitle')}
+                </Typography.Title>
+                <Typography.Paragraph type="secondary">
+                  {t('portal.subscription.importHint')}
+                </Typography.Paragraph>
+                <ImportButtons
+                  baseUrl={subscriptionBaseURL}
+                  subId={profile.data.sub_id}
+                  name={branding.data?.title || 'Subscription'}
+                />
               </Card>
 
               <Card>

@@ -4,9 +4,10 @@ import type { Order, PaymentMethod } from '@/api/portal/billing'
 
 const BYTES_PER_GB = 1024 * 1024 * 1024
 
-export function formatYuan(cents: number): string {
-  return `¥${(cents / 100).toFixed(2)}`
-}
+// Single formatYuan implementation lives in ./format (null-safe);
+// re-exported here so existing `from './_shared/billing'` imports
+// keep working.
+export { formatYuan } from './format'
 
 export function formatTraffic(bytes: number): string {
   if (bytes === 0) return '∞'

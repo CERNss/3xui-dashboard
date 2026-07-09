@@ -1,6 +1,5 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Modal } from 'antd'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Order, PaymentMethod, Plan } from '@/api/portal/billing'
@@ -92,17 +91,17 @@ beforeEach(() => {
   purchaseMutateAsync.mockResolvedValue(makeOrder())
   purchaseViaPaymentMutateAsync.mockReset()
   profileRefetch.mockReset()
-  vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
-    act(() => {
-      void config.onOk?.()
-    })
-    return { destroy: vi.fn(), update: vi.fn() }
-  })
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: { ...window.location, assign: vi.fn() },
   })
 })
+
+// The purchase confirm dialog is a real App.useApp() modal now (so it
+// follows the active theme); tests confirm it like a user would.
+async function confirmPurchaseDialog(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^Pay ¥/ }))
+}
 
 describe('Portal Plans', () => {
   it('renders enabled plan cards and filters disabled plans', () => {
@@ -161,6 +160,7 @@ describe('Portal Plans', () => {
 
     fireEvent.click(screen.getByText('Alipay'))
     await user.click(screen.getByRole('button', { name: 'Buy now' }))
+    await confirmPurchaseDialog(user)
 
     await waitFor(() =>
       expect(purchaseViaPaymentMutateAsync).toHaveBeenCalledWith({
@@ -187,6 +187,7 @@ describe('Portal Plans', () => {
 
     fireEvent.click(screen.getByText('Stripe'))
     await user.click(screen.getByRole('button', { name: 'Buy now' }))
+    await confirmPurchaseDialog(user)
 
     await waitFor(() => expect(window.location.assign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/cs_test'))
     expect(purchaseViaPaymentMutateAsync).toHaveBeenCalledWith({
@@ -200,6 +201,7 @@ describe('Portal Plans', () => {
     renderPlans()
 
     await user.click(screen.getByRole('button', { name: 'Buy now' }))
+    await confirmPurchaseDialog(user)
     await waitFor(() =>
       expect(purchaseMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ plan_id: 1, idempotency_key: expect.any(String) })),
     )

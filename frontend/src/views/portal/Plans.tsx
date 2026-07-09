@@ -1,6 +1,6 @@
 import { CheckOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Modal, Radio, Space, Typography } from 'antd'
+import { Alert, App, Button, Card, Radio, Space, Typography } from 'antd'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -29,9 +29,18 @@ function pricePeriod(t: ReturnType<typeof useTranslation>['t'], days: number): s
   return t('portal.plans.perDays', { days })
 }
 
-function confirmPurchase(title: string, content: string, okText: string, cancelText: string): Promise<boolean> {
+// modal comes from App.useApp() so the dialog inherits the active
+// theme — the static Modal.confirm renders outside the ConfigProvider
+// and shows up light in dark mode.
+function confirmPurchase(
+  modal: ReturnType<typeof App.useApp>['modal'],
+  title: string,
+  content: string,
+  okText: string,
+  cancelText: string,
+): Promise<boolean> {
   return new Promise((resolve) => {
-    Modal.confirm({
+    modal.confirm({
       title,
       content,
       okText,
@@ -44,6 +53,7 @@ function confirmPurchase(title: string, content: string, okText: string, cancelT
 
 export default function Plans() {
   const { t } = useTranslation()
+  const { modal } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const plansQuery = usePortalPlansList()
@@ -82,6 +92,7 @@ export default function Plans() {
     const methodLabel = paymentMethodLabel(effectiveMethod, methodLabels)
     const amount = formatYuan(plan.price_cents)
     const ok = await confirmPurchase(
+      modal,
       t('portal.plans.confirmTitle', { name: plan.name }),
       effectiveMethod === 'balance'
         ? t('portal.plans.confirmBalanceMsg', { amount })

@@ -3,7 +3,7 @@ import { Alert, Card, Col, Progress, Row, Skeleton, Space, Table, Typography } f
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { ClientUsage } from '@/api/portal/traffic'
 import { EmptyState, PageHeader, RefreshButton } from '@/components/common'
 import { useBranding } from '@/hooks/queries/branding'
@@ -28,6 +28,7 @@ function daysToExpiry(clients: ClientUsage[]): number | null {
 
 export function Usage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const profile = useProfile()
   const branding = useBranding()
   const traffic = useOwnTraffic()
@@ -258,7 +259,7 @@ export function Usage() {
                 title={t('portal.dashboard.empty')}
                 description={t('portal.dashboard.emptyDescription')}
                 actionLabel={t('portal.dashboard.goToPlans')}
-                onAction={() => undefined}
+                onAction={() => navigate('/portal/plans')}
               />
             )}
           </Card>

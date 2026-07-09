@@ -4,7 +4,7 @@ import type { ClientUsage } from '@/api/portal/traffic'
 
 const RECENT_ORDER_WINDOW_MS = 5 * 60_000
 const PROVISIONING_POLL_INTERVAL_MS = 2_000
-const PROVISIONING_POLL_TIMEOUT_MS = 45_000
+const PROVISIONING_POLL_TIMEOUT_MS = 180_000
 
 export function hasRecentProvisioningOrder(orders: Order[], now = Date.now()) {
   return orders.some((order) => {
@@ -14,6 +14,13 @@ export function hasRecentProvisioningOrder(orders: Order[], now = Date.now()) {
     if (!Number.isFinite(time)) return false
     return now - time >= 0 && now - time <= RECENT_ORDER_WINDOW_MS
   })
+}
+
+// hasAnyCompletedOrder distinguishes "paid but nothing provisioned"
+// (any age — show a stalled/contact-support state) from "never
+// bought anything" (show the buy-a-plan CTA).
+export function hasAnyCompletedOrder(orders: Order[]) {
+  return orders.some((order) => order.status === 'completed' || order.status === 'paid')
 }
 
 export function useProvisioningStatus({

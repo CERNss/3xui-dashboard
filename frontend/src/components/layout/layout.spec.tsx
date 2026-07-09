@@ -170,7 +170,9 @@ describe('layout components', () => {
     // in the topbar opens a left Drawer with the full AppSidebar.
     expect(screen.getByTestId('portal-layout')).toBeInTheDocument()
     expect(screen.getByLabelText('Open navigation')).toBeInTheDocument()
-    expect(screen.getByLabelText('Messages')).toBeInTheDocument()
+    // No notifications bell on the portal — it had no inbox behind it
+    // (AppTopbar's own doc-comment says to hide it until one exists).
+    expect(screen.queryByLabelText('Messages')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Account balance ¥1327.21')).toBeInTheDocument()
     expect(screen.getByText('Orders view')).toBeInTheDocument()
   })
