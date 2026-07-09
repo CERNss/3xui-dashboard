@@ -1,4 +1,5 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FleetResult, Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
@@ -81,8 +82,12 @@ beforeEach(() => {
       {
         node_id: 7,
         node_name: 'BWG US Node',
+        managed: true,
         inbound: makeInbound(),
       },
+    ],
+    client_states: [
+      { node_id: 7, inbound_tag: 'pool-1-45110', client_email: 'alice@example.com', managed: true, user_id: null },
     ],
   }
   nodes = [
@@ -134,5 +139,38 @@ describe('Clients', () => {
     expect(screen.getByText('alice@example.com')).toBeInTheDocument()
     expect(screen.getByText('0 B / 1.00 GiB')).toBeInTheDocument()
     expect(screen.queryByText(/1048576\.00 TiB/)).not.toBeInTheDocument()
+  })
+
+  it('hides external clients under the default managed scope and reveals them under All sources', async () => {
+    fleet.inbounds[0].inbound = makeInbound({
+      settings: JSON.stringify({
+        clients: [
+          { id: 'uuid-1', email: 'alice@example.com', enable: true },
+          { id: 'uuid-2', email: 'stranger@example.com', enable: true },
+        ],
+      }),
+    })
+    const user = userEvent.setup()
+    renderClients()
+
+    // Default scope = managed: only the ledger-annotated client shows.
+    expect(screen.getByText('alice@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('stranger@example.com')).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Source' }))
+    await user.click(await screen.findByTitle('All sources'))
+
+    expect(await screen.findByText('stranger@example.com')).toBeInTheDocument()
+    expect(screen.getByText('External')).toBeInTheDocument()
+  })
+
+  it('resolves the bound user from client_states instead of the panel subId', () => {
+    fleet.client_states = [
+      { node_id: 7, inbound_tag: 'pool-1-45110', client_email: 'alice@example.com', managed: true, user_id: 42 },
+    ]
+    users = { users: [{ id: 42, email: 'owner@example.com', email_verified: true, status: 'active', balance_cents: 0, auto_renew: false, sub_id: 's', created_at: '', updated_at: '' }], limit: 200, offset: 0 }
+    renderClients()
+
+    expect(screen.getByText('owner@example.com')).toBeInTheDocument()
   })
 })

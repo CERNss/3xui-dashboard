@@ -132,6 +132,9 @@ func (m *mockPanel) handle(w http.ResponseWriter, req *http.Request) {
 		// Distinct from /addClient (which is matched earlier in the switch).
 		m.handleAddInbound(w, req)
 
+	case strings.HasPrefix(req.URL.Path, "/panel/api/inbounds/del/"):
+		m.handleDelInbound(w, req)
+
 	default:
 		writeEnv(w, nil)
 	}
@@ -311,6 +314,27 @@ func (m *mockPanel) handleAddInbound(w http.ResponseWriter, req *http.Request) {
 	}
 	m.inbounds[tag] = in
 	writeEnv(w, *in)
+}
+
+// handleDelInbound mirrors POST /panel/api/inbounds/del/:id so a
+// dashboard delete actually disappears from subsequent /list reads.
+func (m *mockPanel) handleDelInbound(w http.ResponseWriter, req *http.Request) {
+	parts := strings.Split(req.URL.Path, "/")
+	// "" "panel" "api" "inbounds" "del" "<id>"
+	if len(parts) < 6 {
+		writeEnv(w, nil)
+		return
+	}
+	idStr := parts[5]
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for tag, in := range m.inbounds {
+		if intToStr(in.ID) == idStr {
+			delete(m.inbounds, tag)
+			break
+		}
+	}
+	writeEnv(w, nil)
 }
 
 // intToStr is a tiny helper to compare a path segment against an

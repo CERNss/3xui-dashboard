@@ -308,6 +308,7 @@ export const en = {
         auth: 'Auth secret',
         authPlaceholder: 'random hex / arbitrary string',
         bindUser: 'Bind to user',
+        bindUserEditHint: 'Binding is set at creation time and shown here read-only.',
         bindUserHint: 'Optional. Subscription / billing surfaces use this binding.',
         bindUserPlaceholder: 'Search by email',
         comment: 'Comment',
@@ -700,6 +701,15 @@ export const en = {
       toggleFailed: 'Toggle failed',
       trafficGB: 'Traffic GB',
       unitDays: 'days',
+    },
+    provenance: {
+      external: 'External',
+      externalHint: 'Created outside this dashboard',
+      managed: 'Managed',
+      scopeAll: 'All sources',
+      scopeExternal: 'External only',
+      scopeLabel: 'Source',
+      scopeManaged: 'Managed by panel',
     },
     provisioningPools: {
       add: 'New Pool',

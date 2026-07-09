@@ -37,11 +37,27 @@ export interface Inbound {
 export interface FleetInbound {
   node_id: number
   node_name: string
+  /** True when this dashboard created the inbound (provenance ledger). */
+  managed: boolean
   inbound: Inbound
+}
+
+/**
+ * Per-client provenance/user annotation, merged server-side from the
+ * managed_clients ledger + client_ownerships. Clients absent from
+ * this list are external (created outside the dashboard).
+ */
+export interface ClientState {
+  node_id: number
+  inbound_tag: string
+  client_email: string
+  managed: boolean
+  user_id?: number | null
 }
 
 export interface FleetResult {
   inbounds: FleetInbound[]
+  client_states?: ClientState[]
   node_errors?: Record<number, string>
 }
 

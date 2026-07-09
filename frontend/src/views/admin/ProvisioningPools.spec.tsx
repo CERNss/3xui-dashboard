@@ -115,6 +115,7 @@ beforeEach(() => {
     {
       node_id: 4,
       node_name: 'Node A',
+      managed: true,
       inbound: {
         id: 11,
         up: 0,

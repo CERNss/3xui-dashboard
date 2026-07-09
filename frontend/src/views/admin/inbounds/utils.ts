@@ -1,5 +1,27 @@
-import type { Client, FleetInbound, Inbound } from '@/api/admin/inbounds'
+import type { Client, ClientState, FleetInbound, Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
+
+// Ownership scope shared by the Inbounds and Clients pages. Default
+// view is "managed" — entities this dashboard created; "external" is
+// everything that pre-exists on the upstream panel.
+export const SCOPE_OPTIONS = ['managed', 'all', 'external'] as const
+export type ScopeFilter = (typeof SCOPE_OPTIONS)[number]
+
+export function matchesScope(managed: boolean, scope: ScopeFilter): boolean {
+  return scope === 'all' || (scope === 'managed') === managed
+}
+
+export function clientStateKey(nodeID: number, tag: string, email: string) {
+  return `${nodeID}|${tag}|${email}`
+}
+
+export function buildClientStateMap(states?: ClientState[]): Map<string, ClientState> {
+  const map = new Map<string, ClientState>()
+  for (const s of states ?? []) {
+    map.set(clientStateKey(s.node_id, s.inbound_tag, s.client_email), s)
+  }
+  return map
+}
 
 export const PROTOCOL_OPTIONS = [
   'vless',
@@ -57,10 +79,11 @@ export function protocolKey(protocol: string): ProtocolFilter | null {
   return (PROTOCOL_OPTIONS as readonly string[]).includes(normalized) ? (normalized as ProtocolFilter) : null
 }
 
-export function filterInbounds(rows: FleetInbound[], query: string, protocols: ProtocolFilter[]) {
+export function filterInbounds(rows: FleetInbound[], query: string, protocols: ProtocolFilter[], scope: ScopeFilter = 'all') {
   const q = query.trim().toLowerCase()
   const selected = new Set(protocols)
   return rows.filter((row) => {
+    if (!matchesScope(row.managed, scope)) return false
     const protocol = protocolKey(row.inbound.protocol)
     if (selected.size === 0) return false
     if (protocol ? !selected.has(protocol) : selected.size !== PROTOCOL_OPTIONS.length) return false

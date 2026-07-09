@@ -22,9 +22,9 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Client, FleetInbound, Inbound } from '@/api/admin/inbounds'
+import type { Client, ClientState, FleetInbound, Inbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
-import { ConfigListPage, RefreshButton } from '@/components/common'
+import { ConfigListPage, ProvenanceScopeSelect, RefreshButton } from '@/components/common'
 import {
   useAddClient,
   useInboundsFleet,
@@ -33,7 +33,16 @@ import {
 } from '@/hooks/queries/admin/inbounds'
 import { useNodesList } from '@/hooks/queries/admin/nodes'
 import { useUsersList } from '@/hooks/queries/admin/users'
-import { buildClientLink, formatBytes, formatLimit, parseClients } from './inbounds/utils'
+import {
+  buildClientLink,
+  buildClientStateMap,
+  clientStateKey,
+  formatBytes,
+  formatLimit,
+  matchesScope,
+  parseClients,
+  type ScopeFilter,
+} from './inbounds/utils'
 import { formatDateTime } from '@/utils/format'
 
 // Flattened "1 client per row" shape.
@@ -43,9 +52,11 @@ interface ClientRow {
   nodeID: number
   nodeName: string
   rowKey: string
+  /** Provenance + bound-user annotation; undefined = external client. */
+  state?: ClientState
 }
 
-function flatten(fleet: FleetInbound[] | undefined): ClientRow[] {
+function flatten(fleet: FleetInbound[] | undefined, states: Map<string, ClientState>): ClientRow[] {
   if (!fleet) return []
   const out: ClientRow[] = []
   for (const row of fleet) {
@@ -55,7 +66,8 @@ function flatten(fleet: FleetInbound[] | undefined): ClientRow[] {
         inbound: row.inbound,
         nodeID: row.node_id,
         nodeName: row.node_name,
-        rowKey: `${row.node_id}|${row.inbound.tag}|${c.email}`,
+        rowKey: clientStateKey(row.node_id, row.inbound.tag, c.email),
+        state: states.get(clientStateKey(row.node_id, row.inbound.tag, c.email)),
       })
     }
   }
@@ -97,10 +109,14 @@ export default function Clients() {
   const [protocolFilter, setProtocolFilter] = useState<string[]>([])
   const [nodeFilter, setNodeFilter] = useState<number[]>([])
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [scope, setScope] = useState<ScopeFilter>('managed')
   const [editor, setEditor] = useState<EditorState>({ open: false, mode: 'create', row: null })
   const [qr, setQr] = useState<{ title: string; url: string } | null>(null)
 
-  const rows = useMemo(() => flatten(fleetQuery.data?.inbounds), [fleetQuery.data])
+  const rows = useMemo(
+    () => flatten(fleetQuery.data?.inbounds, buildClientStateMap(fleetQuery.data?.client_states)),
+    [fleetQuery.data],
+  )
 
   const protocolOptions = useMemo(() => {
     const set = new Set(rows.map((r) => r.inbound.protocol))
@@ -118,6 +134,7 @@ export default function Clients() {
     const protoSet = new Set(protocolFilter)
     const nodeSet = new Set(nodeFilter)
     return rows.filter((r) => {
+      if (!matchesScope(r.state?.managed ?? false, scope)) return false
       if (protoSet.size > 0 && !protoSet.has(r.inbound.protocol)) return false
       if (nodeSet.size > 0 && !nodeSet.has(r.nodeID)) return false
       if (statusFilter === 'enabled' && r.client.enable === false) return false
@@ -131,7 +148,7 @@ export default function Clients() {
         (r.client.subId ?? '').toLowerCase().includes(q)
       )
     })
-  }, [rows, query, protocolFilter, nodeFilter, statusFilter])
+  }, [rows, query, protocolFilter, nodeFilter, statusFilter, scope])
 
   const users = useMemo(() => usersQuery.data?.users ?? [], [usersQuery.data])
   const nodes = useMemo(() => (nodesQuery.data ?? []) as Node[], [nodesQuery.data])
@@ -143,7 +160,7 @@ export default function Clients() {
   }, [users])
 
   const showQrFor = (row: ClientRow) => {
-    const fleetRow: FleetInbound = { node_id: row.nodeID, node_name: row.nodeName, inbound: row.inbound }
+    const fleetRow: FleetInbound = { node_id: row.nodeID, node_name: row.nodeName, managed: row.state?.managed ?? false, inbound: row.inbound }
     const url = buildClientLink(fleetRow, row.client, nodes)
     if (!url) return
     setQr({ title: `${row.inbound.tag} · ${row.client.email}`, url })
@@ -175,7 +192,10 @@ export default function Clients() {
       width: 240,
       render: (_v, row) => (
         <Space direction="vertical" size={0}>
-          <Typography.Text strong>{row.client.email}</Typography.Text>
+          <Space size={6}>
+            <Typography.Text strong>{row.client.email}</Typography.Text>
+            {!row.state?.managed ? <Tag color="orange">{t('admin.provenance.external')}</Tag> : null}
+          </Space>
           {row.client.comment ? (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>{row.client.comment}</Typography.Text>
           ) : null}
@@ -202,10 +222,14 @@ export default function Clients() {
       title: t('admin.clients.column.user'),
       key: 'user',
       width: 180,
-      render: (_v, row) =>
-        row.client.subId && userById.has(Number(row.client.subId))
-          ? <Typography.Text>{userById.get(Number(row.client.subId))}</Typography.Text>
-          : <Typography.Text type="secondary">{t('admin.clients.unbound')}</Typography.Text>,
+      // Authoritative bound user from client_ownerships (via
+      // client_states) — not the old subId heuristic, which missed
+      // every provisioned client (their subId is the 32-hex sub_id).
+      render: (_v, row) => {
+        const uid = row.state?.user_id
+        if (!uid) return <Typography.Text type="secondary">{t('admin.clients.unbound')}</Typography.Text>
+        return <Typography.Text>{userById.get(uid) ?? `#${uid}`}</Typography.Text>
+      },
     },
     {
       title: t('admin.clients.column.traffic'),
@@ -255,7 +279,7 @@ export default function Clients() {
       align: 'center',
       className: 'table-cell-actions',
       render: (_v, row) => {
-        const fleetRow: FleetInbound = { node_id: row.nodeID, node_name: row.nodeName, inbound: row.inbound }
+        const fleetRow: FleetInbound = { node_id: row.nodeID, node_name: row.nodeName, managed: row.state?.managed ?? false, inbound: row.inbound }
         const link = buildClientLink(fleetRow, row.client, nodes)
         return (
           <Space>
@@ -308,6 +332,7 @@ export default function Clients() {
               style={{ width: 260 }}
               onChange={(e) => setQuery(e.target.value)}
             />
+            <ProvenanceScopeSelect value={scope} onChange={setScope} />
             <Select
               mode="multiple"
               aria-label={t('admin.clients.filterNode')}
@@ -441,7 +466,9 @@ function clientFormDefaults(row: ClientRow | null): ClientFormValues {
     expiryTime: c.expiryTime && c.expiryTime > 0 ? new Date(c.expiryTime).toISOString().slice(0, 16) : '',
     comment: c.comment ?? '',
     enable: c.enable !== false,
-    userID: c.subId ? Number(c.subId) || undefined : undefined,
+    // Authoritative binding from the ownership row, not the panel
+    // subId field.
+    userID: row.state?.user_id ?? undefined,
   }
 }
 
@@ -495,7 +522,9 @@ function ClientEditorModal({ state, rows, users, busy, onClose, onCreate, onUpda
     } else if (proto === 'hysteria') {
       clientPayload.auth = values.password?.trim() || ''
     }
-    if (values.userID) clientPayload.subId = String(values.userID)
+    // Binding travels via the add endpoint's user_id field (writes a
+    // client_ownerships row) — the panel subId is no longer
+    // overloaded with the dashboard user id.
 
     if (state.mode === 'create') {
       if (!values.inboundKey) return
@@ -586,11 +615,19 @@ function ClientEditorModal({ state, rows, users, busy, onClose, onCreate, onUpda
             <Switch />
           </Form.Item>
         </Space>
-        <Form.Item name="userID" label={t('admin.clients.field.bindUser')} tooltip={t('admin.clients.field.bindUserHint')}>
+        <Form.Item
+          name="userID"
+          label={t('admin.clients.field.bindUser')}
+          tooltip={state.mode === 'edit' ? t('admin.clients.field.bindUserEditHint') : t('admin.clients.field.bindUserHint')}
+        >
           <Select
             allowClear
             showSearch
             optionFilterProp="label"
+            // Edit-time rebinding has no backend path today; show the
+            // authoritative binding read-only instead of silently
+            // ignoring changes.
+            disabled={state.mode === 'edit'}
             placeholder={t('admin.clients.field.bindUserPlaceholder')}
             options={users.map((u) => ({ label: u.email ?? `#${u.id}`, value: u.id }))}
           />

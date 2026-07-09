@@ -43,12 +43,13 @@ type PlanParams struct {
 // Service composes the runtime manager, the user/plan/ownership
 // repositories, and the logger. Construct once at startup.
 type Service struct {
-	rt        *runtime.Manager
-	ownership *repository.ClientOwnershipRepo
-	users     UserLookup
-	plans     PlanLookup
-	wg        *WGProvisioner // optional; nil when WG_MASTER_KEY not set
-	log       *slog.Logger
+	rt         *runtime.Manager
+	ownership  *repository.ClientOwnershipRepo
+	provenance *repository.ProvenanceRepo // optional; nil disables the managed-clients ledger
+	users      UserLookup
+	plans      PlanLookup
+	wg         *WGProvisioner // optional; nil when WG_MASTER_KEY not set
+	log        *slog.Logger
 }
 
 // SetWGProvisioner attaches the WG provisioner so ProvisionClient
@@ -98,13 +99,32 @@ type PlanLookup interface {
 }
 
 // New constructs the service.
-func New(rt *runtime.Manager, ownership *repository.ClientOwnershipRepo, users UserLookup, plans PlanLookup, lg *slog.Logger) *Service {
+func New(rt *runtime.Manager, ownership *repository.ClientOwnershipRepo, provenance *repository.ProvenanceRepo, users UserLookup, plans PlanLookup, lg *slog.Logger) *Service {
 	return &Service{
-		rt:        rt,
-		ownership: ownership,
-		users:     users,
-		plans:     plans,
-		log:       lg.With(slog.String("component", "service.client")),
+		rt:         rt,
+		ownership:  ownership,
+		provenance: provenance,
+		users:      users,
+		plans:      plans,
+		log:        lg.With(slog.String("component", "service.client")),
+	}
+}
+
+// recordClient stamps the managed-clients provenance ledger after a
+// successful panel-side create. Best-effort by design: the panel
+// write already happened, so a ledger failure only degrades the
+// managed/external classification — warn, never fail the caller.
+func (s *Service) recordClient(ctx context.Context, nodeID int64, inboundTag, email string) {
+	if s.provenance == nil || email == "" {
+		return
+	}
+	if err := s.provenance.RecordClient(ctx, nodeID, inboundTag, email); err != nil {
+		s.log.Warn("provenance record failed after client create",
+			slog.Int64("node_id", nodeID),
+			slog.String("inbound", inboundTag),
+			slog.String("email", email),
+			slog.String("err", err.Error()),
+		)
 	}
 }
 
@@ -226,6 +246,7 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 	if err != nil {
 		return nil, err
 	}
+	s.recordClient(ctx, nodeID, inboundTag, clientEmail)
 	s.log.Info("provisioned client",
 		slog.Int64("user_id", userID),
 		slog.Int64("node_id", nodeID),
@@ -253,6 +274,10 @@ func (s *Service) AddClientDirect(ctx context.Context, nodeID int64, inboundTag 
 	if err := r.AddClient(ctx, inboundTag, c); err != nil {
 		return nil, err
 	}
+	// Provenance: dashboard created this client, with or without a
+	// bound user. This is what keeps unbound direct-adds classified
+	// as managed instead of leaking into the "external" bucket.
+	s.recordClient(ctx, nodeID, inboundTag, c.Email)
 	// Optional ownership upsert when an owner is named.
 	if userID > 0 && c.Email != "" {
 		var expiry *time.Time
@@ -380,6 +405,11 @@ func (s *Service) DeleteClient(ctx context.Context, nodeID int64, inboundTag, cl
 	}
 	if err := s.ownership.ClearForClient(ctx, nodeID, inboundTag, clientEmail); err != nil {
 		return err
+	}
+	if s.provenance != nil {
+		if err := s.provenance.ForgetClient(ctx, nodeID, inboundTag, clientEmail); err != nil {
+			return fmt.Errorf("client deleted on panel but provenance cleanup failed (retry the delete): %w", err)
+		}
 	}
 	return nil
 }

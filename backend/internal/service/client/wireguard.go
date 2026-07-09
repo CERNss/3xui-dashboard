@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/cern/3xui-dashboard/internal/model"
 	"github.com/cern/3xui-dashboard/internal/repository"
@@ -228,6 +229,13 @@ func (p *WGProvisioner) ProvisionPeer(ctx context.Context, userID, nodeID int64,
 			return err
 		}
 		peerOut = peer
+		// Provenance ledger, in-tx like the ownership write (a second
+		// pool connection here risks the PrepareStmt deadlock noted in
+		// RemovePeer).
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&model.ManagedClient{NodeID: nodeID, InboundTag: inboundTag, ClientEmail: clientEmail}).Error; err != nil {
+			return fmt.Errorf("record managed client: %w", err)
+		}
 		return nil
 	})
 	if err != nil {
@@ -308,6 +316,12 @@ func (p *WGProvisioner) RemovePeer(ctx context.Context, nodeID int64, inboundTag
 			Where("node_id = ? AND inbound_tag = ? AND client_email = ?", nodeID, inboundTag, clientEmail).
 			Delete(&model.ClientOwnership{}).Error; err != nil {
 			return fmt.Errorf("clear ownership in tx: %w", err)
+		}
+		// Provenance ledger row goes with the peer (same in-tx rule).
+		if err := tx.WithContext(ctx).
+			Where("node_id = ? AND inbound_tag = ? AND client_email = ?", nodeID, inboundTag, clientEmail).
+			Delete(&model.ManagedClient{}).Error; err != nil {
+			return fmt.Errorf("clear managed client in tx: %w", err)
 		}
 		return nil
 	})

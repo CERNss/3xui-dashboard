@@ -178,6 +178,7 @@ beforeEach(() => {
       {
         node_id: 1,
         node_name: 'tokyo-1',
+        managed: true,
         inbound: {
           id: 1,
           tag: 'vless-1',

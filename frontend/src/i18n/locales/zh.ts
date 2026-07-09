@@ -308,6 +308,7 @@ export const zh = {
         auth: 'Auth 密钥',
         authPlaceholder: '随机 hex / 任意字符串',
         bindUser: '绑定到用户',
+        bindUserEditHint: '绑定关系在创建时确定，此处只读展示',
         bindUserHint: '可选。订阅/计费会用到这个绑定',
         bindUserPlaceholder: '按 email 搜索',
         comment: '备注',
@@ -700,6 +701,15 @@ export const zh = {
       toggleFailed: '切换失败',
       trafficGB: '流量（GB，0=∞）',
       unitDays: '天',
+    },
+    provenance: {
+      external: '外部',
+      externalHint: '在本面板之外创建',
+      managed: '本系统',
+      scopeAll: '全部来源',
+      scopeExternal: '仅外部',
+      scopeLabel: '来源',
+      scopeManaged: '本系统管理',
     },
     provisioningPools: {
       add: '新建分配池',
