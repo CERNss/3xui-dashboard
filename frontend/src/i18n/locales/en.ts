@@ -697,6 +697,12 @@ export const en = {
       saving: 'Saving…',
       subtitle: 'Define which plans users can buy · disabled plans are hidden from the portal',
       submit: 'Save',
+      sync: {
+        action: 'Sync to subscribers',
+        done: 'Synced {users} subscriber(s): {refreshed} refreshed, +{added} / -{removed}',
+        failed: 'Plan saved, but subscriber sync failed: {error}',
+        partial: 'Synced {users} subscriber(s) with {errors} error(s): {refreshed} refreshed, +{added} / -{removed}',
+      },
       title: 'Plans',
       toggleFailed: 'Toggle failed',
       trafficGB: 'Traffic GB',

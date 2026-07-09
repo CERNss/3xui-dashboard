@@ -2,15 +2,16 @@ import {
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, App, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfigListPage, RefreshButton } from '@/components/common'
-import type { AdminPlan, CreatePlanInput } from '@/api/admin/plans'
+import type { AdminPlan, CreatePlanInput, PlanSyncSummary } from '@/api/admin/plans'
 import type { ProvisioningPool } from '@/api/admin/provisioningPools'
-import { useCreatePlan, usePlansList, useRemovePlan, useUpdatePlan } from '@/hooks/queries/admin/plans'
+import { useCreatePlan, usePlansList, useRemovePlan, useSyncPlan, useUpdatePlan } from '@/hooks/queries/admin/plans'
 import { useProvisioningPoolsList } from '@/hooks/queries/admin/provisioningPools'
 
 const BYTES_PER_GB = 1024 * 1024 * 1024
@@ -83,6 +84,7 @@ function poolName(pools: ProvisioningPool[], fallback: string, id?: number | nul
 
 export default function Plans() {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [form] = Form.useForm<PlanFormValues>()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<AdminPlan | null>(null)
@@ -91,7 +93,30 @@ export default function Plans() {
   const poolsQuery = useProvisioningPoolsList()
   const createPlan = useCreatePlan()
   const updatePlan = useUpdatePlan()
+  const syncPlan = useSyncPlan()
   const removePlan = useRemovePlan()
+
+  const reportSync = (sync?: PlanSyncSummary, syncError?: string) => {
+    if (syncError) {
+      void message.warning(t('admin.plans.sync.failed', { error: syncError }))
+      return
+    }
+    if (!sync) return
+    if (sync.errors?.length) {
+      void message.warning(
+        t('admin.plans.sync.partial', {
+          users: sync.users, refreshed: sync.refreshed, added: sync.added,
+          removed: sync.removed, errors: sync.errors.length,
+        }),
+      )
+      return
+    }
+    void message.success(
+      t('admin.plans.sync.done', {
+        users: sync.users, refreshed: sync.refreshed, added: sync.added, removed: sync.removed,
+      }),
+    )
+  }
 
   const plans = plansQuery.data ?? []
   const pools = poolsQuery.data ?? []
@@ -131,7 +156,8 @@ export default function Plans() {
     if (!values) return
     const payload = formToPayload(values)
     if (editing) {
-      await updatePlan.mutateAsync({ id: editing.id, input: payload })
+      const result = await updatePlan.mutateAsync({ id: editing.id, input: payload })
+      reportSync(result.sync, result.sync_error)
     } else {
       await createPlan.mutateAsync(payload)
     }
@@ -140,6 +166,11 @@ export default function Plans() {
 
   const togglePlan = async (plan: AdminPlan) => {
     await updatePlan.mutateAsync({ id: plan.id, input: { enabled: !plan.enabled } })
+  }
+
+  const runSync = async (plan: AdminPlan) => {
+    const sync = await syncPlan.mutateAsync(plan.id)
+    reportSync(sync)
   }
 
   const confirmDelete = (plan: AdminPlan) => {
@@ -214,10 +245,16 @@ export default function Plans() {
       key: 'actions',
       align: 'center',
       className: 'table-cell-actions',
-      width: 112,
+      width: 152,
       render: (_value, plan) => (
         <Space>
           <Button aria-label={`${t('admin.plans.edit')} ${plan.name}`} icon={<EditOutlined />} onClick={() => openEdit(plan)} />
+          <Button
+            aria-label={`${t('admin.plans.sync.action')} ${plan.name}`}
+            title={t('admin.plans.sync.action')}
+            icon={<SyncOutlined spin={syncPlan.isPending} />}
+            onClick={() => void runSync(plan)}
+          />
           <Button
             danger
             aria-label={`${t('admin.plans.delete')} ${plan.name}`}

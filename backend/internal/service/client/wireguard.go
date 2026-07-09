@@ -189,6 +189,9 @@ func (p *WGProvisioner) ProvisionPeer(ctx context.Context, userID, nodeID int64,
 		// Save so we don't need a second Upsert pass after the tx
 		// commits.
 		newExpiry := computeExpiry(time.Now().UTC(), existingOwn, params.DurationDays)
+		if params.ExpiresAtOverride != nil {
+			newExpiry = *params.ExpiresAtOverride
+		}
 		var expiresAt *time.Time
 		if !newExpiry.IsZero() {
 			v := newExpiry

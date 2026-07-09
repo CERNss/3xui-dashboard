@@ -71,6 +71,19 @@ func (r *ClientOwnershipRepo) ClearForClient(ctx context.Context, nodeID int64, 
 	return nil
 }
 
+// ListByPlan returns every ownership row provisioned from planID.
+// Drives the plan-edit → subscriber sync fan-out.
+func (r *ClientOwnershipRepo) ListByPlan(ctx context.Context, planID int64) ([]model.ClientOwnership, error) {
+	var rows []model.ClientOwnership
+	if err := r.db.WithContext(ctx).
+		Where("plan_id = ?", planID).
+		Order("user_id ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("ClientOwnership.ListByPlan: %w", err)
+	}
+	return rows, nil
+}
+
 // ListByUser returns every ownership row owned by userID, used by
 // the central subscription assembler and the user-portal traffic
 // view.

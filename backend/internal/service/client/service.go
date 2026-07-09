@@ -38,6 +38,11 @@ type PlanParams struct {
 	DurationDays      int    // 0 = non-expiring
 	TrafficLimitBytes int64  // 0 = unlimited
 	IPLimit           int    // 0 = unlimited
+	// ExpiresAtOverride pins the resulting expiry instead of running
+	// the duration math. Plan-sync uses it so a pool target added to
+	// an existing subscriber inherits their current expiry rather
+	// than starting a fresh window. Nil = normal duration behaviour.
+	ExpiresAtOverride *time.Time
 }
 
 // Service composes the runtime manager, the user/plan/ownership
@@ -189,6 +194,9 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 
 	now := time.Now().UTC()
 	newExpiry := computeExpiry(now, existing, params.DurationDays)
+	if params.ExpiresAtOverride != nil {
+		newExpiry = *params.ExpiresAtOverride
+	}
 	newLimit := params.TrafficLimitBytes
 
 	wireClient := buildWireClient(in.Protocol, clientEmail, user.SubID, newExpiry, newLimit, params.IPLimit)
@@ -381,6 +389,67 @@ func (s *Service) SetClientEnabled(ctx context.Context, nodeID int64, inboundTag
 	return fmt.Errorf("SetClientEnabled: client %q not found on inbound %q", email, inboundTag)
 }
 
+// RefreshClientLimits pushes new traffic/IP limits to the panel
+// client AND the ownership row without touching expiry, credentials,
+// or the traffic counter — the pure "plan edit" propagation used by
+// billing.SyncPlanSubscribers. WireGuard rows update the ownership
+// row only (WG quotas are enforced dashboard-side; the panel peer
+// has no per-peer limit fields).
+func (s *Service) RefreshClientLimits(ctx context.Context, nodeID int64, inboundTag, email string, trafficLimitBytes int64, ipLimit int) error {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	in, err := r.GetInbound(ctx, inboundTag)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInboundLookup, err)
+	}
+	if !in.IsWireguard() {
+		settings := struct {
+			Clients []runtime.Client `json:"clients"`
+		}{}
+		if in.Settings != "" {
+			if err := json.Unmarshal([]byte(in.Settings), &settings); err != nil {
+				return fmt.Errorf("RefreshClientLimits: decode settings: %w", err)
+			}
+		}
+		found := false
+		for i := range settings.Clients {
+			if settings.Clients[i].Email != email {
+				continue
+			}
+			found = true
+			if settings.Clients[i].TotalGB != trafficLimitBytes || settings.Clients[i].LimitIP != ipLimit {
+				settings.Clients[i].TotalGB = trafficLimitBytes
+				settings.Clients[i].LimitIP = ipLimit
+				if err := r.UpdateClient(ctx, inboundTag, settings.Clients[i]); err != nil {
+					return fmt.Errorf("RefreshClientLimits: panel update: %w", err)
+				}
+			}
+			break
+		}
+		if !found {
+			return fmt.Errorf("RefreshClientLimits: client %q not found on inbound %q", email, inboundTag)
+		}
+	}
+	own, err := s.ownership.GetByTriple(ctx, nodeID, inboundTag, email)
+	if err != nil {
+		return err
+	}
+	if own != nil {
+		var lim *int64
+		if trafficLimitBytes > 0 {
+			v := trafficLimitBytes
+			lim = &v
+		}
+		own.TrafficLimitBytes = lim
+		if _, err := s.ownership.Upsert(ctx, own); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FetchSnapshot returns the dashboard-side composite — inbounds +
 // online emails + last-online map — for one node. Frontend uses this
 // when expanding an inbound row to show per-client online status.
@@ -394,8 +463,15 @@ func (s *Service) FetchSnapshot(ctx context.Context, nodeID int64) (*runtime.Tra
 
 // DeleteClient removes the panel-side client and clears the
 // ownership row. Idempotent — missing client or missing ownership
-// is success.
+// is success. WireGuard ownerships are delegated to the peer RMW
+// path (the panel has no /clients/del for WG peers).
 func (s *Service) DeleteClient(ctx context.Context, nodeID int64, inboundTag, clientEmail string) error {
+	if s.wg != nil {
+		if own, err := s.ownership.GetByTriple(ctx, nodeID, inboundTag, clientEmail); err == nil &&
+			own != nil && own.Protocol == "wireguard" {
+			return s.wg.RemovePeer(ctx, nodeID, inboundTag, clientEmail)
+		}
+	}
 	r, err := s.rt.Get(ctx, nodeID)
 	if err != nil {
 		return err

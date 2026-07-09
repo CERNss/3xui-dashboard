@@ -697,6 +697,12 @@ export const zh = {
       saving: '保存中…',
       subtitle: '定义可购买的套餐 · 已禁用套餐不会出现在用户端',
       submit: '保存',
+      sync: {
+        action: '同步到已购用户',
+        done: '已同步 {users} 个用户：刷新 {refreshed}，新增 {added}，移除 {removed}',
+        failed: '套餐已保存，但同步到已购用户失败：{error}',
+        partial: '已同步 {users} 个用户（{errors} 个错误）：刷新 {refreshed}，新增 {added}，移除 {removed}',
+      },
       title: '套餐管理',
       toggleFailed: '切换失败',
       trafficGB: '流量（GB，0=∞）',

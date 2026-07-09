@@ -9,6 +9,7 @@ import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 const createMutateAsync = vi.fn()
 const updateMutateAsync = vi.fn()
+const syncMutateAsync = vi.fn()
 const removeMutateAsync = vi.fn()
 const plansRefetch = vi.fn()
 const poolsRefetch = vi.fn()
@@ -27,6 +28,7 @@ vi.mock('@/hooks/queries/admin/plans', () => ({
   }),
   useCreatePlan: () => ({ error: null, isPending: false, mutateAsync: createMutateAsync }),
   useUpdatePlan: () => ({ error: null, isPending: false, mutateAsync: updateMutateAsync }),
+  useSyncPlan: () => ({ error: null, isPending: false, mutateAsync: syncMutateAsync }),
   useRemovePlan: () => ({ error: null, isPending: false, mutateAsync: removeMutateAsync }),
 }))
 
@@ -71,6 +73,7 @@ beforeEach(() => {
   loading = false
   createMutateAsync.mockResolvedValue({})
   updateMutateAsync.mockResolvedValue({})
+  syncMutateAsync.mockReset()
   removeMutateAsync.mockResolvedValue({})
   plansRefetch.mockReset()
   poolsRefetch.mockReset()
@@ -78,6 +81,19 @@ beforeEach(() => {
 })
 
 describe('Plans', () => {
+  it('runs the subscriber sync from the row action and reports the summary', async () => {
+    const user = userEvent.setup()
+    // Set AFTER beforeEach — its trailing vi.restoreAllMocks() wipes
+    // implementations configured earlier in the hook.
+    syncMutateAsync.mockResolvedValue({ plan_id: 7, users: 2, refreshed: 3, added: 1, removed: 0 })
+    renderPlans()
+
+    await user.click(screen.getByRole('button', { name: /Sync to subscribers/ }))
+
+    expect(syncMutateAsync).toHaveBeenCalledWith(7)
+    expect(await screen.findByText(/Synced 2 subscriber/)).toBeInTheDocument()
+  })
+
   it('renders plans through ResponsiveListTable with pool lookup text', () => {
     renderPlans()
 

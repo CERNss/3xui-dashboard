@@ -34,6 +34,16 @@ export function useUpdatePlan() {
   })
 }
 
+export function useSyncPlan() {
+  const queryClient = useQueryClient()
+  const handleError = useMutationErrorHandler()
+  return useMutation({
+    mutationFn: (id: number) => adminPlansApi.sync(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.root }),
+    onError: (error) => handleError(error),
+  })
+}
+
 export function useRemovePlan() {
   const queryClient = useQueryClient()
   const handleError = useMutationErrorHandler()

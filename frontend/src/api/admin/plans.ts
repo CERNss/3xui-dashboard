@@ -28,6 +28,27 @@ export interface CreatePlanInput {
 
 export type UpdatePlanInput = Partial<CreatePlanInput>
 
+/** What a plan→subscriber mirror pass did (backend SyncSummary). */
+export interface PlanSyncSummary {
+  plan_id: number
+  users: number
+  refreshed: number
+  added: number
+  removed: number
+  errors?: string[]
+}
+
+/**
+ * PUT /plans/:id saves AND immediately mirrors the plan onto its
+ * subscribers; `sync` reports the pass, `sync_error` is set when the
+ * save landed but the mirror pass itself failed (retry via sync()).
+ */
+export interface UpdatePlanResult {
+  plan: AdminPlan
+  sync?: PlanSyncSummary
+  sync_error?: string
+}
+
 export const adminPlansApi = {
   /** Lists ALL plans including disabled. */
   list: () => adminClient.get<{ plans: AdminPlan[] }>('/plans').then((r) => r.data.plans),
@@ -36,7 +57,11 @@ export const adminPlansApi = {
     adminClient.post<AdminPlan>('/plans', input).then((r) => r.data),
 
   update: (id: number, input: UpdatePlanInput) =>
-    adminClient.put<AdminPlan>(`/plans/${id}`, input).then((r) => r.data),
+    adminClient.put<UpdatePlanResult>(`/plans/${id}`, input).then((r) => r.data),
+
+  /** Manual re-run of the subscriber mirror (retry after node outages). */
+  sync: (id: number) =>
+    adminClient.post<PlanSyncSummary>(`/plans/${id}/sync`).then((r) => r.data),
 
   remove: (id: number) => adminClient.delete<void>(`/plans/${id}`),
 }
