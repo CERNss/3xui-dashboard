@@ -26,6 +26,7 @@ func (h *PlanHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	p.POST("", h.Create)
 	p.PUT("/:id", h.Update)
 	p.DELETE("/:id", h.Delete)
+	p.POST("/:id/sync", h.SyncSubscribers)
 
 	o := rg.Group("/orders")
 	o.GET("", h.ListOrders)
@@ -74,7 +75,37 @@ func (h *PlanHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, updated)
+	// Full-mirror policy: saving a plan immediately propagates its
+	// content (limits + pool target set) to everyone who bought it.
+	// A sync failure does NOT roll back the save — the plan row is
+	// already updated; the response carries sync_error so the admin
+	// can retry via POST /plans/:id/sync.
+	out := gin.H{"plan": updated}
+	if sync, err := h.svc.SyncPlanSubscribers(c.Request.Context(), id); err != nil {
+		out["sync_error"] = err.Error()
+	} else {
+		out["sync"] = sync
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// SyncSubscribers re-runs the plan→subscriber mirror on demand —
+// the retry path after node outages left Summary.Errors non-empty.
+func (h *PlanHandler) SyncSubscribers(c *gin.Context) {
+	id, ok := parseInt64(c, "id")
+	if !ok {
+		return
+	}
+	sync, err := h.svc.SyncPlanSubscribers(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, billing.ErrPlanNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, sync)
 }
 
 func (h *PlanHandler) Delete(c *gin.Context) {

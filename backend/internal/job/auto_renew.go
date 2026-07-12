@@ -120,19 +120,6 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 		return
 	}
 
-	// Dedup per (ownership, day-of-expiry) so a user with a 30-day
-	// plan can renew once each cycle without us hammering them on
-	// every cron tick.
-	dedupKind := autoRenewDedupKind(o)
-	already, err := j.logs.AlreadySent(ctx, model.SurfaceNotification, dedupKind, o.ID)
-	if err != nil {
-		j.log.Warn("dedup check failed (proceeding may double-charge)",
-			slog.Int64("ownership_id", o.ID), slog.String("err", err.Error()))
-	}
-	if already {
-		return
-	}
-
 	plan, err := j.plans.Get(ctx, *o.PlanID)
 	if err != nil || plan == nil {
 		j.log.Warn("plan lookup failed",
@@ -142,6 +129,28 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 	if !plan.Enabled {
 		j.log.Info("plan disabled, skip auto-renew",
 			slog.Int64("user_id", user.ID), slog.Int64("plan_id", plan.ID))
+		return
+	}
+
+	// Dedup scope depends on the plan shape:
+	//   - pool-backed plans fan out to N ownerships per purchase, so
+	//     the renewal (and its charge) must happen ONCE per
+	//     (user, plan, day) — the single fan-out Purchase below
+	//     extends every target. Per-ownership dedup here would charge
+	//     the full plan price once PER TARGET.
+	//   - explicit-target plans keep the historic per-(ownership,
+	//     expiry-day) key.
+	poolPlan := plan.ProvisioningPoolID != nil
+	dedupKind, dedupRef := autoRenewDedupKind(o), o.ID
+	if poolPlan {
+		dedupKind, dedupRef = autoRenewPlanDedupKind(plan.ID, now), user.ID
+	}
+	already, err := j.logs.AlreadySent(ctx, model.SurfaceNotification, dedupKind, dedupRef)
+	if err != nil {
+		j.log.Warn("dedup check failed (proceeding may double-charge)",
+			slog.Int64("ownership_id", o.ID), slog.String("err", err.Error()))
+	}
+	if already {
 		return
 	}
 
@@ -155,7 +164,7 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 	if user.Email != nil {
 		recipient = *user.Email
 	}
-	if err := j.logs.MarkSent(ctx, model.SurfaceNotification, dedupKind, o.ID, recipient); err != nil {
+	if err := j.logs.MarkSent(ctx, model.SurfaceNotification, dedupKind, dedupRef, recipient); err != nil {
 		j.log.Warn("dedup record failed", slog.Int64("ownership_id", o.ID), slog.String("err", err.Error()))
 		// Don't proceed — risk of double-charge outweighs missing one renewal.
 		return
@@ -166,15 +175,24 @@ func (j *AutoRenewJob) process(ctx context.Context, o *model.ClientOwnership, no
 		return
 	}
 
+	// Pool plans renew WITHOUT pinning the snapshot target: the
+	// purchase re-resolves the pool, so the renewal lands on the
+	// plan's CURRENT node set (targets added since purchase get
+	// provisioned; targets since removed are not renewed). Explicit
+	// single-target ownerships keep the pinned path — they have no
+	// pool to re-resolve.
 	idem := autoRenewIdempotencyKey(o, now)
-	order, err := j.billing.Purchase(ctx, billing.PurchaseInput{
-		UserID:              user.ID,
-		PlanID:              plan.ID,
-		IdempotencyKey:      idem,
-		NodeID:              o.NodeID,
-		InboundTag:          o.InboundTag,
-		AllowExplicitTarget: true,
-	})
+	input := billing.PurchaseInput{
+		UserID:         user.ID,
+		PlanID:         plan.ID,
+		IdempotencyKey: idem,
+	}
+	if !poolPlan {
+		input.NodeID = o.NodeID
+		input.InboundTag = o.InboundTag
+		input.AllowExplicitTarget = true
+	}
+	order, err := j.billing.Purchase(ctx, input)
 	if err != nil {
 		j.log.Error("auto-renew Purchase failed",
 			slog.Int64("user_id", user.ID),
@@ -289,6 +307,15 @@ func autoRenewDedupKind(o *model.ClientOwnership) string {
 		day = o.ExpiresAt.UTC().Format("2006-01-02")
 	}
 	return "auto_renew_" + day
+}
+
+// autoRenewPlanDedupKind scopes pool-plan renewals to (plan, tick
+// day) with the USER id as the log ref — one fan-out renewal per
+// user+plan per day, no matter how many of its ownership rows expire
+// in the window (they typically share an expiry, but sync-added
+// targets make staggered rows possible).
+func autoRenewPlanDedupKind(planID int64, now time.Time) string {
+	return fmt.Sprintf("auto_renew_plan_%d_%s", planID, now.UTC().Format("2006-01-02"))
 }
 
 // autoRenewIdempotencyKey is per-attempt — combining ownership

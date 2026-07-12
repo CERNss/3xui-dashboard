@@ -407,6 +407,71 @@ body::after {
   min-height: 36px;
 }
 
+/* Admin account row in the sidebar foot — mirrors the mockup's .urow. */
+.admin-sidebar-account-slot {
+  margin-bottom: 4px;
+}
+
+.admin-sidebar-account {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--rs);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  transition: background 130ms ease;
+  width: 100%;
+}
+
+.admin-sidebar-account:hover {
+  background: var(--surface2);
+}
+
+.admin-sidebar-account-avatar {
+  align-items: center;
+  background: var(--pur-soft);
+  border-radius: 9px;
+  color: var(--pur);
+  display: flex;
+  flex-shrink: 0;
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 700;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.admin-sidebar-account-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-sidebar-account-name {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-sidebar-account-role {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.admin-sidebar-account-chevron {
+  color: var(--faint);
+  font-size: 12px;
+  margin-left: auto;
+}
+
 .admin-topbar.ant-layout-header {
   backdrop-filter: blur(8px);
   background: var(--elev);
@@ -484,6 +549,83 @@ body::after {
   display: flex;
   flex: 0 0 auto;
   gap: 10px;
+}
+
+/* Admin topbar search box — decorative ⌘K affordance from the mockup. */
+.admin-topbar-search {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--rs);
+  color: var(--faint);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 13px;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  transition: border-color 160ms ease, background-color 160ms ease;
+  width: 210px;
+}
+
+.admin-topbar-search:hover {
+  background: var(--surface2);
+  border-color: var(--border2);
+}
+
+.admin-topbar-search-text {
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-topbar-search-kbd {
+  background: var(--surface3);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  margin-left: auto;
+  padding: 1px 6px;
+}
+
+.admin-topbar-divider {
+  background: var(--border);
+  height: 22px;
+  width: 1px;
+}
+
+/* Dark/light theme-toggle pill (admin topbar). */
+.admin-topbar-theme {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 0;
+  padding: 3px;
+}
+
+.admin-topbar-theme-opt {
+  align-items: center;
+  border-radius: 999px;
+  color: var(--faint);
+  display: flex;
+  font-size: 14px;
+  height: 24px;
+  justify-content: center;
+  transition: background 200ms ease, color 200ms ease;
+  width: 28px;
+}
+
+.admin-topbar-theme-opt[data-active='true'] {
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .admin-topbar-icon-button,
@@ -1159,6 +1301,111 @@ body::after {
   margin-bottom: 8px;
 }
 
+/* Admin metric cards (e.g. Users page) — mirrors the mockup's .mcard:
+ * colored icon + trend pill + big display value + muted label. */
+.admin-stat-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--rl);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  transition: border-color 150ms ease;
+}
+
+.admin-stat-card:hover {
+  border-color: var(--border2);
+}
+
+.admin-stat-card-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.admin-stat-card-icon {
+  align-items: center;
+  border-radius: 9px;
+  display: flex;
+  font-size: 16px;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.admin-stat-card-icon--b {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.admin-stat-card-icon--g {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.admin-stat-card-icon--a {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.admin-stat-card-icon--p {
+  background: var(--pur-soft);
+  color: var(--pur);
+}
+
+.admin-stat-card-trend {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  gap: 3px;
+  padding: 2px 7px;
+}
+
+.admin-stat-card-trend--up {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.admin-stat-card-trend--flat {
+  background: var(--surface3);
+  color: var(--faint);
+}
+
+.admin-stat-card-value {
+  font-family: var(--disp);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.admin-stat-card-label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 7px;
+}
+
+@media (max-width: 1100px) {
+  .admin-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .config-list-page-list {
   min-width: 0;
 }
@@ -1334,6 +1581,42 @@ body::after {
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   padding: 16px;
+}
+
+/* Card-grid lists (e.g. portal plans) float their cards directly on the
+ * page — drop the panel border/background the table list path applies. */
+.config-list-page--viewport .config-list-page-list.config-list-page-card-grid,
+.dark .config-list-page--viewport .config-list-page-list.config-list-page-card-grid {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+/* Portal plans: compact, left-aligned cards (~360px) instead of a single
+ * full-width stretch — mirrors the mockup's .plan card. */
+.portal-plans-grid {
+  align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 360px));
+  justify-content: start;
+}
+
+/* Balance pill shown in the portal page header (orders / plans). */
+.portal-balance-pill {
+  align-items: baseline;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.portal-balance-pill b {
+  color: var(--text);
+  font-family: var(--disp);
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .config-list-page-card-stack {
@@ -4591,6 +4874,29 @@ select.settings-data-native-control {
 
 .auth-login-card .ant-form-item {
   margin-bottom: 20px;
+}
+
+/* "记住我 / 忘记密码?" row — mirrors the mockup's .row-between, sitting
+ * between the password field and the submit button. */
+.auth-remember-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: -2px 0 22px;
+}
+
+.auth-remember-row .ant-checkbox-wrapper {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.auth-forgot.ant-typography {
+  color: var(--brand);
+  font-size: 12.5px;
+}
+
+.auth-forgot.ant-typography:hover {
+  text-decoration: underline;
 }
 
 /* Give the field labels (邮箱 / 密码 / verification code) breathing

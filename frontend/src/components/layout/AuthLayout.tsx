@@ -68,7 +68,8 @@ export function AuthLayout({ cardSubtitle, cardTitle, children }: AuthLayoutProp
   const themeMode = useThemeStore((state) => state.resolvedTheme)
   const toggleTheme = useThemeStore((state) => state.toggle)
   const title = branding?.title ?? t('app.title')
-  const subtitle = branding?.description ?? branding?.subtitle
+  const subtitle = branding?.description ?? branding?.subtitle ?? t('brand.slogan')
+  const footer = branding?.footer ?? t('brand.footer')
   const nextThemeLabel = themeMode === 'dark' ? t('theme.light') : t('theme.dark')
   const toggleThemeLabel = themeMode === 'dark' ? t('theme.toggleLight') : t('theme.toggleDark')
 
@@ -112,9 +113,9 @@ export function AuthLayout({ cardSubtitle, cardTitle, children }: AuthLayoutProp
         ) : (
           children ?? <Outlet />
         )}
-        {branding?.footer ? (
+        {footer ? (
           <Typography.Text className="auth-footer" type="secondary">
-            {branding.footer}
+            {footer}
           </Typography.Text>
         ) : null}
       </div>

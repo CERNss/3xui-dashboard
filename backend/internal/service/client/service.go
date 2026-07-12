@@ -38,17 +38,23 @@ type PlanParams struct {
 	DurationDays      int    // 0 = non-expiring
 	TrafficLimitBytes int64  // 0 = unlimited
 	IPLimit           int    // 0 = unlimited
+	// ExpiresAtOverride pins the resulting expiry instead of running
+	// the duration math. Plan-sync uses it so a pool target added to
+	// an existing subscriber inherits their current expiry rather
+	// than starting a fresh window. Nil = normal duration behaviour.
+	ExpiresAtOverride *time.Time
 }
 
 // Service composes the runtime manager, the user/plan/ownership
 // repositories, and the logger. Construct once at startup.
 type Service struct {
-	rt        *runtime.Manager
-	ownership *repository.ClientOwnershipRepo
-	users     UserLookup
-	plans     PlanLookup
-	wg        *WGProvisioner // optional; nil when WG_MASTER_KEY not set
-	log       *slog.Logger
+	rt         *runtime.Manager
+	ownership  *repository.ClientOwnershipRepo
+	provenance *repository.ProvenanceRepo // optional; nil disables the managed-clients ledger
+	users      UserLookup
+	plans      PlanLookup
+	wg         *WGProvisioner // optional; nil when WG_MASTER_KEY not set
+	log        *slog.Logger
 }
 
 // SetWGProvisioner attaches the WG provisioner so ProvisionClient
@@ -98,13 +104,32 @@ type PlanLookup interface {
 }
 
 // New constructs the service.
-func New(rt *runtime.Manager, ownership *repository.ClientOwnershipRepo, users UserLookup, plans PlanLookup, lg *slog.Logger) *Service {
+func New(rt *runtime.Manager, ownership *repository.ClientOwnershipRepo, provenance *repository.ProvenanceRepo, users UserLookup, plans PlanLookup, lg *slog.Logger) *Service {
 	return &Service{
-		rt:        rt,
-		ownership: ownership,
-		users:     users,
-		plans:     plans,
-		log:       lg.With(slog.String("component", "service.client")),
+		rt:         rt,
+		ownership:  ownership,
+		provenance: provenance,
+		users:      users,
+		plans:      plans,
+		log:        lg.With(slog.String("component", "service.client")),
+	}
+}
+
+// recordClient stamps the managed-clients provenance ledger after a
+// successful panel-side create. Best-effort by design: the panel
+// write already happened, so a ledger failure only degrades the
+// managed/external classification — warn, never fail the caller.
+func (s *Service) recordClient(ctx context.Context, nodeID int64, inboundTag, email string) {
+	if s.provenance == nil || email == "" {
+		return
+	}
+	if err := s.provenance.RecordClient(ctx, nodeID, inboundTag, email); err != nil {
+		s.log.Warn("provenance record failed after client create",
+			slog.Int64("node_id", nodeID),
+			slog.String("inbound", inboundTag),
+			slog.String("email", email),
+			slog.String("err", err.Error()),
+		)
 	}
 }
 
@@ -169,6 +194,9 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 
 	now := time.Now().UTC()
 	newExpiry := computeExpiry(now, existing, params.DurationDays)
+	if params.ExpiresAtOverride != nil {
+		newExpiry = *params.ExpiresAtOverride
+	}
 	newLimit := params.TrafficLimitBytes
 
 	wireClient := buildWireClient(in.Protocol, clientEmail, user.SubID, newExpiry, newLimit, params.IPLimit)
@@ -226,6 +254,7 @@ func (s *Service) ProvisionClient(ctx context.Context, userID, nodeID int64, inb
 	if err != nil {
 		return nil, err
 	}
+	s.recordClient(ctx, nodeID, inboundTag, clientEmail)
 	s.log.Info("provisioned client",
 		slog.Int64("user_id", userID),
 		slog.Int64("node_id", nodeID),
@@ -253,6 +282,10 @@ func (s *Service) AddClientDirect(ctx context.Context, nodeID int64, inboundTag 
 	if err := r.AddClient(ctx, inboundTag, c); err != nil {
 		return nil, err
 	}
+	// Provenance: dashboard created this client, with or without a
+	// bound user. This is what keeps unbound direct-adds classified
+	// as managed instead of leaking into the "external" bucket.
+	s.recordClient(ctx, nodeID, inboundTag, c.Email)
 	// Optional ownership upsert when an owner is named.
 	if userID > 0 && c.Email != "" {
 		var expiry *time.Time
@@ -356,6 +389,67 @@ func (s *Service) SetClientEnabled(ctx context.Context, nodeID int64, inboundTag
 	return fmt.Errorf("SetClientEnabled: client %q not found on inbound %q", email, inboundTag)
 }
 
+// RefreshClientLimits pushes new traffic/IP limits to the panel
+// client AND the ownership row without touching expiry, credentials,
+// or the traffic counter — the pure "plan edit" propagation used by
+// billing.SyncPlanSubscribers. WireGuard rows update the ownership
+// row only (WG quotas are enforced dashboard-side; the panel peer
+// has no per-peer limit fields).
+func (s *Service) RefreshClientLimits(ctx context.Context, nodeID int64, inboundTag, email string, trafficLimitBytes int64, ipLimit int) error {
+	r, err := s.rt.Get(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	in, err := r.GetInbound(ctx, inboundTag)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInboundLookup, err)
+	}
+	if !in.IsWireguard() {
+		settings := struct {
+			Clients []runtime.Client `json:"clients"`
+		}{}
+		if in.Settings != "" {
+			if err := json.Unmarshal([]byte(in.Settings), &settings); err != nil {
+				return fmt.Errorf("RefreshClientLimits: decode settings: %w", err)
+			}
+		}
+		found := false
+		for i := range settings.Clients {
+			if settings.Clients[i].Email != email {
+				continue
+			}
+			found = true
+			if settings.Clients[i].TotalGB != trafficLimitBytes || settings.Clients[i].LimitIP != ipLimit {
+				settings.Clients[i].TotalGB = trafficLimitBytes
+				settings.Clients[i].LimitIP = ipLimit
+				if err := r.UpdateClient(ctx, inboundTag, settings.Clients[i]); err != nil {
+					return fmt.Errorf("RefreshClientLimits: panel update: %w", err)
+				}
+			}
+			break
+		}
+		if !found {
+			return fmt.Errorf("RefreshClientLimits: client %q not found on inbound %q", email, inboundTag)
+		}
+	}
+	own, err := s.ownership.GetByTriple(ctx, nodeID, inboundTag, email)
+	if err != nil {
+		return err
+	}
+	if own != nil {
+		var lim *int64
+		if trafficLimitBytes > 0 {
+			v := trafficLimitBytes
+			lim = &v
+		}
+		own.TrafficLimitBytes = lim
+		if _, err := s.ownership.Upsert(ctx, own); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FetchSnapshot returns the dashboard-side composite — inbounds +
 // online emails + last-online map — for one node. Frontend uses this
 // when expanding an inbound row to show per-client online status.
@@ -369,8 +463,15 @@ func (s *Service) FetchSnapshot(ctx context.Context, nodeID int64) (*runtime.Tra
 
 // DeleteClient removes the panel-side client and clears the
 // ownership row. Idempotent — missing client or missing ownership
-// is success.
+// is success. WireGuard ownerships are delegated to the peer RMW
+// path (the panel has no /clients/del for WG peers).
 func (s *Service) DeleteClient(ctx context.Context, nodeID int64, inboundTag, clientEmail string) error {
+	if s.wg != nil {
+		if own, err := s.ownership.GetByTriple(ctx, nodeID, inboundTag, clientEmail); err == nil &&
+			own != nil && own.Protocol == "wireguard" {
+			return s.wg.RemovePeer(ctx, nodeID, inboundTag, clientEmail)
+		}
+	}
 	r, err := s.rt.Get(ctx, nodeID)
 	if err != nil {
 		return err
@@ -380,6 +481,11 @@ func (s *Service) DeleteClient(ctx context.Context, nodeID int64, inboundTag, cl
 	}
 	if err := s.ownership.ClearForClient(ctx, nodeID, inboundTag, clientEmail); err != nil {
 		return err
+	}
+	if s.provenance != nil {
+		if err := s.provenance.ForgetClient(ctx, nodeID, inboundTag, clientEmail); err != nil {
+			return fmt.Errorf("client deleted on panel but provenance cleanup failed (retry the delete): %w", err)
+		}
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -63,6 +63,7 @@ function makeFleetRow(overrides: Partial<FleetInbound> = {}): FleetInbound {
   return {
     node_id: 7,
     node_name: 'Tokyo Node',
+    managed: true,
     inbound: makeInbound(),
     ...overrides,
   }
@@ -216,6 +217,39 @@ describe('Inbounds', () => {
     await user.type(screen.getByLabelText('Search inbounds'), 'shadow')
     expect(screen.getByText('Shadow inbound')).toBeInTheDocument()
     expect(screen.queryByText('Main inbound')).not.toBeInTheDocument()
+  })
+
+  it('defaults to the managed scope and reveals external inbounds under All sources', async () => {
+    const user = userEvent.setup()
+    fleet = {
+      inbounds: [
+        makeFleetRow(),
+        makeFleetRow({
+          managed: false,
+          inbound: makeInbound({
+            id: 3,
+            remark: 'Upstream leftover',
+            tag: 'legacy-9000',
+            port: 9000,
+            settings: JSON.stringify({ clients: [] }),
+          }),
+        }),
+      ],
+    }
+    renderInbounds()
+
+    // Default = managed only; the external row and its traffic stay
+    // out of the list and the footer count.
+    expect(screen.getByText('Main inbound')).toBeInTheDocument()
+    expect(screen.queryByText('Upstream leftover')).not.toBeInTheDocument()
+    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Source' }))
+    await user.click(await screen.findByTitle('All sources'))
+
+    expect(await screen.findByText('Upstream leftover')).toBeInTheDocument()
+    expect(screen.getByText('External')).toBeInTheDocument()
+    expect(screen.getByText('2 / 2')).toBeInTheDocument()
   })
 
   it('builds Reality links from nested client settings', async () => {

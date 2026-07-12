@@ -95,8 +95,6 @@ export function PortalLayout() {
             accountItems={[{ label: t('account.profile'), to: '/portal/profile' }]}
             onLogout={logout}
             onOpenMobileNav={!wide ? () => setDrawerOpen(true) : undefined}
-            showNotifications
-            notificationsLabel={t('portal.shell.notifications')}
             toolSlot={
               <div className="portal-topbar-balance" aria-label={t('portal.shell.balanceLabel', { amount: balanceText })}>
                 <CreditCardOutlined aria-hidden="true" />

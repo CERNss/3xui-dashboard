@@ -55,6 +55,81 @@ func nullLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
+// fakeLedger records provenance calls and serves canned annotation
+// data — the in-memory stand-in for repository.ProvenanceRepo.
+type fakeLedger struct {
+	recorded  []InboundRef
+	forgotten []InboundRef
+	renames   []struct {
+		NodeID   int64
+		Old, New string
+	}
+	refs   []InboundRef
+	states []ClientState
+}
+
+func (f *fakeLedger) RecordInbound(_ context.Context, nodeID int64, tag string) error {
+	f.recorded = append(f.recorded, InboundRef{NodeID: nodeID, Tag: tag})
+	return nil
+}
+
+func (f *fakeLedger) ForgetInbound(_ context.Context, nodeID int64, tag string) error {
+	f.forgotten = append(f.forgotten, InboundRef{NodeID: nodeID, Tag: tag})
+	return nil
+}
+
+func (f *fakeLedger) RenameInboundTag(_ context.Context, nodeID int64, oldTag, newTag string) error {
+	f.renames = append(f.renames, struct {
+		NodeID   int64
+		Old, New string
+	}{nodeID, oldTag, newTag})
+	return nil
+}
+
+func (f *fakeLedger) ListInboundRefs(_ context.Context) ([]InboundRef, error) {
+	return f.refs, nil
+}
+
+func (f *fakeLedger) ListClientStates(_ context.Context) ([]ClientState, error) {
+	return f.states, nil
+}
+
+// crudPanelServer serves list/add/update/del in the 3x-ui envelope.
+// add echoes a panel-assigned tag when the request left it empty
+// (mirrors the fork's auto-generated "inbound-<port>" behaviour).
+func crudPanelServer(t *testing.T, inbounds []runtime.Inbound) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case req.URL.Path == "/panel/api/inbounds/list":
+			body, _ := json.Marshal(map[string]any{"success": true, "obj": inbounds})
+			_, _ = w.Write(body)
+		case req.URL.Path == "/panel/api/inbounds/add":
+			if err := req.ParseForm(); err != nil {
+				t.Fatalf("parse add form: %v", err)
+			}
+			tag := req.FormValue("tag")
+			if tag == "" {
+				tag = "inbound-" + req.FormValue("port")
+			}
+			body, _ := json.Marshal(map[string]any{"success": true, "obj": runtime.Inbound{ID: 99, Tag: tag}})
+			_, _ = w.Write(body)
+		case len(req.URL.Path) > len("/panel/api/inbounds/update/") && req.URL.Path[:len("/panel/api/inbounds/update/")] == "/panel/api/inbounds/update/":
+			if err := req.ParseForm(); err != nil {
+				t.Fatalf("parse update form: %v", err)
+			}
+			body, _ := json.Marshal(map[string]any{"success": true, "obj": runtime.Inbound{ID: 7, Tag: req.FormValue("tag")}})
+			_, _ = w.Write(body)
+		case len(req.URL.Path) > len("/panel/api/inbounds/del/") && req.URL.Path[:len("/panel/api/inbounds/del/")] == "/panel/api/inbounds/del/":
+			body, _ := json.Marshal(map[string]any{"success": true})
+			_, _ = w.Write(body)
+		default:
+			t.Fatalf("unexpected path %s", req.URL.Path)
+		}
+	}))
+}
+
 // 3x-ui style server returning a fixed inbounds list.
 func panelServer(t *testing.T, inbounds []runtime.Inbound) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -195,6 +270,134 @@ func TestListAll_PartialFailureSurfacesHealthyAndErrors(t *testing.T) {
 	}
 	if msg, ok := res.NodeErrors[9]; !ok || msg == "" {
 		t.Errorf("expected error for node 9, got %v", res.NodeErrors)
+	}
+}
+
+func TestAdd_RecordsManagedInbound(t *testing.T) {
+	srv := crudPanelServer(t, []runtime.Inbound{{ID: 1, Tag: "existing", Port: 443}})
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{nodeForURL(t, 3, "alpha", srv.URL)}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+	ledger := &fakeLedger{}
+	svc.SetLedger(ledger)
+
+	// Empty request tag: the panel-assigned tag must be recorded,
+	// not the empty one.
+	created, err := svc.Add(context.Background(), 3, &runtime.Inbound{Protocol: "vless", Port: 9443, Settings: `{"clients":[]}`})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if created.Tag != "inbound-9443" {
+		t.Fatalf("created tag = %q, want panel-assigned inbound-9443", created.Tag)
+	}
+	if len(ledger.recorded) != 1 || ledger.recorded[0] != (InboundRef{NodeID: 3, Tag: "inbound-9443"}) {
+		t.Errorf("recorded = %+v, want [{3 inbound-9443}]", ledger.recorded)
+	}
+}
+
+func TestDelete_ForgetsManagedInbound(t *testing.T) {
+	srv := crudPanelServer(t, []runtime.Inbound{{ID: 5, Tag: "doomed", Port: 443}})
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{nodeForURL(t, 3, "alpha", srv.URL)}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+	ledger := &fakeLedger{}
+	svc.SetLedger(ledger)
+
+	if err := svc.Delete(context.Background(), 3, "doomed"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(ledger.forgotten) != 1 || ledger.forgotten[0] != (InboundRef{NodeID: 3, Tag: "doomed"}) {
+		t.Errorf("forgotten = %+v, want [{3 doomed}]", ledger.forgotten)
+	}
+}
+
+func TestUpdate_TagRenameCascades(t *testing.T) {
+	srv := crudPanelServer(t, []runtime.Inbound{{ID: 7, Tag: "old-tag", Port: 443}})
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{nodeForURL(t, 3, "alpha", srv.URL)}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+	ledger := &fakeLedger{}
+	svc.SetLedger(ledger)
+
+	if _, err := svc.Update(context.Background(), 3, "old-tag", &runtime.Inbound{Tag: "new-tag", Protocol: "vless", Port: 443}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(ledger.renames) != 1 || ledger.renames[0].Old != "old-tag" || ledger.renames[0].New != "new-tag" || ledger.renames[0].NodeID != 3 {
+		t.Fatalf("renames = %+v, want [{3 old-tag new-tag}]", ledger.renames)
+	}
+
+	// The admin UI always submits tag:"" on edit — that must never be
+	// treated as a rename to the empty string.
+	if _, err := svc.Update(context.Background(), 3, "old-tag", &runtime.Inbound{Tag: "", Protocol: "vless", Port: 443}); err != nil {
+		t.Fatalf("Update with empty tag: %v", err)
+	}
+	if len(ledger.renames) != 1 {
+		t.Errorf("empty body tag triggered a rename: %+v", ledger.renames)
+	}
+}
+
+func TestListAll_AnnotatesManagedAndClientStates(t *testing.T) {
+	srv := panelServer(t, []runtime.Inbound{
+		{ID: 1, Tag: "ours", Port: 443},
+		{ID: 2, Tag: "theirs", Port: 444},
+	})
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{nodeForURL(t, 4, "alpha", srv.URL)}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+	uid := int64(11)
+	svc.SetLedger(&fakeLedger{
+		refs: []InboundRef{{NodeID: 4, Tag: "ours"}},
+		states: []ClientState{
+			{NodeID: 4, InboundTag: "ours", ClientEmail: "abc123", Managed: true, UserID: &uid},
+		},
+	})
+
+	res, err := svc.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	managedByTag := map[string]bool{}
+	for _, row := range res.Inbounds {
+		managedByTag[row.Inbound.Tag] = row.Managed
+	}
+	if !managedByTag["ours"] || managedByTag["theirs"] {
+		t.Errorf("managed flags wrong: %+v", managedByTag)
+	}
+	if len(res.ClientStates) != 1 || !res.ClientStates[0].Managed || res.ClientStates[0].UserID == nil || *res.ClientStates[0].UserID != 11 {
+		t.Errorf("client states = %+v", res.ClientStates)
+	}
+}
+
+func TestListAll_NilLedgerLeavesUnannotated(t *testing.T) {
+	srv := panelServer(t, []runtime.Inbound{{ID: 1, Tag: "raw", Port: 443}})
+	defer srv.Close()
+
+	loader := &fakeLoader{nodes: []model.Node{nodeForURL(t, 1, "alpha", srv.URL)}}
+	mgr := runtime.NewManager(loader, nullLogger())
+	mgr.SetHTTPClient(srv.Client())
+	svc := New(mgr, &fakeNodeRefs{loader: loader}, nullLogger())
+
+	res, err := svc.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if res.Inbounds[0].Managed {
+		t.Error("nil ledger must leave Managed=false")
+	}
+	if res.ClientStates != nil {
+		t.Errorf("nil ledger must leave ClientStates nil, got %+v", res.ClientStates)
 	}
 }
 

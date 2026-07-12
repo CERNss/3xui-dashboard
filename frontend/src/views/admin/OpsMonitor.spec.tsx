@@ -88,6 +88,7 @@ beforeEach(() => {
       {
         node_id: 1,
         node_name: 'Alpha',
+        managed: true,
         inbound: {
           id: 10,
           up: 0,

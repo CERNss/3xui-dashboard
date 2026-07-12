@@ -26,6 +26,7 @@ import { VlessProtocol } from './inbound-editor/protocols/VlessProtocol'
 import { VmessProtocol } from './inbound-editor/protocols/VmessProtocol'
 import { WireguardProtocol } from './inbound-editor/protocols/WireguardProtocol'
 import type { InboundEditorValues, ProtocolName } from './inbound-editor/types'
+import { formatDateTime } from '@/utils/format'
 
 const PROTOCOL_OPTIONS = [
   'vless',
@@ -66,7 +67,7 @@ function formatBytes(value: number) {
 }
 
 function formatExpiry(value: number, never: string) {
-  return value ? new Date(value).toLocaleString() : never
+  return value ? formatDateTime(value, never) : never
 }
 
 function transportText(template: InboundTemplate) {

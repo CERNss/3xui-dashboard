@@ -127,6 +127,7 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	userRepo := repository.NewUserRepo(db)
 	planRepo := repository.NewPlanRepo(db)
 	ownershipRepo := repository.NewClientOwnershipRepo(db)
+	provenanceRepo := repository.NewProvenanceRepo(db)
 	// Admin audit log — written by middleware on every mutating
 	// /api/admin/* request. Wired into the authed group below so
 	// every handler picks it up automatically; no per-handler
@@ -169,13 +170,14 @@ func Build(cfg *config.Config, db *gorm.DB, logger *slog.Logger) *App {
 	// create it here (before billing wiring) and the handler can
 	// resolve optional `template_id` POST bodies through it.
 	inboundService := inbound.New(rtManager, &nodeListAdapter{svc: nodeService}, logger)
+	inboundService.SetLedger(&provenanceLedgerAdapter{repo: provenanceRepo})
 	provisioningPoolRepo := repository.NewProvisioningPoolRepo(db)
 	inboundHandler := adminhandler.NewInboundHandler(inboundService)
 	inboundHandler.SetTemplateLookup(provisioningPoolRepo)
 	inboundHandler.RegisterRoutes(apiAdminAuthed)
 
 	// Client provisioning.
-	clientService := clientsvc.New(rtManager, ownershipRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
+	clientService := clientsvc.New(rtManager, ownershipRepo, provenanceRepo, &userLookupAdapter{repo: userRepo}, &planLookupAdapter{repo: planRepo}, logger)
 	adminhandler.NewClientHandler(clientService).RegisterRoutes(apiAdminAuthed)
 
 	// WireGuard provisioning — only wired when WG_MASTER_KEY is
@@ -438,6 +440,53 @@ func seedSubscriptionDefaults(profiles *repository.SubscriptionProfileRepo, rule
 }
 
 // ---- adapters (kept private — main + tests share them) ---------------------
+
+// provenanceLedgerAdapter bridges repository.ProvenanceRepo to the
+// inbound service's Ledger interface (type conversion only, exact
+// analogue of nodeListAdapter).
+type provenanceLedgerAdapter struct{ repo *repository.ProvenanceRepo }
+
+func (a *provenanceLedgerAdapter) RecordInbound(ctx context.Context, nodeID int64, tag string) error {
+	return a.repo.RecordInbound(ctx, nodeID, tag)
+}
+
+func (a *provenanceLedgerAdapter) ForgetInbound(ctx context.Context, nodeID int64, tag string) error {
+	return a.repo.ForgetInbound(ctx, nodeID, tag)
+}
+
+func (a *provenanceLedgerAdapter) RenameInboundTag(ctx context.Context, nodeID int64, oldTag, newTag string) error {
+	return a.repo.RenameInboundTag(ctx, nodeID, oldTag, newTag)
+}
+
+func (a *provenanceLedgerAdapter) ListInboundRefs(ctx context.Context) ([]inbound.InboundRef, error) {
+	rows, err := a.repo.ListInboundRefs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]inbound.InboundRef, len(rows))
+	for i, r := range rows {
+		out[i] = inbound.InboundRef{NodeID: r.NodeID, Tag: r.InboundTag}
+	}
+	return out, nil
+}
+
+func (a *provenanceLedgerAdapter) ListClientStates(ctx context.Context) ([]inbound.ClientState, error) {
+	rows, err := a.repo.ListClientStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]inbound.ClientState, len(rows))
+	for i, r := range rows {
+		out[i] = inbound.ClientState{
+			NodeID:      r.NodeID,
+			InboundTag:  r.InboundTag,
+			ClientEmail: r.ClientEmail,
+			Managed:     r.Managed,
+			UserID:      r.UserID,
+		}
+	}
+	return out, nil
+}
 
 type nodeListAdapter struct{ svc *nodesvc.Service }
 

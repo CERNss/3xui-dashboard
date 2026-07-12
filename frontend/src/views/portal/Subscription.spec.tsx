@@ -181,6 +181,70 @@ describe('Subscription', () => {
     expect(within(qrRegion).getByRole('img', { name: /subscription QR/i })).not.toHaveAttribute('src', 'data:image/png;base64,stale-base64')
   })
 
+  it('falls back to execCommand when the clipboard API is unavailable (http origin)', async () => {
+    Object.assign(navigator, { clipboard: undefined })
+    const execMock = vi.fn().mockReturnValue(true)
+    document.execCommand = execMock as unknown as typeof document.execCommand
+
+    renderSubscription()
+    await userEvent.click(await screen.findByRole('button', { name: /copy/i }))
+
+    expect(execMock).toHaveBeenCalledWith('copy')
+    expect(await screen.findByText('Copied')).toBeInTheDocument()
+  })
+
+  it('surfaces an error toast instead of failing silently when copy is impossible', async () => {
+    Object.assign(navigator, { clipboard: undefined })
+    document.execCommand = vi.fn().mockReturnValue(false) as unknown as typeof document.execCommand
+
+    renderSubscription()
+    await userEvent.click(await screen.findByRole('button', { name: /copy/i }))
+
+    expect(await screen.findByText(/Copy failed/)).toBeInTheDocument()
+  })
+
+  it('renders one-click import deep links with the encoded subscription URL', async () => {
+    renderSubscription()
+
+    const clash = await screen.findByRole('link', { name: /Clash \/ Mihomo/ })
+    expect(clash).toHaveAttribute(
+      'href',
+      `clash://install-config?url=${encodeURIComponent('http://localhost:3000/sub/sub-token?format=clash')}&name=Subscription`,
+    )
+    const singbox = screen.getByRole('link', { name: /sing-box/ })
+    expect(singbox).toHaveAttribute(
+      'href',
+      `sing-box://import-remote-profile?url=${encodeURIComponent('http://localhost:3000/sub/sub-token?format=singbox')}#Subscription`,
+    )
+    expect(screen.getByRole('link', { name: /Shadowrocket/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('shadowrocket://add/sub://'),
+    )
+  })
+
+  it('shows the stalled state (not "buy a plan") when a paid order is old and unprovisioned', async () => {
+    trafficOwnMock.mockResolvedValue([])
+    ordersListMock.mockResolvedValue([
+      {
+        id: 90,
+        user_id: 1,
+        plan_id: 3,
+        idempotency_key: 'purchase-90',
+        price_cents: 500,
+        status: 'completed',
+        created_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+        completed_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+        payment_method: 'balance',
+      },
+    ])
+
+    renderSubscription()
+
+    expect(await screen.findByText('Provisioning is taking longer than expected')).toBeInTheDocument()
+    expect(screen.queryByText('No active clients yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('See plans')).not.toBeInTheDocument()
+  })
+
   it('shows a provisioning state while a recent completed order has no client yet', async () => {
     trafficOwnMock.mockResolvedValue([])
     ordersListMock.mockResolvedValue([

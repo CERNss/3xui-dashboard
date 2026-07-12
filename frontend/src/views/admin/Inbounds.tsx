@@ -11,7 +11,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Client, FleetInbound } from '@/api/admin/inbounds'
 import type { Node } from '@/api/admin/nodes'
-import { ConfigListPage, RefreshButton } from '@/components/common'
+import { ConfigListPage, ProvenanceScopeSelect, RefreshButton } from '@/components/common'
 import {
   useInboundsFleet,
   useRemoveInbound,
@@ -22,6 +22,8 @@ import { useNodesList } from '@/hooks/queries/admin/nodes'
 import InboundEditor from './InboundEditor'
 import {
   buildClientLink,
+  buildClientStateMap,
+  clientStateKey,
   filterInbounds,
   formatBytes,
   formatLimit,
@@ -30,6 +32,7 @@ import {
   PROTOCOL_OPTIONS,
   rowKey,
   type ProtocolFilter,
+  type ScopeFilter,
 } from './inbounds/utils'
 
 interface EditorState {
@@ -50,6 +53,7 @@ export default function Inbounds() {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [protocols, setProtocols] = useState<ProtocolFilter[]>([...PROTOCOL_OPTIONS])
+  const [scope, setScope] = useState<ScopeFilter>('managed')
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([])
   const [qr, setQr] = useState<{ title: string; url: string } | null>(null)
   const [editor, setEditor] = useState<EditorState>({ open: false, mode: 'create', nodeID: null, tag: '', source: null })
@@ -62,21 +66,24 @@ export default function Inbounds() {
 
   const rows = useMemo(() => fleetQuery.data?.inbounds ?? [], [fleetQuery.data])
   const nodes = useMemo(() => nodesQuery.data ?? [], [nodesQuery.data])
-  const filtered = useMemo(() => filterInbounds(rows, query, protocols), [protocols, query, rows])
+  const clientStates = useMemo(() => buildClientStateMap(fleetQuery.data?.client_states), [fleetQuery.data])
+  const filtered = useMemo(() => filterInbounds(rows, query, protocols, scope), [protocols, query, rows, scope])
   const loading = fleetQuery.isLoading || nodesQuery.isLoading
   const error = fleetQuery.error ?? nodesQuery.error ?? setEnable.error ?? removeInbound.error ?? resetInboundTraffic.error
   const nodeErrors = fleetQuery.data?.node_errors
   const hasNodeErrors = Boolean(nodeErrors && Object.keys(nodeErrors).length)
 
+  // Footer stats follow the filtered set so the default managed view
+  // doesn't report fleet-wide totals that include external inbounds.
   const stats = useMemo(() => {
-    const inbounds = rows.map((row) => row.inbound)
+    const inbounds = filtered.map((row) => row.inbound)
     return {
       up: inbounds.reduce((sum, inbound) => sum + (inbound.up || 0), 0),
       down: inbounds.reduce((sum, inbound) => sum + (inbound.down || 0), 0),
       enabled: inbounds.filter((inbound) => inbound.enable).length,
       clients: inbounds.reduce((sum, inbound) => sum + parseClients(inbound).length, 0),
     }
-  }, [rows])
+  }, [filtered])
 
   const refresh = () => {
     fleetQuery.refetch()
@@ -133,7 +140,10 @@ export default function Inbounds() {
       width: 280,
       render: (_value, row) => (
         <Space direction="vertical" size={2}>
-          <Typography.Text strong>{row.inbound.remark || row.inbound.tag}</Typography.Text>
+          <Space size={6}>
+            <Typography.Text strong>{row.inbound.remark || row.inbound.tag}</Typography.Text>
+            {!row.managed ? <Tag color="orange">{t('admin.provenance.external')}</Tag> : null}
+          </Space>
           <Typography.Text type="secondary">
             {row.node_name} #{row.node_id} · tag {row.inbound.tag} · port {row.inbound.port}
           </Typography.Text>
@@ -200,11 +210,17 @@ export default function Inbounds() {
         {clients.length === 0 ? <Typography.Text type="secondary">{t('admin.inbounds.client.emptyHint')}</Typography.Text> : null}
         {clients.map((client) => {
           const link = buildClientLink(row, client, nodes as Node[])
+          const state = clientStates.get(clientStateKey(row.node_id, row.inbound.tag, client.email))
           return (
             <Card key={client.email} size="small">
               <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
                 <Space direction="vertical" size={2}>
-                  <Typography.Text strong>{client.email}</Typography.Text>
+                  <Space size={6}>
+                    <Typography.Text strong>{client.email}</Typography.Text>
+                    {state?.managed
+                      ? <Tag color="green">{t('admin.provenance.managed')}</Tag>
+                      : <Tag color="orange">{t('admin.provenance.external')}</Tag>}
+                  </Space>
                   <Typography.Text type="secondary">{client.enable === false ? t('admin.status.nodeState.disabled') : t('admin.nodes.enable')} · {formatLimit(client.totalGB ?? 0, t('admin.stats.unlimited'))}</Typography.Text>
                   {link ? <Typography.Text code>{link}</Typography.Text> : <Typography.Text type="secondary">{t('admin.inbounds.protocolNotSupported')}</Typography.Text>}
                 </Space>
@@ -235,6 +251,7 @@ export default function Inbounds() {
         filters={
           <Space wrap>
             <Input.Search allowClear aria-label={t('admin.inbounds.searchPlaceholder')} placeholder={t('admin.inbounds.searchPlaceholder')} style={{ width: 260 }} onChange={(event) => setQuery(event.target.value)} />
+            <ProvenanceScopeSelect value={scope} onChange={setScope} />
             <Select
               mode="multiple"
               aria-label={t('admin.inbounds.filter.protocolLabel')}
@@ -251,7 +268,7 @@ export default function Inbounds() {
             <span className="config-list-page-footer-summary">{t('common.resultCount', { n: filtered.length })}</span>
             <Space className="inbounds-list-footer-metrics" size={[12, 4]} wrap>
               <Typography.Text type="secondary">{t('admin.inbounds.kpi.sentReceived')}: {formatBytes(stats.up)} / {formatBytes(stats.down)}</Typography.Text>
-              <Typography.Text type="secondary">{t('admin.inbounds.kpi.inbounds')}: {rows.length} ({stats.enabled} {t('admin.inbounds.kpi.enabledSuffix')})</Typography.Text>
+              <Typography.Text type="secondary">{t('admin.inbounds.kpi.inbounds')}: {filtered.length} ({stats.enabled} {t('admin.inbounds.kpi.enabledSuffix')})</Typography.Text>
               <Typography.Text type="secondary">{t('admin.inbounds.kpi.clients')}: {stats.clients}</Typography.Text>
             </Space>
           </div>
@@ -293,7 +310,10 @@ export default function Inbounds() {
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                 <Typography.Text strong>{row.inbound.remark || row.inbound.tag}</Typography.Text>
-                <Tag>{row.inbound.protocol}</Tag>
+                <Space size={4}>
+                  {!row.managed ? <Tag color="orange">{t('admin.provenance.external')}</Tag> : null}
+                  <Tag>{row.inbound.protocol}</Tag>
+                </Space>
               </Space>
               <Typography.Text type="secondary">{row.node_name} #{row.node_id} · {row.inbound.port}</Typography.Text>
               <Typography.Text>{t('admin.inbounds.column.clients')}: {parseClients(row.inbound).length}</Typography.Text>
