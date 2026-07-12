@@ -71,21 +71,24 @@ beforeEach(() => {
     },
   ]
   loading = false
+  // restoreAllMocks FIRST: it wipes mock implementations, so any
+  // mockResolvedValue configured before it silently becomes
+  // "resolves undefined" — which is exactly the unhandled-rejection
+  // flake CI caught (result.sync on undefined) while local timing
+  // masked it.
+  vi.restoreAllMocks()
   createMutateAsync.mockResolvedValue({})
   updateMutateAsync.mockResolvedValue({})
   syncMutateAsync.mockReset()
+  syncMutateAsync.mockResolvedValue({ plan_id: 7, users: 2, refreshed: 3, added: 1, removed: 0 })
   removeMutateAsync.mockResolvedValue({})
   plansRefetch.mockReset()
   poolsRefetch.mockReset()
-  vi.restoreAllMocks()
 })
 
 describe('Plans', () => {
   it('runs the subscriber sync from the row action and reports the summary', async () => {
     const user = userEvent.setup()
-    // Set AFTER beforeEach — its trailing vi.restoreAllMocks() wipes
-    // implementations configured earlier in the hook.
-    syncMutateAsync.mockResolvedValue({ plan_id: 7, users: 2, refreshed: 3, added: 1, removed: 0 })
     renderPlans()
 
     await user.click(screen.getByRole('button', { name: /Sync to subscribers/ }))
