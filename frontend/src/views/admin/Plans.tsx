@@ -157,7 +157,10 @@ export default function Plans() {
     const payload = formToPayload(values)
     if (editing) {
       const result = await updatePlan.mutateAsync({ id: editing.id, input: payload })
-      reportSync(result.sync, result.sync_error)
+      // Optional chaining: mocked mutations (and defensive callers)
+      // may resolve undefined — a missing summary must never throw
+      // out of this fire-and-forget submit path.
+      reportSync(result?.sync, result?.sync_error)
     } else {
       await createPlan.mutateAsync(payload)
     }
